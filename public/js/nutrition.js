@@ -66,7 +66,7 @@ function nutritionSummary(t, dayMeals) {
   const shares = macroShares(t),
     macro = (key, label, cls) =>
       `<div class="nutrition-macro ${cls}"><strong>${gramText(t[key])}</strong><span>${label}${shares ? " · " + Math.round(shares[cls]) + " %" : ""}</span></div>`;
-  return `<div class="nutrition-summary card"><div class="nutrition-energy"><div><strong>${kcalText(t.kcal)}</strong><span>kcal</span></div><button id="addmeal" class="primary addsession-compact" aria-label="Ajouter un repas" title="Ajouter un repas">＋</button></div><div class="nutrition-bar" aria-hidden="true">${shares ? `<span class="protein" style="width:${shares.protein}%"></span><span class="carbs" style="width:${shares.carbs}%"></span><span class="fat" style="width:${shares.fat}%"></span>` : ""}</div><div class="nutrition-macros">${macro("protein_g", "Protéines", "protein")}${macro("carbs_g", "Glucides", "carbs")}${macro("fat_g", "Lipides", "fat")}</div><dl class="nutrition-extra"><div><dt>Fibres</dt><dd>${gramText(t.fiber_g)}</dd></div><div><dt>dont sucres</dt><dd>${gramText(t.sugars_g)}</dd></div><div><dt>dont AG saturés</dt><dd>${gramText(t.sat_fat_g)}</dd></div><div><dt>Sel</dt><dd>${gramText(t.salt_g)}</dd></div></dl>${novaLine(dayMeals, t)}</div>`;
+  return `<div class="nutrition-summary card"><div class="nutrition-energy"><div><strong>${kcalText(t.kcal)}</strong><span>kcal</span></div></div><div class="nutrition-bar" aria-hidden="true">${shares ? `<span class="protein" style="width:${shares.protein}%"></span><span class="carbs" style="width:${shares.carbs}%"></span><span class="fat" style="width:${shares.fat}%"></span>` : ""}</div><div class="nutrition-macros">${macro("protein_g", "Protéines", "protein")}${macro("carbs_g", "Glucides", "carbs")}${macro("fat_g", "Lipides", "fat")}</div><dl class="nutrition-extra"><div><dt>Fibres</dt><dd>${gramText(t.fiber_g)}</dd></div><div><dt>dont sucres</dt><dd>${gramText(t.sugars_g)}</dd></div><div><dt>dont AG saturés</dt><dd>${gramText(t.sat_fat_g)}</dd></div><div><dt>Sel</dt><dd>${gramText(t.salt_g)}</dd></div></dl>${novaLine(dayMeals, t)}</div>`;
 }
 // Détail d’un repas : valeurs par aliment, puis fibres, sucres, AG saturés et sel du repas.
 function mealDetail(m) {
@@ -101,7 +101,7 @@ function renderNutrition() {
       })
       .join("");
   $("#nutritionboard").innerHTML =
-    `${nav}${nutritionSummary(sumNutrients(dayMeals), dayMeals)}<div class="weekheading"><h2>Repas</h2><span>${dayMeals.length}</span></div><div class="entries">${list}</div><div class="weekheading"><h2>7 derniers jours</h2></div><div class="nutrition-history card">${history}</div>`;
+    `${nav}${nutritionSummary(sumNutrients(dayMeals), dayMeals)}<div class="weekheading"><h2>Repas</h2><button type="button" class="smallbtn weekheading-action" id="addmeal" aria-label="Ajouter un repas" title="Ajouter un repas"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button><span>${dayMeals.length}</span></div><div class="entries">${list}</div><div class="weekheading"><h2>7 derniers jours</h2></div><div class="nutrition-history card">${history}</div>`;
   $("#prevday").onclick = () => changeNutritionDay(addDays(day, -1));
   $("#nextday").onclick = () => changeNutritionDay(addDays(day, 1));
   $("#nutritiontoday").onclick = () => changeNutritionDay(now);

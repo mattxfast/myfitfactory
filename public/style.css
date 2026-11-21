@@ -3801,6 +3801,7 @@ button:disabled {
 #prhistorylist .entryactions .smallbtn,
 #view-sessions .weekcount .smallbtn,
 #view-sessions .weekheading .weekheading-action,
+#view-nutrition .weekheading .weekheading-action,
 #view-admin .admin-row-actions .smallbtn,
 #view-box .admin-row-actions .smallbtn {
   width: var(--list-button-size);
