@@ -275,10 +275,12 @@ function weekProgramSection(p, week, folded, from) {
     done = ws.filter(w => countFor(w) > 0),
     // Génération par IA : seulement dans ses propres programmes (pas un programme suivi).
     own = p && !p.followed && !p.read_only && !p.is_default,
-    // WOD du jour (IA ou WOD de référence) : entraînements en plus, en fin de liste, hors du compteur du programme
-    // (2 WOD faits sur 3 : « 2/3 », quel que soit le nombre de WOD en plus).
-    extras = dailyWodCards();
-  return `<section class="session-fold ${folded.has("wods") ? "collapsed" : ""}" data-session-fold="wods"><div class="weekheading"><button class="smallbtn section-collapse" aria-label="Replier les WOD" aria-expanded="${!folded.has("wods")}">${folded.has("wods") ? "＋" : "−"}</button><h2>WOD Perso</h2><span>${done.length}/${ws.length}</span></div><div class="session-fold-body"><div class="weekwodlist">${
+    // WOD du jour (IA ou WOD de référence) : en fin de liste, comptés dans le compteur de la rubrique (3 WOD faits sur
+    // 4 + 1 WOD généré : « 3/5 », puis « 4/5 » une fois ce WOD fait).
+    extras = dailyWodCards(),
+    doneCount = done.length + dailyWods.filter(dailyWodDone).length,
+    totalCount = ws.length + dailyWods.length;
+  return `<section class="session-fold ${folded.has("wods") ? "collapsed" : ""}" data-session-fold="wods"><div class="weekheading"><button class="smallbtn section-collapse" aria-label="Replier les WOD" aria-expanded="${!folded.has("wods")}">${folded.has("wods") ? "＋" : "−"}</button><h2>WOD Perso</h2><span>${doneCount}/${totalCount}</span></div><div class="session-fold-body"><div class="weekwodlist">${
     !p
       ? extras || sectionEmpty("Pas de programmation en cours")
       : ws.length
