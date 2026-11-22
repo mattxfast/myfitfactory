@@ -244,6 +244,7 @@ const FFOffline = (() => {
     } else if (path === "/preferences" && op.path === "/preferences" && op.method === "PUT") {
       if (body.theme !== undefined) data.theme = body.theme;
       if (body.interface !== undefined) data.interface = body.interface;
+      if (body.common_wod_push !== undefined) data.common_wod_push = body.common_wod_push ? 1 : 0;
       if (body.reminders) data.reminders = {...data.reminders, ...body.reminders};
     } else if (path === "/program-data" && op.path === "/program-follow" && op.method === "DELETE") {
       data.programs = (data.programs || []).map(p => ({...p, followed: 0}));

@@ -29,7 +29,8 @@ let tab = "login",
   boxWods = [],
   sessionTags = [], // partenaires tagués sur mes séances de la semaine
   sharedPartners = [], // séances ajoutées depuis une invitation : l’auteur et les autres partenaires
-  pendingTags = []; // séances où je suis tagué, en attente de ma réponse
+  pendingTags = [], // séances où je suis tagué, en attente de ma réponse
+  commonWod = null; // WOD commun du jour : {wod, joined_id, participants}
 const today = () => {
   const d = new Date();
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);

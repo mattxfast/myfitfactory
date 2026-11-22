@@ -14,6 +14,8 @@ import {
   callOpenAIDaily,
   dailyChrono,
   dailyMovementIds,
+  buildCommonPrompt,
+  callOpenAICommon,
   dailyOptionsInput,
   dailyWodToText,
 } from "./ai.js";
@@ -601,6 +603,27 @@ async function ensureV2Schema(env) {
           await env.DB.prepare(`ALTER TABLE ${table} ADD COLUMN blocks TEXT`).run();
       }
     });
+    await runMigration("v40-common-wods", async () => {
+      // WOD commun du jour (un seul par jour pour toute l'application), notifications envoyées, réglage de la
+      // notification, et lien entre le WOD du jour d'un membre (« Je le fais ») et le WOD commun.
+      await env.DB.batch(
+        [
+          "CREATE TABLE IF NOT EXISTS common_wods (id TEXT PRIMARY KEY, wod_date TEXT NOT NULL UNIQUE, status TEXT NOT NULL DEFAULT 'pending', title TEXT, content TEXT, blocks TEXT, score_type TEXT, movement_ids TEXT NOT NULL DEFAULT '[]', model TEXT, attempt_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+          "CREATE TABLE IF NOT EXISTS common_wod_notices (user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, wod_date TEXT NOT NULL)",
+        ].map(sql => env.DB.prepare(sql))
+      );
+      const [users, daily] = await Promise.all([
+        env.DB.prepare("PRAGMA table_info(users)").all(),
+        env.DB.prepare("PRAGMA table_info(daily_wods)").all(),
+      ]);
+      if (!users.results.some(column => column.name === "common_wod_push"))
+        await env.DB.prepare("ALTER TABLE users ADD COLUMN common_wod_push INTEGER NOT NULL DEFAULT 1").run();
+      if (!daily.results.some(column => column.name === "common_wod_id"))
+        await env.DB.prepare("ALTER TABLE daily_wods ADD COLUMN common_wod_id TEXT").run();
+      await env.DB.prepare(
+        "CREATE UNIQUE INDEX IF NOT EXISTS daily_wods_common ON daily_wods(common_wod_id,user_id) WHERE common_wod_id IS NOT NULL"
+      ).run();
+    });
   })().catch(err => {
     schemaReady = null;
     throw err;
@@ -968,6 +991,108 @@ async function monthlyReport(e, userId, month) {
     comment: saved?.comment || "",
   };
 }
+// WOD commun du jour : une seule génération par jour pour toute l'application, à partir de 5 h (heure de Paris), par
+// la tâche planifiée (ou par l'administrateur). La ligne est réservée (« pending ») avant l'appel à l'IA ; nouvel
+// essai 15 minutes après un échec.
+async function ensureCommonWod(e, date, force = false) {
+  const find = () => e.DB.prepare("SELECT * FROM common_wods WHERE wod_date=?").bind(date).first();
+  let row = await find();
+  if (row?.status === "ready") return {wod: row};
+  if (!e.OPENAI_API_KEY) return {error: "La génération par IA n'est pas configurée (clé OpenAI manquante)."};
+  const now = new Date().toISOString(),
+    stale = new Date(Date.now() - 15 * 60000).toISOString();
+  if (!row) {
+    await e.DB.prepare("INSERT OR IGNORE INTO common_wods(id,wod_date,status,attempt_at) VALUES(?,?,'pending',?)")
+      .bind(uid(), date, now)
+      .run();
+    row = await find();
+    if (row.attempt_at !== now) return {pending: true};
+  } else {
+    if (!force && row.attempt_at > stale) return {pending: true};
+    const claim = await e.DB.prepare("UPDATE common_wods SET attempt_at=? WHERE id=? AND attempt_at IS ?")
+      .bind(now, row.id, row.attempt_at)
+      .run();
+    if (!claim.meta?.changes) return {pending: true};
+  }
+  const [catalog, recent] = await Promise.all([
+    e.DB.prepare("SELECT id,name FROM movement_catalog ORDER BY sort_order,name COLLATE NOCASE").all(),
+    e.DB.prepare(
+      "SELECT wod_date,title FROM common_wods WHERE status='ready' AND wod_date<? ORDER BY wod_date DESC LIMIT 10"
+    )
+      .bind(date)
+      .all(),
+  ]);
+  const out = await callOpenAICommon(
+    e,
+    buildCommonPrompt({
+      dateLabel: frenchDate(date),
+      catalog: catalog.results,
+      recent: recent.results.map(x => ({date: frenchDate(x.wod_date), title: x.title})),
+    })
+  );
+  if (out.error) return out;
+  const title =
+      String(out.wod.titre || "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 120) || "WOD commun",
+    values = [
+      title,
+      (title + "\n\n" + wodToText(out.wod, 2000, false)).slice(0, 4000),
+      JSON.stringify(wodBlocks(out.wod)),
+      out.wod.score_type === "none" ? null : out.wod.score_type,
+      JSON.stringify(dailyMovementIds(out.wod, catalog.results)),
+      out.model,
+    ];
+  await e.DB.prepare(
+    "UPDATE common_wods SET status='ready',title=?,content=?,blocks=?,score_type=?,movement_ids=?,model=? WHERE id=?"
+  )
+    .bind(...values, row.id)
+    .run();
+  return {wod: await find()};
+}
+const commonWodOut = x =>
+  x && {
+    id: x.id,
+    wod_date: x.wod_date,
+    title: x.title,
+    content: x.content,
+    blocks: x.blocks ? JSON.parse(x.blocks) : null,
+    score_type: x.score_type || null,
+  };
+// Tâche planifiée (chaque minute) : génération à partir de 5 h, puis notification à partir de 6 h à tous les membres
+// abonnés aux notifications (sauf s'ils l'ont coupée dans Rappels), 5 par passage (plan gratuit), une fois par jour.
+async function sendCommonWod(e) {
+  const hour = e.TEST_PARIS_HOUR ? Number(e.TEST_PARIS_HOUR) : parisHour(),
+    today = e.TEST_PARIS_DATE || localToday();
+  if (hour < 5) return {sent: 0};
+  const ready = await ensureCommonWod(e, today);
+  if (!ready.wod || hour < 6 || hour >= 12) return {sent: 0};
+  const users = (
+    await e.DB.prepare(
+      "SELECT u.id FROM users u WHERE u.is_active=1 AND u.common_wod_push=1 AND EXISTS(SELECT 1 FROM push_subscriptions p WHERE p.user_id=u.id) AND NOT EXISTS(SELECT 1 FROM common_wod_notices n WHERE n.user_id=u.id AND n.wod_date=?) LIMIT 5"
+    )
+      .bind(today)
+      .all()
+  ).results.map(x => x.id);
+  let sent = 0;
+  for (const userId of users) {
+    await e.DB.prepare(
+      "INSERT INTO common_wod_notices(user_id,wod_date) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET wod_date=excluded.wod_date"
+    )
+      .bind(userId, today)
+      .run();
+    sent += (
+      await pushToUser(e, userId, {
+        title: "myFitFactory",
+        body: `WOD commun du jour : « ${ready.wod.title} ». Tu le fais avec les autres ?`,
+        tag: "common-wod",
+        url: "/",
+      })
+    ).sent;
+  }
+  return {sent};
+}
 // Notification du 1er du mois, à 10 h (heure de Paris) : « ton bilan est prêt », une fois par mois, aux membres qui
 // ont des séances le mois écoulé ; par paquets (limites du plan gratuit), comme les rappels.
 async function sendMonthlyReportPushes(e) {
@@ -1245,6 +1370,7 @@ const dailyWodOut = x => ({
   score_type: x.score_type || null,
   // WOD saisi à la main : nom et blocs tels que saisis, pour le formulaire de modification.
   manual: manualOf(x),
+  common_wod_id: x.common_wod_id || null,
   ...(x.session_ids !== undefined ? {session_ids: x.session_ids?.split(",") || []} : {}),
 });
 // WOD de box : nom facultatif (« WOD du JJ/MM/AAAA » par défaut), date, contenu et type de score.
@@ -2019,17 +2145,31 @@ async function api(r, e, p, ctx = null) {
           .run();
       return json({ok: true});
     }
+    // WOD commun du jour généré tout de suite (sans attendre la tâche planifiée), ou regénéré avec regenerate.
+    if (r.method === "POST" && p === "/api/admin/common-wod") {
+      const b = await r.json().catch(() => ({})),
+        date = localToday();
+      if (b.regenerate)
+        await e.DB.prepare("UPDATE common_wods SET status='pending' WHERE wod_date=? AND status='ready'")
+          .bind(date)
+          .run();
+      const out = await ensureCommonWod(e, date, true);
+      if (out.error) return json({error: out.error}, 502);
+      if (out.pending) return json({error: "Génération déjà en cours."}, 409);
+      return json({ok: true, wod: commonWodOut(out.wod)});
+    }
     return json({error: "Route admin inconnue."}, 404);
   }
   // Préférences du compte : thème (null = thème par défaut de l'administrateur), interface (avancée ou simplifiée) et rappels.
   if (r.method === "GET" && p === "/api/preferences") {
     const st = await userReminders(e, u.id),
-      row = await e.DB.prepare("SELECT theme,box_prompt_dismissed,interface_mode FROM users WHERE id=?")
+      row = await e.DB.prepare("SELECT theme,box_prompt_dismissed,interface_mode,common_wod_push FROM users WHERE id=?")
         .bind(u.id)
         .first();
     return json({
       theme: THEMES.includes(row?.theme) ? row.theme : null,
       interface: row?.interface_mode === "simple" ? "simple" : "advanced",
+      common_wod_push: row?.common_wod_push === 0 ? 0 : 1,
       box_prompt_dismissed: row?.box_prompt_dismissed ? 1 : 0,
       default_theme: st.defaults.theme,
       reminders: {enabled: st.enabled, days: st.days, hour: st.hour},
@@ -2046,6 +2186,10 @@ async function api(r, e, p, ctx = null) {
     }
     if (b.interface !== undefined)
       await e.DB.prepare("UPDATE users SET interface_mode=? WHERE id=?").bind(b.interface, u.id).run();
+    if (b.common_wod_push !== undefined)
+      await e.DB.prepare("UPDATE users SET common_wod_push=? WHERE id=?")
+        .bind(b.common_wod_push ? 1 : 0, u.id)
+        .run();
     if (b.reminders) {
       const error = await saveReminderSettings(e, u.id, b.reminders);
       if (error) return json({error}, 400);
@@ -3370,6 +3514,77 @@ async function api(r, e, p, ctx = null) {
   // WOD de référence (benchmarks) : liste (gardée sur le téléphone pour le tirage hors ligne), WOD du jour tiré de
   // la liste (sans IA), résultats suivis dans la page PR.
   if (p === "/api/benchmarks" && r.method === "GET") return json({benchmarks: BENCHMARKS.map(benchmarkOut)});
+  // WOD commun du jour : le WOD (s'il est prêt), mon WOD du jour qui le reprend (« Je le fais ») et le nombre de
+  // participants (séances enregistrées).
+  if (p === "/api/common-wod" && r.method === "GET") {
+    const wod = await e.DB.prepare("SELECT * FROM common_wods WHERE wod_date=? AND status='ready'")
+      .bind(localToday())
+      .first();
+    if (!wod) return json({wod: null});
+    const [mine, count] = await Promise.all([
+      e.DB.prepare("SELECT id FROM daily_wods WHERE user_id=? AND common_wod_id=?").bind(u.id, wod.id).first(),
+      e.DB.prepare(
+        "SELECT COUNT(DISTINCT s.user_id) AS n FROM training_sessions s JOIN daily_wods d ON d.id=s.daily_wod_id AND d.user_id=s.user_id WHERE d.common_wod_id=?"
+      )
+        .bind(wod.id)
+        .first(),
+    ]);
+    return json({wod: commonWodOut(wod), joined_id: mine?.id || null, participants: count?.n || 0});
+  }
+  // « Je le fais » : copie du WOD commun dans mes WOD du jour (une seule fois), pour enregistrer ma séance et mon score.
+  m = p.match(/^\/api\/common-wod\/([\w-]+)\/join$/);
+  if (m && r.method === "POST") {
+    const wod = await e.DB.prepare("SELECT * FROM common_wods WHERE id=? AND status='ready'").bind(m[1]).first();
+    if (!wod) return json({error: "WOD commun introuvable."}, 404);
+    if (wod.wod_date < addDays(localToday(), -1))
+      return json({error: "Ce WOD commun est passé : il ne peut plus être ajouté."}, 400);
+    await e.DB.prepare(
+      "INSERT OR IGNORE INTO daily_wods(id,user_id,wod_date,title,content,chrono,movement_ids,options,score_type,blocks,common_wod_id) VALUES(?,?,?,?,?,NULL,?,'{}',?,?,?)"
+    )
+      .bind(uid(), u.id, wod.wod_date, wod.title, wod.content, wod.movement_ids, wod.score_type, wod.blocks, wod.id)
+      .run();
+    const row = await e.DB.prepare("SELECT * FROM daily_wods WHERE user_id=? AND common_wod_id=?")
+      .bind(u.id, wod.id)
+      .first();
+    return json({ok: true, wod: dailyWodOut(row)});
+  }
+  // Classement du WOD commun : meilleur score de chaque participant, prénom et initiale du nom seulement.
+  m = p.match(/^\/api\/common-wod\/([\w-]+)\/leaderboard$/);
+  if (m && r.method === "GET") {
+    const wod = await e.DB.prepare("SELECT * FROM common_wods WHERE id=? AND status='ready'").bind(m[1]).first();
+    if (!wod) return json({error: "WOD commun introuvable."}, 404);
+    const rows = (
+      await e.DB.prepare(
+        "SELECT s.user_id,s.score_value,u.first_name,u.last_name FROM training_sessions s JOIN daily_wods d ON d.id=s.daily_wod_id AND d.user_id=s.user_id JOIN users u ON u.id=s.user_id WHERE d.common_wod_id=? AND s.score_value IS NOT NULL"
+      )
+        .bind(wod.id)
+        .all()
+    ).results;
+    const lower = wod.score_type === "time",
+      best = new Map();
+    for (const x of rows) {
+      const prev = best.get(x.user_id);
+      if (!prev || (lower ? x.score_value < prev.score_value : x.score_value > prev.score_value))
+        best.set(x.user_id, x);
+    }
+    const ranking = [...best.values()]
+      .sort((a, b) => (lower ? a.score_value - b.score_value : b.score_value - a.score_value))
+      .map((x, i) => ({
+        rank: i + 1,
+        name:
+          [
+            String(x.first_name || "").trim(),
+            String(x.last_name || "")
+              .trim()
+              .slice(0, 1) + ".",
+          ]
+            .filter(v => v && v !== ".")
+            .join(" ") || "Athlète",
+        value: x.score_value,
+        me: x.user_id === u.id,
+      }));
+    return json({wod: commonWodOut(wod), ranking});
+  }
   // WOD saisi à la main (rejouable : client_id).
   if (p === "/api/daily-wods/manual" && r.method === "POST") {
     const b = await r.json(),
@@ -3681,7 +3896,7 @@ async function api(r, e, p, ctx = null) {
         .all(),
       daysBetween(from, to) <= 92 ? memberBoxWods(e, u.id, from, to) : [],
       e.DB.prepare(
-        "SELECT w.id,w.wod_date,w.title,w.content,w.chrono,w.movement_ids,w.benchmark_id,w.score_type,w.blocks,w.options,(SELECT group_concat(s.id) FROM training_sessions s WHERE s.daily_wod_id=w.id AND s.user_id=w.user_id) AS session_ids FROM daily_wods w WHERE w.user_id=? AND w.wod_date>=? AND w.wod_date<=? ORDER BY w.wod_date,w.created_at LIMIT 60"
+        "SELECT w.id,w.wod_date,w.title,w.content,w.chrono,w.movement_ids,w.benchmark_id,w.score_type,w.blocks,w.options,w.common_wod_id,(SELECT group_concat(s.id) FROM training_sessions s WHERE s.daily_wod_id=w.id AND s.user_id=w.user_id) AS session_ids FROM daily_wods w WHERE w.user_id=? AND w.wod_date>=? AND w.wod_date<=? ORDER BY w.wod_date,w.created_at LIMIT 60"
       )
         .bind(u.id, from, to)
         .all(),
@@ -4087,7 +4302,7 @@ export default {
               e.DB.prepare("DELETE FROM login_attempts WHERE attempted_at<=?").bind(now - 86400),
               e.DB.prepare("DELETE FROM password_resets WHERE expires_at<=?").bind(now - 86400),
             ])
-          : Promise.all([sendReminders(e), sendMonthlyReportPushes(e)])
+          : Promise.all([sendReminders(e), sendMonthlyReportPushes(e), sendCommonWod(e)])
       )
     );
   },

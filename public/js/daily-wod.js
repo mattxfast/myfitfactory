@@ -230,3 +230,115 @@ async function generateDailyWod(f, request) {
   form.dataset.movements = JSON.stringify(draft.movement_ids || []);
   return "Blocs pré-remplis : relis-les et ajuste-les avant d’enregistrer.";
 }
+
+// ----- WOD commun du jour : le même WOD pour tous (généré chaque nuit), « Je le fais », classement -----
+// Chargé à part (la page s’affiche sans l’attendre) ; dernière copie gardée sur le téléphone, comme les autres lectures.
+async function loadCommonWod() {
+  try {
+    commonWod = await api("/common-wod");
+  } catch {
+    commonWod = null;
+  }
+  if (commonWod?.wod && !$("#view-sessions").hidden && $("#weekboard .weekbar") && !$("#weekboard .common-wod"))
+    renderWeek();
+}
+const COMMON_SCORE_HINT = {time: "Pour le temps", reps: "Aux répétitions", load: "À la charge"};
+// Carte en tête de la page Séances, sur la semaine qui contient aujourd’hui, dans les deux interfaces.
+function weekCommonSection(from) {
+  const w = commonWod?.wod;
+  if (!w || today() < from || today() > addDays(from, 6)) return "";
+  const joined = commonWod.joined_id ? dailyWodsById.get(commonWod.joined_id) : null,
+    done = joined && dailyWodDone(joined),
+    n = commonWod.participants || 0,
+    meta = [COMMON_SCORE_HINT[w.score_type], n ? n + " participant" + (n > 1 ? "s" : "") : "Sois le premier !"]
+      .filter(Boolean)
+      .join(" · ");
+  return `<section class="session-fold common-wod"><div class="weekheading"><h2>WOD commun du jour</h2><span>${n}</span></div><div class="session-fold-body"><div class="weekwodlist"><article class="weekwod card ${done ? "done" : ""}"><div class="weekcount">${
+    commonWod.joined_id
+      ? done
+        ? ""
+        : `<button type="button" class="smallbtn" data-common-log aria-label="Enregistrer la séance" title="Enregistrer la séance"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button>`
+      : `<button type="button" class="smallbtn" data-common-join aria-label="Je le fais" title="Je le fais"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button>`
+  }${w.score_type ? `<button type="button" class="smallbtn" data-common-board aria-label="Classement" title="Classement">${TROPHY_ICON}</button>` : ""}</div><div class="weekwod-text" role="button" tabindex="0" data-common-open aria-label="Voir le WOD commun du jour"><b>${esc(w.title)}</b><p>${esc(meta)}</p></div></article></div></div></section>`;
+}
+function bindCommonWod(root) {
+  root.querySelectorAll("[data-common-open]").forEach(t => {
+    t.onclick = e => (blurAfterTap(t, e), openCommonWodDetail());
+    t.onkeydown = e => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        t.click();
+      }
+    };
+  });
+  root.querySelectorAll("[data-common-join]").forEach(b => (b.onclick = () => joinCommonWod()));
+  root.querySelectorAll("[data-common-log]").forEach(b => (b.onclick = () => logCommonWod()));
+  root.querySelectorAll("[data-common-board]").forEach(b => (b.onclick = () => openCommonLeaderboard()));
+}
+function openCommonWodDetail() {
+  const w = commonWod?.wod;
+  if (!w) return;
+  const joined = commonWod.joined_id ? dailyWodsById.get(commonWod.joined_id) : null,
+    done = joined && dailyWodDone(joined);
+  $("#dailydetailtitle").textContent = "WOD commun du jour";
+  $("#dailydetailmeta").textContent = [w.title, COMMON_SCORE_HINT[w.score_type], done ? "séance enregistrée" : ""]
+    .filter(Boolean)
+    .join(" · ");
+  fillWodBody($("#dailydetailbody"), w.blocks, dailyBody(w));
+  $("#dailydetailactions").innerHTML =
+    (commonWod.joined_id
+      ? done
+        ? ""
+        : `<button type="button" class="primary" data-common-log><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg><span>Enregistrer la séance</span></button>`
+      : `<button type="button" class="primary" data-common-join>Je le fais</button>`) +
+    (w.score_type ? `<button type="button" class="smallbtn" data-common-board>Classement</button>` : "");
+  bindCommonWod($("#dailydetailactions"));
+  $("#dailydetailactions")
+    .querySelectorAll("button")
+    .forEach(b => {
+      const run = b.onclick;
+      b.onclick = () => {
+        $("#dailydetaildialog").close();
+        run?.();
+      };
+    });
+  $("#dailydetaildialog").showModal();
+}
+// « Je le fais » : le WOD rejoint mes WOD du jour (rubrique WOD Perso), prêt pour enregistrer la séance et le score.
+async function joinCommonWod() {
+  try {
+    const d = await sendApi("/common-wod/" + commonWod.wod.id + "/join", "POST", {});
+    rememberDailyWods([d.wod]);
+    commonWod = {...commonWod, joined_id: d.wod.id};
+    await loadSessions();
+    toast("C’est parti ! Enregistre ta séance et ton score une fois le WOD fait.");
+  } catch (e) {
+    toast(e.offline ? OFFLINE_MESSAGE : e.message);
+  }
+}
+function logCommonWod() {
+  if (commonWod?.joined_id) openSession(null, "daily:" + commonWod.joined_id);
+}
+async function openCommonLeaderboard() {
+  const w = commonWod?.wod;
+  if (!w) return;
+  $("#leaderboardtitle").textContent = w.title;
+  $("#leaderboardmeta").textContent = ["WOD commun du " + fmt(w.wod_date), COMMON_SCORE_HINT[w.score_type]]
+    .filter(Boolean)
+    .join(" · ");
+  $("#leaderboardbody").innerHTML = `<p class="muted">Chargement…</p>`;
+  $("#leaderboarddialog").showModal();
+  try {
+    const d = await api("/common-wod/" + w.id + "/leaderboard");
+    $("#leaderboardbody").innerHTML = d.ranking.length
+      ? `<ol class="leaderboard-list">${d.ranking
+          .map(
+            x =>
+              `<li class="${x.me ? "me" : ""}"><span class="leaderboard-rank">${x.rank}</span><span class="leaderboard-name">${esc(x.name)}</span><b>${esc(formatScore(w.score_type, x.value))}</b></li>`
+          )
+          .join("")}</ol>`
+      : `<p class="muted">Aucun score pour l’instant : enregistre le tien !</p>`;
+  } catch (e) {
+    $("#leaderboardbody").innerHTML = `<p class="error">${esc(e.offline ? OFFLINE_MESSAGE : e.message)}</p>`;
+  }
+}

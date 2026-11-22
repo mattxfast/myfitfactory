@@ -522,3 +522,46 @@ export function wodToText(wod, max = 2000, withTitle = true) {
   const full = render(true);
   return (full.length <= max ? full : render(false)).slice(0, max);
 }
+
+// ----- WOD commun du jour : un seul WOD par jour pour toute l'application, généré par la tâche planifiée -----
+// Aucune donnée personnelle dans la demande : un athlète « type » en box, avec une version adaptée (débutant ou peu de
+// matériel) dans le champ "scaling" de chaque mouvement, et le type de score du metcon pour le classement.
+export const COMMON_PROMPT_VERSION = "wod-commun-v1";
+export const COMMON_SCORE_TYPES = ["time", "reps", "load", "none"];
+const COMMON_SYSTEM = `Tu es un coach CrossFit. Tu écris le WOD commun du jour : le même entraînement pour tous les inscrits d'une application, qui pourront comparer leur score.
+
+Règles :
+- Séance d'environ 60 minutes : échauffement, éventuellement travail technique ou force, un metcon qui donne un score clair, éventuellement un finisher court.
+- Version de référence pour un athlète intermédiaire en box (barre, kettlebells, rameur, barre de traction, box…). Pour chaque mouvement, "scaling" donne la version adaptée aux débutants ou à peu de matériel (mouvement de remplacement et charge allégée), en quelques mots.
+- "score_type" : "time" pour un For Time, "reps" pour un AMRAP (tours et répétitions comptés en répétitions), "load" pour une charge maximale, "none" s'il n'y a pas de score.
+- Varie les formats et les mouvements par rapport aux WOD communs récents.
+- Utilise de préférence les noms de mouvements du catalogue fourni, à l'identique. Charges en kg (homme/femme, ex. « 43/30 kg »), distances en mètres.
+- Laisse "description" court (une phrase) ; mets "notes_coach" à null.
+- Rédige en français.
+
+${WRITING_RULES}`;
+export const COMMON_WOD_SCHEMA = {
+  ...WOD_SCHEMA,
+  required: [...WOD_SCHEMA.required, "score_type"],
+  properties: {...WOD_SCHEMA.properties, score_type: {type: "string", enum: COMMON_SCORE_TYPES}},
+};
+export function buildCommonPrompt({dateLabel, catalog, recent}) {
+  return [
+    "Date : " + dateLabel,
+    "Mouvements du catalogue : " + catalog.map(m => m.name).join(", "),
+    recent.length ? "WOD communs récents : " + recent.map(x => x.date + " — " + x.title).join(" ; ") : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+export async function callOpenAICommon(env, prompt) {
+  const out = await openAIJson(env, {
+    instructions: COMMON_SYSTEM,
+    input: prompt,
+    name: "wod_commun",
+    schema: COMMON_WOD_SCHEMA,
+    check: wod => Array.isArray(wod?.blocs) && wod.blocs.length > 0 && COMMON_SCORE_TYPES.includes(wod.score_type),
+    refusal: "L'IA a refusé de générer le WOD commun.",
+  });
+  return out.error ? out : {wod: out.result, model: out.model};
+}

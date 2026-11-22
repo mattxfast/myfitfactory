@@ -16,6 +16,7 @@ async function load() {
       api("/preferences"),
       api("/session-tags"),
     ]);
+    loadCommonWod();
     sessionTags = w.tags || [];
     sharedPartners = w.sharedPartners || [];
     pendingTags = tg.tags || [];
@@ -63,6 +64,7 @@ async function loadSessions() {
   sessionTags = w.tags || [];
   sharedPartners = w.sharedPartners || [];
   pendingTags = tg.tags || [];
+  loadCommonWod();
   movementChecks = w.checks;
   catalogChecks = w.catalogChecks || [];
   weeklyPlans = w.plans;
@@ -359,7 +361,8 @@ function renderWeek() {
   }
   $("#weekafter").innerHTML = simple ? weekMovementsSection(week, [], folded) : "";
   // Séances où l’on est tagué : rubrique en tête de page et pastille rouge sur l’onglet Séances.
-  $("#weekboard .weekbar").insertAdjacentHTML("afterend", weekInvitesSection());
+  $("#weekboard .weekbar").insertAdjacentHTML("afterend", weekInvitesSection() + weekCommonSection(from));
+  bindCommonWod($("#weekboard"));
   $('.navtab[data-view="sessions"]').classList.toggle("has-alert", pendingTags.length > 0);
   bindInvites();
   $("#view-sessions")
