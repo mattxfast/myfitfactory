@@ -9,9 +9,9 @@ async function loadProgress() {
   } catch {}
   if (!$("#view-prs").hidden) renderPrs();
 }
-// Origines regroupées comme sur la page Séances : « WOD Perso » = WOD de la programmation + WOD générés.
+// Origines regroupées comme sur la page Séances : « Mes WOD » = WOD de la programmation + WOD générés.
 const PROGRESS_SOURCES = [
-  [["prog", "daily"], "WOD Perso"],
+  [["prog", "daily"], "Mes WOD"],
   [["box"], "WOD de la box"],
   [["libre"], "Séances libres"],
 ];

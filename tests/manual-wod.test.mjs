@@ -58,7 +58,7 @@ test("WOD manuel : modification, séance avec score, puis modification bloquée"
   assert.equal((await bob.put("/daily-wods/" + wodId, wod({name: "Pirate"}))).status, 404);
   const edited = await alice.put("/daily-wods/" + wodId, wod({name: "", score_type: "reps"}));
   assert.equal(edited.status, 200, JSON.stringify(edited.data));
-  assert.equal(edited.data.wod.title, "WOD perso", "nom par défaut");
+  assert.equal(edited.data.wod.title, "Mon WOD", "nom par défaut");
   const session = {
     program_id: "none",
     wod_id: "other",

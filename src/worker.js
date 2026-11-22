@@ -1354,7 +1354,7 @@ function manualDailyInput(b, keptDate = null) {
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 100),
-    title = name || "WOD perso";
+    title = name || "Mon WOD";
   return {
     wod_date: date,
     title,

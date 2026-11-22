@@ -107,7 +107,7 @@ function sessionSource(s) {
   if (s.common_wod_id) return "WOD commun";
   if (s.box_wod_id) return s.box_name || "WOD de la box";
   if (s.wod_name === "Autres" && !s.daily_wod_id) return "Séance libre";
-  return "WOD Perso"; // WOD de la programmation ou WOD généré (rubrique « WOD Perso »)
+  return "Mes WOD"; // WOD de la programmation ou WOD généré (rubrique « Mes WOD »)
 }
 function renderSessions() {
   $("#sessionlist").classList.toggle("session-list-collapsed", !!window.cfSessionHistoryCollapsed);
@@ -287,7 +287,7 @@ function weekMovementsSection(week, programMovements, folded) {
     baseItems = movementCounts.filter(x => x.base);
   return `<section class="weekother session-fold ${folded.has("movements") ? "collapsed" : ""}" data-session-fold="movements"><div class="weekheading"><button class="smallbtn section-collapse" aria-label="Replier les mouvements" aria-expanded="${!folded.has("movements")}">${folded.has("movements") ? "＋" : "−"}</button><h2>Focus mouvement</h2><span>${programMovements.length ? baseItems.filter(x => x.count > 0).length + "/" + baseItems.length : movementCounts.length}</span></div><div class="session-fold-body"><div class="weekwodlist">${movementCounts.length ? movementCounts.map(x => `<article class="weekwod card ${x.count ? "done" : ""}"><b>${esc(x.movement.name)}</b><div class="weekcount"><strong>${x.count}×</strong></div></article>`).join("") : sectionEmpty("Pas de mouvement travaillé cette semaine")}</div></div></section>`;
 }
-// Rubrique « WOD Perso » (WOD de la programmation, puis WOD générés) : toujours affichée en interface avancée, jamais en simplifiée (« Pas de programmation en cours » sans programme).
+// Rubrique « Mes WOD » (WOD de la programmation, puis WOD générés) : toujours affichée en interface avancée, jamais en simplifiée (« Pas de programmation en cours » sans programme).
 function weekProgramSection(p, week, folded, from) {
   const ws = p ? visibleWods(p.id) : [],
     countFor = w => week.filter(x => x.wod_id === w.id).length,
@@ -299,7 +299,7 @@ function weekProgramSection(p, week, folded, from) {
     extras = dailyWodCards(),
     doneCount = done.length + persoDailyWods().filter(dailyWodDone).length,
     totalCount = ws.length + persoDailyWods().length;
-  return `<section class="session-fold ${folded.has("wods") ? "collapsed" : ""}" data-session-fold="wods"><div class="weekheading"><button class="smallbtn section-collapse" aria-label="Replier les WOD" aria-expanded="${!folded.has("wods")}">${folded.has("wods") ? "＋" : "−"}</button><h2>WOD Perso</h2><span>${doneCount}/${totalCount}</span></div><div class="session-fold-body"><div class="weekwodlist">${
+  return `<section class="session-fold ${folded.has("wods") ? "collapsed" : ""}" data-session-fold="wods"><div class="weekheading"><button class="smallbtn section-collapse" aria-label="Replier les WOD" aria-expanded="${!folded.has("wods")}">${folded.has("wods") ? "＋" : "−"}</button><h2>Mes WOD</h2><span>${doneCount}/${totalCount}</span></div><div class="session-fold-body"><div class="weekwodlist">${
     !p
       ? extras || sectionEmpty("Pas de programmation en cours")
       : ws.length
@@ -347,7 +347,7 @@ function weekBoxSection(week, folded) {
       : empty
   }</div></div></section>`;
 }
-// Carte du haut : séances perso faites / prévues, comme le compteur de la rubrique « WOD Perso » (WOD de la
+// Carte du haut : séances perso faites / prévues, comme le compteur de la rubrique « Mes WOD » (WOD de la
 // programmation et WOD du jour hors prog).
 const persoStat = (doneProgram, totalProgram) =>
   `<div class="weekstat weekstat-program"><strong>${doneProgram + persoDailyWods().filter(dailyWodDone).length}/${totalProgram + persoDailyWods().length}</strong><span>Nombre de séances perso</span></div>`;
@@ -358,7 +358,7 @@ function renderWeek() {
     to = addDays(from, 6),
     future = from > mondayOf(now),
     dateInput = addDays(from, 0);
-  // Interface simplifiée : ni programme, ni rubriques de WOD (WOD Perso, WOD de la box) ; les mouvements
+  // Interface simplifiée : ni programme, ni rubriques de WOD (Mes WOD, WOD de la box) ; les mouvements
   // travaillés passent sous l’historique (#weekafter).
   const simple = simpleInterface(),
     p = simple ? null : programForDate(from);

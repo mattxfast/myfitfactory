@@ -1,5 +1,5 @@
 // myFitFactory — WOD du jour (page Séances) : l’athlète qui s’entraîne au jour le jour, hors programme, fait générer
-// son entraînement par l’IA (aujourd’hui ou demain), le retrouve « hors prog » dans la rubrique « WOD Perso »
+// son entraînement par l’IA (aujourd’hui ou demain), le retrouve « hors prog » dans la rubrique « Mes WOD »
 // de la semaine (rattaché à aucun programme), lance
 // le chrono préréglé et enregistre sa séance quand il veut (elle est rattachée au WOD).
 // Scripts classiques chargés dans l’ordre par index.html (portée globale partagée) ; boot.js démarre l’application en dernier.
@@ -28,10 +28,10 @@ const dailyCanGenerate = from => {
   return (today() >= from && today() <= to) || (addDays(today(), 1) >= from && addDays(today(), 1) <= to);
 };
 
-// WOD du jour de la semaine : affichés en fin de rubrique « WOD Perso » (après ceux de la programmation), comme des entraînements
+// WOD du jour de la semaine : affichés en fin de rubrique « Mes WOD » (après ceux de la programmation), comme des entraînements
 // en plus, rattachés à aucun programme. Même forme que les cartes de la programmation : texte à gauche, boutons à
 // droite ; le titre du WOD en gras, « Hors prog · JJ/MM/AAAA » dessous ; un toucher sur la ligne ouvre le détail.
-// Le WOD commun du jour repris par « Je le fais » reste dans sa propre rubrique (pas en double dans WOD Perso).
+// Le WOD commun du jour repris par « Je le fais » reste dans sa propre rubrique (pas en double dans Mes WOD).
 const persoDailyWods = () => dailyWods.filter(w => !w.common_wod_id);
 function dailyWodCards() {
   return persoDailyWods()
@@ -102,7 +102,7 @@ function openManualWod(w = null) {
 // WOD saisi hors ligne : affiché tout de suite (même forme que la réponse du serveur).
 function describeManualWod(b) {
   const filled = MANUAL_BLOCKS.filter(([key]) => String(b.blocks?.[key] || "").trim()),
-    title = String(b.name || "").trim() || "WOD perso";
+    title = String(b.name || "").trim() || "Mon WOD";
   return {
     title,
     content: [title, ...filled.map(([key, label]) => label + "\n" + b.blocks[key].replace(/\s+$/, ""))].join("\n\n"),
@@ -306,7 +306,7 @@ function openCommonWodDetail() {
     });
   $("#dailydetaildialog").showModal();
 }
-// « Je le fais » : le WOD rejoint mes WOD du jour (rubrique WOD Perso), prêt pour enregistrer la séance et le score.
+// « Je le fais » : le WOD rejoint mes WOD du jour (rubrique Mes WOD), prêt pour enregistrer la séance et le score.
 async function joinCommonWod() {
   try {
     const d = await sendApi("/common-wod/" + commonWod.wod.id + "/join", "POST", {});
