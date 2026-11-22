@@ -101,41 +101,23 @@ function bindDailySection(root) {
   );
 }
 
-// Fenêtre de génération : derniers choix mémorisés sur l’appareil, profil d’athlète partagé avec la génération
-// des programmes.
-function dailyLastChoices() {
-  try {
-    return JSON.parse(localStorage.getItem("fitfactory-daily") || "{}");
-  } catch {
-    return {};
-  }
-}
+// Date et titre du WOD du jour dans la fenêtre de génération commune.
 function setupDailyAiForm(form, replaceId) {
   const f = form.elements,
-    last = dailyLastChoices(),
     replaced = dailyWodsById.get(replaceId),
     days = [today(), addDays(today(), 1)];
   f.wod_date.innerHTML = days
     .map(d => `<option value="${d}">${esc(dailyDayLabel(d) + " (" + wodDay(d) + ")")}</option>`)
     .join("");
   f.wod_date.value = replaced && days.includes(replaced.wod_date) ? replaced.wod_date : days[0];
-  for (const key of ["place", "energy"]) {
-    if ([...f[key]].some(input => input.value === last?.[key])) f[key].value = last[key];
-  }
   $("#aititle").textContent = replaced ? "Générer un autre WOD du jour" : "Générer le WOD du jour";
 }
 async function generateDailyWod(f, request, replaceId) {
-  const {value: place} = f.place,
-    {value: energy} = f.energy,
-    wod_date = f.wod_date.value;
-  try {
-    localStorage.setItem("fitfactory-daily", JSON.stringify({place, energy}));
-  } catch {}
   aiProgress("Génération en cours… (jusqu’à une minute)");
   const {wod} = await sendApi(
     "/daily-wods",
     "POST",
-    {...request, wod_date, place, energy, ...(replaceId ? {replace_id: replaceId} : {})},
+    {...request, wod_date: f.wod_date.value, ...(replaceId ? {replace_id: replaceId} : {})},
     AI_TIMEOUT
   );
   rememberDailyWods([wod]);

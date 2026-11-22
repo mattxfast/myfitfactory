@@ -4372,17 +4372,6 @@ button:disabled {
   align-items: stretch;
   gap: 8px;
 }
-.daily-choice {
-  margin: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-}
-.daily-choice legend {
-  padding: 0 4px;
-  font-size: 13px;
-  font-weight: 600;
-}
 /* Texte du WOD du jour sous le chrono lancé depuis la page Séances. */
 .timer-wod {
   margin-top: 16px;

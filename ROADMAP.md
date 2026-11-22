@@ -71,7 +71,7 @@ Prochain numéro libre : **41**
 - [x] **25.** Logs du Worker, limitation des tentatives de connexion, bibliothèque Excel et polices hébergées dans l'app.
 - [x] **26.** Rappels par notification, mode hors ligne avec resynchronisation, chronomètre de WOD.
 - [x] **27.** Renommage en myFitFactory (dépôt, Worker, base D1), icône et écran de démarrage, police Saira.
-- [x] **28.** WOD du jour généré par IA, chrono préréglé, séance enregistrée plus tard (19/11/2026, `3480ad8`). Fenêtre de génération commune aux autres WOD et rendu au format tableau blanc le 22/11/2026.
+- [x] **28.** WOD du jour généré par IA, chrono préréglé, séance enregistrée plus tard (19/11/2026, `3480ad8`). Fenêtre de génération commune aux autres WOD avec choix de la date et rendu au format tableau blanc le 22/11/2026.
 - [x] **29.** Programmes : bouton ✨ sur chaque semaine de la programmation hebdomadaire pour regénérer ce WOD pour cette semaine seulement. — fait le 20/11/2026 (`77012e8`)
 - [x] **35.** Texte des WOD générés par IA structuré : une rubrique par bloc choisi (icône et titre), consignes courtes, un mouvement par ligne. — fait le 21/11/2026 (`06523ed`)
 - [x] **30.** Attente de l'IA plus agréable : étoiles animées, coche verte à l'arrivée du résultat, effet scanner sur la photo du repas. — fait le 20/11/2026 (`5bd97d3`)

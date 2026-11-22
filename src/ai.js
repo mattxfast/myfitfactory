@@ -242,7 +242,7 @@ export async function callOpenAI(env, prompt) {
 }
 
 // ----- WOD du jour (page Séances) : un entraînement hors programme, généré pour aujourd'hui ou demain -----
-export const DAILY_PROMPT_VERSION = "wod-du-jour-v3";
+export const DAILY_PROMPT_VERSION = "wod-du-jour-v4";
 export const DAILY_WOD_LIMIT = 10; // WOD du jour par utilisateur et par 24 h (en plus de la limite générale)
 export const DAILY_PLACES = {
   box: "En box (matériel CrossFit complet)",
@@ -265,10 +265,12 @@ export function dailyOptionsInput(b) {
     options = aiOptionsInput(b);
     if (options.error) return options;
   }
-  const place = String(b.place || ""),
-    energy = String(b.energy || "");
-  if (!Object.hasOwn(DAILY_PLACES, place)) return {error: "Lieu invalide."};
-  if (!Object.hasOwn(DAILY_ENERGY, energy)) return {error: "Forme du jour invalide."};
+  // Des versions précédentes du formulaire peuvent encore transmettre ces deux champs.
+  const {place, energy} = b;
+  if (place !== undefined && (typeof place !== "string" || !Object.hasOwn(DAILY_PLACES, place)))
+    return {error: "Lieu invalide."};
+  if (energy !== undefined && (typeof energy !== "string" || !Object.hasOwn(DAILY_ENERGY, energy)))
+    return {error: "Forme du jour invalide."};
   return {...options, place, energy};
 }
 
@@ -279,8 +281,8 @@ Règles :
 - Si des blocs sont indiqués, génère exactement un bloc par type activé, dans l'ordre indiqué. Utilise les mouvements imposés pour la force et la technique s'ils sont compatibles avec le matériel et les contraintes.
 - Si aucun choix de blocs n'est indiqué, commence par un échauffement court, programme un metcon et ajoute de la force, de la technique ou un retour au calme si la durée le permet.
 - Choisis le format du metcon (AMRAP, EMOM, For Time, Tabata, intervalles…) en variant par rapport aux séances récentes.
-- Adapte le volume et l'intensité à la forme du jour : séance plus légère et plus technique si l'athlète est fatigué.
-- Utilise uniquement le matériel disponible pour le lieu du jour. Utilise de préférence les noms de mouvements du catalogue fourni, à l'identique.
+- Si la forme du jour est indiquée, adapte le volume et l'intensité : séance plus légère et plus technique si l'athlète est fatigué.
+- Respecte le matériel du profil et toute précision sur le lieu ou le matériel dans la demande. Utilise de préférence les noms de mouvements du catalogue fourni, à l'identique.
 - Adapte mouvements et charges au niveau et aux records. Exprime les charges en kg (ou en % du 1RM quand un record est connu), les distances en mètres.
 - Choisis directement des mouvements et des charges qui respectent les contraintes de l'athlète.
 - Assure la variété avec les séances récentes : évite de solliciter lourdement le même groupe musculaire que la veille.
@@ -315,8 +317,8 @@ export function buildDailyPrompt(c) {
     "## WOD demandé",
     "Date : " + c.dateLabel,
     "Durée totale : " + o.duration_minutes + " min",
-    "Lieu : " + DAILY_PLACES[o.place],
-    "Forme du jour : " + DAILY_ENERGY[o.energy],
+    ...(o.place ? ["Lieu : " + DAILY_PLACES[o.place]] : []),
+    ...(o.energy ? ["Forme du jour : " + DAILY_ENERGY[o.energy]] : []),
     ...(o.blocks ? aiBlockLines(o, c.catalog) : []),
     "Consigne particulière : " + (o.instructions || "aucune"),
     "",
