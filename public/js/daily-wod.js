@@ -56,7 +56,7 @@ function openDailyDetail(id) {
   $("#dailydetailtitle").textContent = "WOD du " + fmt(w.wod_date);
   $("#dailydetailmeta").textContent =
     w.title + " · " + dailyDayLabel(w.wod_date) + (done ? " · séance enregistrée" : "");
-  $("#dailydetailbody").textContent = dailyBody(w);
+  fillWodBody($("#dailydetailbody"), w.blocks, dailyBody(w));
   $("#dailydetailactions").innerHTML = done
     ? ""
     : `<button type="button" class="primary" data-daily-log="${w.id}" ${future ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg><span>${future ? "Prévu pour demain" : "Enregistrer la séance"}</span></button>`;

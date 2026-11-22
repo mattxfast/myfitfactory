@@ -147,6 +147,25 @@ test("IA : génération d'un WOD pour une semaine", async () => {
     res.data.content
   );
   assert.equal(data.wods[programId].find(w => w.id === wodId)?.is_tracked, 1, "le WOD devient suivi");
+  // Blocs enregistrés pour le détail (un par rubrique), oubliés si le texte est modifié à la main.
+  const entry = () => data.weeklyWodPrograms.find(x => x.wod_id === wodId && x.week_start === week);
+  const blocks = JSON.parse(entry().blocks);
+  assert.deepEqual(
+    blocks.slice(0, 2).map(b => b.label),
+    ["Échauffement", "Force"]
+  );
+  assert.match(blocks[1].text, /^5x5 · 20 min\n/);
+  assert.match(blocks[1].text, /• 5 Back squat @ 75% 1RM/);
+  await alice.put(`/wods/${wodId}/weekly-programming`, {week_start: week, content: res.data.content});
+  const kept = (await alice.get("/program-data")).data.weeklyWodPrograms;
+  assert.ok(kept.find(x => x.wod_id === wodId && x.week_start === week).blocks, "texte inchangé : blocs gardés");
+  await alice.put(`/wods/${wodId}/weekly-programming`, {week_start: week, content: "Modifié à la main"});
+  const edited = (await alice.get("/program-data")).data.weeklyWodPrograms;
+  assert.equal(
+    edited.find(x => x.wod_id === wodId && x.week_start === week).blocks,
+    null,
+    "texte modifié : blocs oubliés"
+  );
   assert.equal((await alice.get("/ai-profile")).data.remaining, 99);
 });
 

@@ -61,6 +61,8 @@ Une planification n'est pas une séance réalisée : elle sert de repère dans l
 - Page PR, rubrique **BENCHMARKS** : une carte par benchmark réalisé (meilleur score, en Rx s'il y en a un, sinon en Scaled), historique avec courbe et liste (Rx / Scaled, séance ou saisie) ; le ＋ du bandeau ajoute un résultat à la main (fait à la box, par exemple), supprimable depuis l'historique. Routes `GET`/`POST /api/benchmark-results`, `DELETE /api/benchmark-results/:id` ; les scores des séances sont lus directement dans les séances.
 
 ### Génération de WOD par IA
+
+- Blocs enregistrés avec le WOD généré : échauffement, travail technique, force, metcon, finisher (retour au calme), puis objectif et note du coach — colonne `blocks` (JSON `[{type, label, text}]`) de `daily_wods` et de `weekly_wod_programming`, migration V39. La fenêtre de détail d'un WOD (WOD du jour, WOD de la programmation pour la semaine, WOD de la box saisi en blocs) les affiche par rubrique, titres en capitales séparés par un trait, comme le planning des gestionnaires ; un contenu de semaine modifié à la main perd ses blocs (texte brut).
 - Dans ses propres programmes uniquement (ni programme suivi, ni espace gestionnaire), quatre boutons « étincelles » :
   - **Programmes, titre de la rubrique WOD** : tous les WOD sur toute la période. On choisit le nombre de WOD par semaine (1 à 7) ; les WOD manquants sont créés (« WOD 1 », « WOD 2 »…, marqués « suivi »), puis l'IA écrit le contenu de chaque WOD pour chaque semaine, l'un après l'autre, avec l'avancement affiché ;
   - **Programmes, sur un WOD** : ce WOD sur toutes les semaines du programme, dans l'ordre, avec une progression d'une semaine à l'autre ;

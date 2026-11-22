@@ -494,7 +494,13 @@ function openProgramWodDetail(wodId, week) {
   $("#dailydetailmeta").textContent = [p?.name, "Semaine du " + fmt(week), done ? "séance enregistrée" : ""]
     .filter(Boolean)
     .join(" · ");
-  $("#dailydetailbody").textContent = content || "Pas de contenu écrit pour cette semaine.";
+  // Contenu de la semaine généré par l’IA : par bloc ; écrit (ou modifié) à la main : texte brut.
+  let parts = null;
+  try {
+    const entry = weeklyWodPrograms.find(x => x.wod_id === w.id && x.week_start === week);
+    parts = entry?.blocks ? JSON.parse(entry.blocks) : null;
+  } catch {}
+  fillWodBody($("#dailydetailbody"), parts, content || "Pas de contenu écrit pour cette semaine.");
   $("#dailydetailactions").innerHTML = done
     ? ""
     : `<button type="button" class="primary" data-detail-log><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg><span>Ajouter une séance</span></button>`;
@@ -545,7 +551,11 @@ function openBoxWodDetail(id) {
   const done = datedWodDone(w, "box_wod_id");
   $("#dailydetailtitle").textContent = managerWodTitle(w);
   $("#dailydetailmeta").textContent = [w.box_name, done ? "séance enregistrée" : ""].filter(Boolean).join(" · ");
-  $("#dailydetailbody").textContent = w.content || "Pas de contenu écrit pour ce WOD.";
+  fillWodBody(
+    $("#dailydetailbody"),
+    w.blocks ? boxWodBlockParts(w).map(([label, text]) => ({label, text})) : null,
+    w.content || "Pas de contenu écrit pour ce WOD."
+  );
   $("#dailydetailactions").innerHTML =
     w.wod_date <= today() && !done
       ? `<button type="button" class="primary" data-detail-log><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg><span>Enregistrer la séance</span></button>`

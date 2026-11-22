@@ -127,6 +127,17 @@ function esc(s) {
     c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"})[c]
   );
 }
+// Détail d’un WOD par rubrique (échauffement, travail technique, force, metcon, finisher…), comme le planning des
+// gestionnaires ; texte brut quand le WOD n’a pas de blocs. parts : [{label, text}].
+function fillWodBody(el, parts, fallback) {
+  const list = (parts || []).filter(x => String(x.text || "").trim());
+  el.classList.toggle("wod-detail-blocks", list.length > 0);
+  if (list.length)
+    el.innerHTML = list
+      .map(x => `<span class="box-planning-part">${x.label ? `<em>${esc(x.label)}</em>` : ""}${esc(x.text)}</span>`)
+      .join("");
+  else el.textContent = fallback;
+}
 function showAuth() {
   $("#auth").hidden = false;
   $("#dashboard").hidden = true;

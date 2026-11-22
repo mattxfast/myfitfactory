@@ -5535,6 +5535,17 @@ button:active:not(:disabled) {
   text-transform: uppercase;
   color: var(--muted-strong);
 }
+/* Fenêtre de détail d'un WOD en blocs (WOD généré par l'IA, WOD de box) : rubriques séparées comme dans le planning. */
+.wod-detail-blocks {
+  display: grid;
+  gap: 4px;
+  --block-color: var(--orange-strong);
+}
+.wod-detail-blocks .box-planning-part:first-child {
+  padding-top: 0;
+  margin-top: 0;
+  border-top: 0;
+}
 .box-planning-empty {
   margin: 0;
   font-size: 13px;

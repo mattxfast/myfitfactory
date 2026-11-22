@@ -444,6 +444,35 @@ export function dailyMovementIds(wod, catalog) {
   return [...ids].slice(0, 40);
 }
 
+// Blocs d’un WOD généré, pour l’afficher par rubrique dans le détail (comme le planning des gestionnaires) : type,
+// titre et texte de chaque bloc (format, durée, consignes, un mouvement par ligne), puis objectif et note du coach.
+const BLOCK_TITLES = {
+  echauffement: "Échauffement",
+  technique: "Travail technique",
+  force: "Force",
+  metcon: "Metcon",
+  retour_au_calme: "Finisher",
+};
+export function wodBlocks(wod) {
+  const parts = (wod.blocs || []).map(b => {
+    const format = text(b.format, 60),
+      details = [
+        format,
+        b.duree_min && !new RegExp("\\b" + b.duree_min + "\\s*min", "i").test(format) ? b.duree_min + " min" : "",
+        b.time_cap_min ? "Time cap " + b.time_cap_min + " min" : "",
+      ].filter(Boolean),
+      lines = [details.join(" · "), b.description ? text(b.description, 400) : ""];
+    for (const m of b.mouvements || []) {
+      lines.push("• " + [m.reps, m.nom].filter(Boolean).join(" ") + (m.charge ? " @ " + m.charge : ""));
+      if (m.scaling) lines.push("   ↳ adapté : " + text(m.scaling, 120));
+    }
+    return {type: b.type, label: BLOCK_TITLES[b.type] || b.type, text: lines.filter(Boolean).join("\n").slice(0, 1500)};
+  });
+  if (wod.objectif_score) parts.push({type: "objectif", label: "Objectif", text: text(wod.objectif_score, 200)});
+  if (wod.notes_coach) parts.push({type: "notes", label: "Note du coach", text: text(wod.notes_coach, 300)});
+  return parts.filter(x => x.text);
+}
+
 // Le détail du WOD du jour retire la première ligne, car son titre est déjà affiché au-dessus.
 export function dailyWodToText(wod, title) {
   const blocks = wod.blocs.map(b =>

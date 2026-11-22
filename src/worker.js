@@ -7,6 +7,7 @@ import {
   buildPrompt,
   callOpenAI,
   wodToText,
+  wodBlocks,
   DAILY_PROMPT_VERSION,
   DAILY_WOD_LIMIT,
   buildDailyPrompt,
@@ -591,6 +592,15 @@ async function ensureV2Schema(env) {
       );
       await env.DB.batch(changes);
     });
+    await runMigration("v39-ai-wod-blocks", async () => {
+      // Blocs des WOD générés par l'IA (échauffement, travail technique, force, metcon, finisher), en JSON, pour les
+      // afficher par rubrique dans le détail : WOD du jour et contenu semaine par semaine d'un WOD de programme.
+      for (const table of ["daily_wods", "weekly_wod_programming"]) {
+        const columns = await env.DB.prepare(`PRAGMA table_info(${table})`).all();
+        if (!columns.results.some(column => column.name === "blocks"))
+          await env.DB.prepare(`ALTER TABLE ${table} ADD COLUMN blocks TEXT`).run();
+      }
+    });
   })().catch(err => {
     schemaReady = null;
     throw err;
@@ -1170,6 +1180,7 @@ const dailyWodOut = x => ({
   content: x.content,
   chrono: x.chrono ? JSON.parse(x.chrono) : null,
   movement_ids: JSON.parse(x.movement_ids || "[]"),
+  blocks: x.blocks ? JSON.parse(x.blocks) : null,
   benchmark_id: x.benchmark_id || null,
   score_type: x.score_type || null,
   ...(x.session_ids !== undefined ? {session_ids: x.session_ids?.split(",") || []} : {}),
@@ -1273,7 +1284,7 @@ const withMovementIds = rows => rows.map(r => ({...r, movement_ids: r.movement_i
 // gestionnaires voient les WOD à venir, dans leur espace).
 async function memberBoxWods(e, userId, from, to) {
   const x = await e.DB.prepare(
-    "SELECT w.id,w.box_id,b.name AS box_name,w.wod_date,w.name,w.content,w.score_type,w.type_id,t.name AS type_name,(SELECT group_concat(s.id) FROM training_sessions s WHERE s.box_wod_id=w.id AND s.user_id=m.user_id) AS session_ids," +
+    "SELECT w.id,w.box_id,b.name AS box_name,w.wod_date,w.name,w.content,w.blocks,w.score_type,w.type_id,t.name AS type_name,(SELECT group_concat(s.id) FROM training_sessions s WHERE s.box_wod_id=w.id AND s.user_id=m.user_id) AS session_ids," +
       WOD_MOVEMENTS +
       " FROM box_wods w JOIN boxes b ON b.id=w.box_id LEFT JOIN box_wod_types t ON t.id=w.type_id JOIN box_members m ON m.box_id=w.box_id AND m.user_id=? AND m.role='member' AND m.status='approved' WHERE w.wod_date>=? AND w.wod_date<=? AND w.wod_date<=? ORDER BY w.wod_date,t.sort_order,w.created_at"
   )
@@ -2715,7 +2726,7 @@ async function api(r, e, p, ctx = null) {
         .bind(...accessIds)
         .all(),
       e.DB.prepare(
-        "SELECT x.wod_id,x.week_start,x.content FROM weekly_wod_programming x JOIN program_wods w ON w.id=x.wod_id JOIN programs p ON p.id=w.program_id WHERE " +
+        "SELECT x.wod_id,x.week_start,x.content,x.blocks FROM weekly_wod_programming x JOIN program_wods w ON w.id=x.wod_id JOIN programs p ON p.id=w.program_id WHERE " +
           ACCESS +
           " ORDER BY x.week_start"
       )
@@ -3138,11 +3149,12 @@ async function api(r, e, p, ctx = null) {
     });
     const out = await callOpenAI(e, prompt);
     if (out.error) return json({error: out.error}, 502);
-    const content = wodToText(out.wod, 2000, false);
+    const content = wodToText(out.wod, 2000, false),
+      blocks = JSON.stringify(wodBlocks(out.wod));
     await e.DB.batch([
       e.DB.prepare(
-        "INSERT INTO weekly_wod_programming(wod_id,user_id,week_start,content,updated_at) VALUES(?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(wod_id,week_start) DO UPDATE SET content=excluded.content,updated_at=CURRENT_TIMESTAMP"
-      ).bind(wod.id, u.id, week, content),
+        "INSERT INTO weekly_wod_programming(wod_id,user_id,week_start,content,blocks,updated_at) VALUES(?,?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(wod_id,week_start) DO UPDATE SET content=excluded.content,blocks=excluded.blocks,updated_at=CURRENT_TIMESTAMP"
+      ).bind(wod.id, u.id, week, content, blocks),
       // Le contenu semaine par semaine n'existe que pour un WOD « suivi » : il le devient.
       e.DB.prepare("UPDATE program_wods SET is_tracked=1 WHERE id=? AND user_id=?").bind(wod.id, u.id),
       e.DB.prepare(
@@ -3232,11 +3244,22 @@ async function api(r, e, p, ctx = null) {
       content: dailyWodToText(wod, title),
       chrono: JSON.stringify(blocs.some(b => b.type === "metcon") ? dailyChrono(wod.chrono) : null),
       movement_ids: JSON.stringify(dailyMovementIds(wod, catalog.results)),
+      blocks: JSON.stringify(wodBlocks(wod)),
     };
     await e.DB.batch([
       e.DB.prepare(
-        "INSERT INTO daily_wods(id,user_id,wod_date,title,content,chrono,movement_ids,options) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET wod_date=excluded.wod_date,title=excluded.title,content=excluded.content,chrono=excluded.chrono,movement_ids=excluded.movement_ids,options=excluded.options,created_at=CURRENT_TIMESTAMP WHERE daily_wods.user_id=excluded.user_id"
-      ).bind(row.id, u.id, row.wod_date, row.title, row.content, row.chrono, row.movement_ids, JSON.stringify(options)),
+        "INSERT INTO daily_wods(id,user_id,wod_date,title,content,chrono,movement_ids,options,blocks) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET wod_date=excluded.wod_date,title=excluded.title,content=excluded.content,chrono=excluded.chrono,blocks=excluded.blocks,movement_ids=excluded.movement_ids,options=excluded.options,created_at=CURRENT_TIMESTAMP WHERE daily_wods.user_id=excluded.user_id"
+      ).bind(
+        row.id,
+        u.id,
+        row.wod_date,
+        row.title,
+        row.content,
+        row.chrono,
+        row.movement_ids,
+        JSON.stringify(options),
+        row.blocks
+      ),
       e.DB.prepare(
         "INSERT INTO ai_generations(id,user_id,wod_id,week_start,options,result,prompt_version,model) VALUES(?,?,NULL,?,?,?,?,?)"
       ).bind(
@@ -3370,8 +3393,9 @@ async function api(r, e, p, ctx = null) {
     if (!wod.is_tracked) return json({error: "Ce WOD n'est pas marqué comme suivi."}, 400);
     if (addDays(week, 6) < wod.start_monday || week > wod.end_monday)
       return json({error: "Cette semaine est hors période du programme."}, 400);
+    // Texte modifié à la main : les blocs générés par l'IA ne correspondent plus, ils sont oubliés.
     await e.DB.prepare(
-      "INSERT INTO weekly_wod_programming(wod_id,user_id,week_start,content,updated_at) VALUES(?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(wod_id,week_start) DO UPDATE SET content=excluded.content,updated_at=CURRENT_TIMESTAMP"
+      "INSERT INTO weekly_wod_programming(wod_id,user_id,week_start,content,updated_at) VALUES(?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(wod_id,week_start) DO UPDATE SET blocks=CASE WHEN weekly_wod_programming.content=excluded.content THEN weekly_wod_programming.blocks ELSE NULL END,content=excluded.content,updated_at=CURRENT_TIMESTAMP"
     )
       .bind(m[1], u.id, week, content)
       .run();
@@ -3511,7 +3535,7 @@ async function api(r, e, p, ctx = null) {
         .all(),
       daysBetween(from, to) <= 92 ? memberBoxWods(e, u.id, from, to) : [],
       e.DB.prepare(
-        "SELECT w.id,w.wod_date,w.title,w.content,w.chrono,w.movement_ids,w.benchmark_id,w.score_type,(SELECT group_concat(s.id) FROM training_sessions s WHERE s.daily_wod_id=w.id AND s.user_id=w.user_id) AS session_ids FROM daily_wods w WHERE w.user_id=? AND w.wod_date>=? AND w.wod_date<=? ORDER BY w.wod_date,w.created_at LIMIT 60"
+        "SELECT w.id,w.wod_date,w.title,w.content,w.chrono,w.movement_ids,w.benchmark_id,w.score_type,w.blocks,(SELECT group_concat(s.id) FROM training_sessions s WHERE s.daily_wod_id=w.id AND s.user_id=w.user_id) AS session_ids FROM daily_wods w WHERE w.user_id=? AND w.wod_date>=? AND w.wod_date<=? ORDER BY w.wod_date,w.created_at LIMIT 60"
       )
         .bind(u.id, from, to)
         .all(),

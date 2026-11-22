@@ -122,6 +122,12 @@ test("WOD du jour : génération, chrono et mouvements reconnus", async () => {
     rest_seconds: null,
   });
   assert.deepEqual(wod.movement_ids, [squatId], "nom du catalogue reconnu sans tenir compte de la casse");
+  assert.deepEqual(
+    wod.blocks.map(b => b.label).slice(0, 3),
+    ["Échauffement", "Metcon", "Objectif"],
+    "blocs enregistrés pour le détail par rubrique"
+  );
+  assert.match(wod.blocks[1].text, /^AMRAP 15 min\nLe plus de tours possible\n• 10 back squat @ 40 kg/);
   const call = requests.at(-1);
   assert.equal(call.text.format.name, "wod_du_jour");
   assert.match(call.input, /Lieu : À la maison/);

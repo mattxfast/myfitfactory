@@ -70,6 +70,7 @@ Prochain numéro libre : **51**
 - [x] **48.** États vides plus sobres : score de forme sans données (message au lieu du radar vide), « 7 derniers jours » de l'alimentation limité aux jours avec des repas. — fait le 22/11/2026
 - [x] **49.** Case « Comp » renommée « Compét. », avec l'info-bulle « Semaine de compétition ». — fait le 22/11/2026
 - [x] **50.** Fenêtre de contenu d'un WOD (détail, WOD de référence) : texte du WOD dans un bloc gris, comme les blocs du formulaire de séance. — fait le 22/11/2026
+- [x] **51.** WOD générés par l'IA enregistrés par bloc (échauffement, travail technique, force, metcon, finisher) et affichés par rubrique dans la fenêtre de détail, comme le planning des gestionnaires. — fait le 22/11/2026
 
 ## Écartées
 
