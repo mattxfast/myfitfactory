@@ -72,6 +72,7 @@ Prochain numéro libre : **51**
 - [x] **50.** Fenêtre de contenu d'un WOD (détail, WOD de référence) : texte du WOD dans un bloc gris, comme les blocs du formulaire de séance. — fait le 22/11/2026
 - [x] **51.** WOD générés par l'IA enregistrés par bloc (échauffement, travail technique, force, metcon, finisher) et affichés par rubrique dans la fenêtre de détail, comme le planning des gestionnaires. — fait le 22/11/2026
 - [x] **52.** Bouton unique « Nouveau WOD » sur la page Séances : fenêtre à trois choix (IA, WOD de référence, saisie manuelle) ; WOD saisi à la main en blocs, modifiable tant qu'aucune séance n'y est rattachée, avec son type de score. — fait le 22/11/2026
+- [ ] **53.** Fiabiliser le démarrage du Worker de test : de temps en temps (en local comme dans la GitHub Action), un fichier de tests échoue dès sa préparation (« fetch failed », réponse vide) et passe à la relance. Attendre que le Worker réponde vraiment avant de lancer les tests, et relancer son démarrage en cas d'échec.
 
 ## Écartées
 
