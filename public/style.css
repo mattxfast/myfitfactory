@@ -2071,29 +2071,23 @@ button:disabled {
 
 .weekstats {
   display: flex;
-  flex-wrap: wrap; /* boutons de génération sur une ligne à part, sous ＋ et « Comp » */
   align-items: center;
   gap: 12px;
 }
-/* Sous ＋ et « Comp », séparés par un trait : « Générer un WOD » (IA) et « WOD de référence », côte à côte. */
+/* À gauche du nombre de séances, l’un sous l’autre : ✨ (IA) et 🎲 (WOD de référence), taille des boutons de ligne. */
 .weekstats-generate {
-  flex: 1 0 100%;
   display: flex;
-  gap: 8px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
+  flex-direction: column;
+  gap: 6px;
 }
-.weekstats-generate button {
-  flex: 1 1 0;
+.weekstats-generate .smallbtn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-width: 0;
-  width: auto;
-  height: auto;
-  min-height: 40px;
-  white-space: nowrap;
+  width: var(--list-button-size);
+  height: var(--list-button-size);
+  min-width: var(--list-button-size);
+  padding: 0;
 }
 .competition-toggle {
   display: flex;

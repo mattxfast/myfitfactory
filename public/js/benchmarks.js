@@ -1,4 +1,4 @@
-// myFitFactory — WOD de référence (benchmarks : Fran, Cindy, Murph…) : tirage au sort (🎲 sous le ＋ de la page Séances)
+// myFitFactory — WOD de référence (benchmarks : Fran, Cindy, Murph…) : tirage au sort (🎲 de la carte « Nombre de séances »)
 // (sans IA, gratuit, possible hors ligne), score saisi avec la séance, suivi des résultats dans la page PR.
 // Scripts classiques chargés dans l’ordre par index.html (portée globale partagée) ; boot.js démarre l’application en dernier.
 

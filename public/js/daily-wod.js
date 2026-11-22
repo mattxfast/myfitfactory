@@ -1,5 +1,5 @@
 // myFitFactory — WOD du jour (page Séances) : l’athlète qui s’entraîne au jour le jour, hors programme, fait générer
-// son entraînement par l’IA (aujourd’hui ou demain), le retrouve « en plus » dans la rubrique « WOD Perso »
+// son entraînement par l’IA (aujourd’hui ou demain), le retrouve « hors prog » dans la rubrique « WOD Perso »
 // de la semaine (rattaché à aucun programme), lance
 // le chrono préréglé et enregistre sa séance quand il veut (elle est rattachée au WOD).
 // Scripts classiques chargés dans l’ordre par index.html (portée globale partagée) ; boot.js démarre l’application en dernier.
@@ -30,21 +30,21 @@ const dailyCanGenerate = from => {
 
 // WOD du jour de la semaine : affichés en fin de rubrique « WOD Perso » (après ceux de la programmation), comme des entraînements
 // en plus, rattachés à aucun programme. Même forme que les cartes de la programmation : texte à gauche, boutons à
-// droite ; le titre du WOD en gras, « En plus · JJ/MM/AAAA » dessous ; un toucher sur la ligne ouvre le détail.
+// droite ; le titre du WOD en gras, « Hors prog · JJ/MM/AAAA » dessous ; un toucher sur la ligne ouvre le détail.
 function dailyWodCards() {
   return dailyWods
     .map(w => {
       const n = dailyWodDone(w),
         future = w.wod_date > today();
-      return `<article class="weekwod card ${n ? "done" : ""}"><div class="weekcount">${n ? "" : `<button type="button" class="smallbtn" data-daily-log="${w.id}" ${future ? "disabled" : ""} aria-label="${future ? "Prévu pour demain" : "Enregistrer la séance"}" title="${future ? "Prévu pour demain" : "Enregistrer la séance"}"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button><button type="button" class="smallbtn delete" data-daily-del="${w.id}" aria-label="Supprimer ce WOD" title="Supprimer ce WOD"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button>`}</div><div class="weekwod-text" role="button" tabindex="0" data-daily-open="${w.id}" aria-label="Voir le détail du WOD du ${fmt(w.wod_date)}"><b>${esc(w.title)}</b><p>En plus · ${fmt(w.wod_date)}</p></div></article>`;
+      return `<article class="weekwod card ${n ? "done" : ""}"><div class="weekcount">${n ? "" : `<button type="button" class="smallbtn" data-daily-log="${w.id}" ${future ? "disabled" : ""} aria-label="${future ? "Prévu pour demain" : "Enregistrer la séance"}" title="${future ? "Prévu pour demain" : "Enregistrer la séance"}"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button><button type="button" class="smallbtn delete" data-daily-del="${w.id}" aria-label="Supprimer ce WOD" title="Supprimer ce WOD"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button>`}</div><div class="weekwod-text" role="button" tabindex="0" data-daily-open="${w.id}" aria-label="Voir le détail du WOD du ${fmt(w.wod_date)}"><b>${esc(w.title)}</b><p>Hors prog · ${fmt(w.wod_date)}</p></div></article>`;
     })
     .join("");
 }
-// Sous ＋ et « Comp » (carte « Nombre de séances », séparés par un trait) : WOD généré par l’IA (✨) et WOD de
-// référence au hasard (🎲), dans les deux interfaces, seulement sur la semaine qui contient aujourd’hui ou demain.
+// À gauche de la carte « Nombre de séances », l’un sous l’autre : WOD généré par l’IA (✨) et WOD de référence au
+// hasard (🎲), dans les deux interfaces, seulement sur la semaine qui contient aujourd’hui ou demain.
 const dailyGenerateRow = from =>
   dailyCanGenerate(from)
-    ? `<div class="weekstats-generate"><button type="button" class="primary" data-daily-new>${AI_ICON}<span>Générer un WOD</span></button><button type="button" class="smallbtn" data-bench-new>${DICE_ICON}<span>WOD de référence</span></button></div>`
+    ? `<div class="weekstats-generate"><button type="button" class="smallbtn" data-daily-new aria-label="Générer un WOD hors prog avec l’IA" title="Générer un WOD avec l’IA">${AI_ICON}</button><button type="button" class="smallbtn" data-bench-new aria-label="Tirer un WOD de référence (Fran, Cindy…)" title="WOD de référence au hasard">${DICE_ICON}</button></div>`
     : "";
 // Détail d’un WOD du jour, en fenêtre : texte complet, chrono et séance.
 function openDailyDetail(id) {
