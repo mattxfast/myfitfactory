@@ -21,17 +21,49 @@ const freePort = () =>
     });
   });
 
+// Le Worker est prêt quand /api/me répond vraiment (JSON valide, migrations appliquées : la première requête les
+// lance). Une simple connexion ne suffit pas : wrangler accepte parfois les requêtes avant que le Worker réponde.
+async function workerReady(base) {
+  try {
+    const res = await fetch(base + "/api/me", {signal: AbortSignal.timeout(10000)});
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data && "user" in data;
+  } catch {
+    return false;
+  }
+}
+
 // vars : variables supplémentaires du Worker (ex. clé et adresse d’un faux service OpenAI).
+// Démarrage fiabilisé : si le Worker ne répond pas à temps (ou si wrangler s'arrête, par exemple sur un port pris
+// entre-temps par un autre fichier de test), il est arrêté et relancé sur de nouveaux ports, 3 essais au plus.
 export async function startWorker(port, vars = {}) {
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      return await startWorkerOnce(attempt === 1 ? port : undefined, vars);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw new Error("Le Worker de test n'a pas démarré après 3 essais : " + lastError?.message);
+}
+
+async function startWorkerOnce(port, vars) {
   port ??= await freePort();
   const inspectorPort = await freePort();
   const dir = mkdtempSync(join(tmpdir(), "fitfactory-test-"));
   const wrangler = ["-y", "wrangler@4"];
-  execFileSync("npx", [...wrangler, "d1", "migrations", "apply", "myfitfactory", "--local", "--persist-to", dir], {
-    cwd: ROOT,
-    stdio: "ignore",
-    env: {...process.env, CI: "1"},
-  });
+  try {
+    execFileSync("npx", [...wrangler, "d1", "migrations", "apply", "myfitfactory", "--local", "--persist-to", dir], {
+      cwd: ROOT,
+      stdio: "ignore",
+      env: {...process.env, CI: "1"},
+    });
+  } catch (err) {
+    rmSync(dir, {recursive: true, force: true});
+    throw err;
+  }
   const child = spawn(
     "npx",
     [
@@ -53,26 +85,26 @@ export async function startWorker(port, vars = {}) {
     // Groupe de processus à part : stop() arrête npx, wrangler et workerd ensemble (sinon ils restent en mémoire).
     {cwd: ROOT, stdio: "ignore", env: {...process.env, CI: "1"}, detached: true}
   );
-  const base = `http://127.0.0.1:${port}`;
-  for (let i = 0; i < 90; i++) {
-    try {
-      await fetch(base + "/api/me");
-      break;
-    } catch {
-      await new Promise(r => setTimeout(r, 1000));
-    }
-  }
-  return {
-    base,
-    stop() {
+  let exited = false;
+  child.on("exit", () => (exited = true));
+  const base = `http://127.0.0.1:${port}`,
+    stop = () => {
       try {
         process.kill(-child.pid);
       } catch {
         child.kill();
       }
       rmSync(dir, {recursive: true, force: true});
-    },
-  };
+    };
+  const deadline = Date.now() + 120000;
+  while (!(await workerReady(base))) {
+    if (exited || Date.now() > deadline) {
+      stop();
+      throw new Error(exited ? "wrangler s'est arrêté au démarrage" : "pas de réponse en 2 minutes");
+    }
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  return {base, stop};
 }
 
 // Client HTTP minimal avec cookie de session et IP simulée (en-tête CF-Connecting-IP).

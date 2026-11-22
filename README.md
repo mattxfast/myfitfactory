@@ -282,7 +282,7 @@ Appliquer les migrations Wrangler sur la base distante :
 npx wrangler d1 migrations apply myfitfactory --remote
 ```
 
-Lancer les tests d'intégration (Node.js 20+ ; démarrent le Worker en local sur une base D1 vide et temporaire, environ 1 minute) :
+Lancer les tests d'intégration (Node.js 20+ ; démarrent le Worker en local sur une base D1 vide et temporaire, environ 1 minute ; chaque Worker de test n'est utilisé qu'une fois qu'il répond vraiment — JSON valide de `/api/me`, migrations appliquées —, et il est relancé sur de nouveaux ports, jusqu'à 3 fois, s'il ne répond pas en 2 minutes ou si wrangler s'arrête) :
 
 ```bash
 node --test tests/*.test.mjs
