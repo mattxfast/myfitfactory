@@ -31,7 +31,7 @@ Prochain numéro libre : **41**
 ## Fonctionnalités
 
 - [x] **9.** Graphiques de progression : séances par semaine, répartition par WOD et par mouvement, régularité. Page PR, rubrique Progression (12 semaines). — fait le 21/11/2026 (`8ec7539`)
-- [ ] **10.** Score des WOD de la programmation (temps, tours, charge) avec historique par WOD, comme pour les WOD de box.
+- [x] **10.** Score des WOD de la programmation (temps, tours, charge) avec historique personnel par WOD. — fait le 22/11/2026 (`920628b`)
 - [ ] **11.** Objectifs : nombre de séances par semaine ou PR cible, avec une jauge. *Pas maintenant.*
 - [ ] **12.** Calculateur de charges : pourcentages des PR (WOD « à 75 % du 1RM »).
 - [ ] **13.** Rappeler le dernier commentaire laissé sur le même WOD au moment d'enregistrer une séance.
