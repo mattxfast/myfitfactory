@@ -9,7 +9,7 @@ dire « fais l'idée 7 ».
 - Nouvelle idée : l'ajouter dans la bonne rubrique avec le **numéro suivant le plus grand existant**.
 - *En italique* : la décision de Matt quand il y en a une.
 
-Prochain numéro libre : **52**
+Prochain numéro libre : **55**
 
 ## Fiabilité et exploitation
 
@@ -56,7 +56,7 @@ Prochain numéro libre : **52**
 - [x] **42.** Page Séances : rubrique « WOD de la programmation » renommée « WOD Perso » (WOD du programme puis WOD générés ; compteur limité au programme, « 2/3 »), même nom pour l'étiquette de l'historique, le groupe du formulaire de séance et la répartition de la progression ; petits boutons ✨ (IA) et 🎲 (WOD de référence) à gauche de la carte « Nombre de séances », l'un sous l'autre, dans les deux interfaces ; WOD générés marqués « Hors prog » ; en interface simplifiée, pas de rubrique « WOD Perso » (le WOD généré est proposé dans le formulaire de séance). — fait le 22/11/2026
 - [ ] **43.** Refaire ce WOD : depuis le détail d’une séance dans l’historique, reprendre son contenu et ses charges, consulter le dernier score et enregistrer un nouveau résultat.
 - [ ] **44.** Favoris : mettre de côté un WOD généré pour le retrouver et le faire plus tard. La séance apparaît dans l’historique quand l’utilisateur enregistre son résultat.
-- [ ] **51.** WOD commun du jour : une tâche planifiée génère chaque jour un seul WOD par IA, le même pour tous les inscrits (avec une version adaptée pour peu de matériel ou les débutants). Il est proposé par une notification et sur la page Séances ; « Je le fais » l'ajoute aux WOD Perso. Classement entre les participants, comme pour les WOD de box. Une seule génération par jour pour toute l'application. *Pour plus tard, quand il y aura assez d'inscrits actifs.*
+- [ ] **54.** WOD commun du jour : une tâche planifiée génère chaque jour un seul WOD par IA, le même pour tous les inscrits (avec une version adaptée pour peu de matériel ou les débutants). Il est proposé par une notification et sur la page Séances ; « Je le fais » l'ajoute aux WOD Perso. Classement entre les participants, comme pour les WOD de box. Une seule génération par jour pour toute l'application. *Pour plus tard, quand il y aura assez d'inscrits actifs.*
 
 ## Look and feel
 
