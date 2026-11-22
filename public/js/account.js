@@ -82,14 +82,17 @@ function setPreferences(d) {
   $("#interfaceselect").value = simpleInterface() ? "simple" : "advanced";
   applyInterface();
   renderReminders();
+  renderCoachCard();
 }
 // Interface simplifiée : pas d’onglet Programmes ; la page Séances ne garde que l’historique et les mouvements
 // travaillés (sessions.js). Le formulaire de séance propose toujours tous les WOD.
 const simpleInterface = () => preferences?.interface === "simple";
 function applyInterface() {
   const simple = simpleInterface();
-  $('.navtab[data-view="programs"]').hidden = simple;
-  if (simple && !$("#view-programs").hidden) switchView("sessions");
+  // Un programme de coach proposé reste visible (pastille rouge) même en interface simplifiée.
+  const hidden = simple && !coachInvites.length;
+  $('.navtab[data-view="programs"]').hidden = hidden;
+  if (hidden && !$("#view-programs").hidden) switchView("sessions");
 }
 $("#interfaceselect").onchange = async e => {
   const value = e.target.value === "simple" ? "simple" : "advanced";

@@ -6,7 +6,7 @@ async function load() {
   try {
     const from = selectedWeekStart || mondayOf(today()),
       to = addDays(from, 6);
-    const [a, mc, p, w, pr, bx, prefs, tg] = await Promise.all([
+    const [a, mc, p, w, pr, bx, prefs, tg, ci] = await Promise.all([
       api("/activities"),
       api("/movement-catalog"),
       api("/program-data"),
@@ -15,8 +15,10 @@ async function load() {
       api("/boxes"),
       api("/preferences"),
       api("/session-tags"),
+      api("/coach-invites"),
     ]);
     loadCommonWod();
+    coachInvites = ci.invites || [];
     sessionTags = w.tags || [];
     sharedPartners = w.sharedPartners || [];
     pendingTags = tg.tags || [];
@@ -222,6 +224,7 @@ function programForDate(date) {
       x =>
         !x.is_default &&
         (!x.read_only || x.followed) &&
+        !(x.coach_mode && !x.read_only) && // programme de coach écrit pour d’autres
         !(x.start_monday === "1970-01-01" && x.end_monday === "2100-12-31") &&
         x.start_monday <= date &&
         x.end_monday >= date

@@ -2,7 +2,7 @@
 // Scripts classiques chargés dans l’ordre par index.html (portée globale partagée) ; boot.js démarre l’application en dernier.
 
 let boxes = [],
-  boxPending = {members: 0, managers: 0},
+  boxPending = {members: 0, managers: 0, coaches: 0},
   boxMemberships = [],
   boxCategories = [],
   managedBoxId = "",
@@ -59,7 +59,7 @@ function setBoxes(d) {
   boxes = d.boxes || [];
   boxMemberships = d.memberships || [];
   boxCategories = d.categories || [];
-  boxPending = d.pending || {members: 0, managers: 0};
+  boxPending = d.pending || {members: 0, managers: 0, coaches: 0};
   renderMyBoxes();
   renderBoxNav();
 }

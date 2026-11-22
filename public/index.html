@@ -248,6 +248,7 @@
           <div id="weekafter"></div>
         </section>
         <section id="view-programs" hidden>
+          <div id="coachinvites"></div>
           <div id="programlist"></div>
           <div class="bottom-action">
             <button id="findprogram" class="primary">Trouver un programme</button
@@ -525,6 +526,22 @@
           </section>
           <section class="admin-group" data-account-group>
             <div class="admin-group-title" role="button" tabindex="0" aria-expanded="true">
+              <span class="admin-collapse-indicator">−</span><span>Coach</span>
+            </div>
+            <div class="admin-group-body">
+              <section class="profile-export-card" id="coachcard">
+                <p class="muted">
+                  Un coach écrit des programmes complets et les propose aux inscrits de son choix, qui les acceptent ou
+                  non. Le rôle est validé par un administrateur.
+                </p>
+                <p id="coachstatus"></p>
+                <button type="button" class="primary" id="coachrequest">Devenir coach</button>
+                <div id="coacherror" class="error" role="status"></div>
+              </section>
+            </div>
+          </section>
+          <section class="admin-group" data-account-group>
+            <div class="admin-group-title" role="button" tabindex="0" aria-expanded="true">
               <span class="admin-collapse-indicator">−</span><span>Apparence</span>
             </div>
             <div class="admin-group-body">
@@ -624,11 +641,30 @@
               ><input type="checkbox" name="is_default" /> Programme par défaut (du 01/01/1970 au 31/12/2100)</label
             >
             <div class="two">
-              <label>Début<input name="start" type="date" required /></label
-              ><label>Fin<input name="end" type="date" required /></label>
+              <label id="programstartfield">Début<input name="start" type="date" required /></label
+              ><label id="programendfield">Fin<input name="end" type="date" required /></label>
             </div>
           </section>
-          <section class="form-block">
+          <section class="form-block" id="programcoachfield" hidden>
+            <h3>Programme de coach</h3>
+            <label class="checkbox-label"
+              ><input type="checkbox" name="coach" /> Programme de coach, à proposer aux inscrits de mon choix</label
+            >
+            <div class="two" id="programcoachoptions">
+              <label
+                >Nombre de semaines<input
+                  name="coach_weeks"
+                  type="number"
+                  min="1"
+                  max="52"
+                  step="1"
+                  inputmode="numeric"
+              /></label>
+              <label class="checkbox-label"><input type="checkbox" name="coach_dated" /> Avec dates</label>
+            </div>
+            <p class="hint" id="programcoachhint"></p>
+          </section>
+          <section class="form-block" id="programsharefield">
             <h3>Partage</h3>
             <label class="checkbox-label" id="programpublicfield"
               ><input type="checkbox" name="is_public" /> Programme public (les autres utilisateurs peuvent le trouver
@@ -677,12 +713,45 @@
             <h3>Mes dates</h3>
             <div class="two">
               <label>Début<input name="start" type="date" required /></label
-              ><label>Fin<input name="end" type="date" required /></label>
+              ><label id="followendfield">Fin<input name="end" type="date" required /></label>
             </div>
             <p class="hint">La semaine 1 du programme commence la semaine de ta date de début.</p>
           </section>
           <button class="primary" id="followsubmit">Suivre ce programme</button>
           <div class="error" id="followerror"></div>
+        </form>
+      </dialog>
+      <dialog id="coachinvitedialog" class="modal">
+        <form id="coachinviteform">
+          <input type="hidden" name="program_id" />
+          <div class="sectionhead">
+            <h2 id="coachinvitetitle">Proposer le programme</h2>
+            <button type="button" class="iconbtn" data-close-dialog="coachinvitedialog">×</button>
+          </div>
+          <section class="form-block">
+            <h3>Déjà tagués</h3>
+            <div id="coachinvitelist" class="partner-chips"></div>
+          </section>
+          <section class="form-block">
+            <h3>Taguer</h3>
+            <p class="hint">
+              Chaque personne reçoit une invitation et choisit de suivre le programme ou non. Tous les WOD doivent être
+              écrits sur toutes les semaines ; ensuite, tu ne peux plus ajouter ni supprimer de WOD, mais tes
+              modifications s’appliquent aux semaines à venir de ceux qui le suivent.
+            </p>
+            <div id="coachinvitechips" class="partner-chips"></div>
+            <label
+              >Ajouter une personne<input
+                id="coachinvitesearch"
+                type="search"
+                maxlength="60"
+                placeholder="Prénom ou nom"
+                autocomplete="off"
+            /></label>
+            <div id="coachinviteresults" class="partner-results"></div>
+          </section>
+          <button class="primary" id="coachinvitesubmit">Proposer le programme</button>
+          <div class="error" id="coachinviteerror"></div>
         </form>
       </dialog>
       <dialog id="woddialog" class="modal">
@@ -1426,6 +1495,7 @@
     <script src="/js/progress.js"></script>
     <script src="/js/report.js"></script>
     <script src="/js/account.js"></script>
+    <script src="/js/coach.js"></script>
     <script src="/js/ui.js"></script>
     <script src="/js/boot.js"></script>
   </body>

@@ -87,9 +87,8 @@ async function openAiDialog(mode, pid, wodId = null, week = null, origin = mode 
       mode === "wod"
         ? "L’IA écrit le contenu de ce WOD pour chaque semaine du programme (" + plural + "), avec une progression."
         : "L’IA écrit le contenu de ce WOD pour la semaine " +
-          (weeks.includes(week) ? "S" + (weeks.indexOf(week) + 1) + " " : "") +
-          "du " +
-          fmt(week) +
+          (weeks.includes(week) ? "S" + (weeks.indexOf(week) + 1) : "") +
+          (p.coach_mode === "free" ? "" : " du " + fmt(week)) +
           (weeklyWodContent(wodId, week).trim() ? " (le contenu déjà écrit est remplacé)." : ".");
   }
   if (mode !== "program") for (const kind of ["technique", "force"]) renderAiMovements(kind);
@@ -211,8 +210,11 @@ async function runSlots(slots, request, requestFor = () => request) {
         slots.length +
         " : " +
         w.name +
-        ", semaine du " +
-        fmt(s.week) +
+        ", " +
+        weekName(
+          programs.find(x => x.id === $("#aiform").elements.program_id.value),
+          s.week
+        ) +
         "… (ne ferme pas l’application)"
     );
     await aiGenerate(w.id, s.week, requestFor(w));
