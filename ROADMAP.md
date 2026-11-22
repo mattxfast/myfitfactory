@@ -9,7 +9,7 @@ dire « fais l'idée 7 ».
 - Nouvelle idée : l'ajouter dans la bonne rubrique avec le **numéro suivant le plus grand existant**.
 - *En italique* : la décision de Matt quand il y en a une.
 
-Prochain numéro libre : **45**
+Prochain numéro libre : **46**
 
 ## Fiabilité et exploitation
 
@@ -64,6 +64,7 @@ Prochain numéro libre : **45**
 - [x] **21.** WOD de la box déjà fait : retirer aussi son bouton ＋ (comme pour la programmation). — fait le 19/11/2026
 - [x] **22.** Mouvements cochés d'office par le WOD du jour : reconnaître aussi les variantes de noms (« Wall ball » / « Wall balls », pluriels, abréviations). — fait le 19/11/2026
 - [ ] **23.** Écrans de démarrage et icône : vérifier le rendu sur Android (icône « maskable »).
+- [x] **45.** Couleurs : titres de rubrique en aplat de couleur d'accent (jaune) sur toutes les pages ; blocs de navigation (choix de la semaine ou du jour, en-tête de programme, bandeaux « Mes programmes », « Chrono ») sur fond de carte avec une bordure épaisse (5 px) de la couleur d'accent, pour les 4 thèmes. — fait le 22/11/2026
 
 ## Écartées
 

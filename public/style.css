@@ -86,6 +86,10 @@
   --banner-border-width: 2px; /* épaisseur de la bordure des bandeaux */
   --banner-ink: #111; /* texte */
   --banner-ink-soft: #4a3d00; /* texte secondaire */
+  /* Bloc de navigation (choix de la semaine ou du jour, en-tête de programme, bandeau de page) : fond de carte cerné
+     d'une bordure épaisse de la couleur d'accent ; les titres de rubrique, eux, sont en aplat de couleur (--banner-bg). */
+  --nav-block-border: var(--orange-strong); /* jaune foncé : le jaune vif est trop pâle sur fond blanc */
+  --nav-block-border-width: 5px;
   --orange: #f5b800; /* accent jaune (boutons replier, courbes PR) */
   --orange-strong: #c99700; /* accent foncé (liserés, survols) */
   --chart-mark: #b08400; /* graphiques : accent assez foncé sur fond clair (contraste ≥ 3:1) */
@@ -158,6 +162,7 @@
   --banner-bg-hover: #e0b622;
   --banner-border: #ffd60a;
   --banner-border-soft: #ffd60a;
+  --nav-block-border: var(--banner-border);
   --banner-border-width: 2px;
   --banner-ink: #1a1a1a;
   --banner-ink-soft: #3d3208;
@@ -210,6 +215,7 @@
   --banner-bg-hover: #262626;
   --banner-border: #d62828;
   --banner-border-soft: #d62828;
+  --nav-block-border: var(--banner-border);
   --banner-border-width: 2px;
   --banner-ink: #fff;
   --banner-ink-soft: #d0d0d0;
@@ -263,6 +269,7 @@
   --banner-bg-hover: #d9157f;
   --banner-border: #ff8a1f;
   --banner-border-soft: #ff8a1f;
+  --nav-block-border: var(--banner-bg);
   --banner-border-width: 2px;
   --banner-ink: #fff;
   --banner-ink-soft: #ffd2e6;
@@ -1116,16 +1123,16 @@ header {
 
 /* Dashboard visual hierarchy */
 .weekbar {
-  background: var(--banner-bg);
-  border-color: var(--banner-border-soft);
-  border-width: var(--banner-border-width);
+  background: var(--surface);
+  border-color: var(--nav-block-border);
+  border-width: var(--nav-block-border-width);
   box-shadow: none;
 }
 .weekbar small {
-  color: var(--banner-ink-soft);
+  color: var(--muted);
 }
 .weekbar strong {
-  color: var(--banner-ink);
+  color: var(--ink);
 }
 .weekheading,
 .section-toolbar {
@@ -1139,7 +1146,7 @@ header {
 .section-toolbar h2 {
   font-size: 15px;
   font-weight: 800;
-  color: var(--ink-soft);
+  color: var(--banner-ink);
 }
 .weekheading span,
 .section-toolbar .section-count {
@@ -1260,8 +1267,8 @@ header {
 /* Rubriques plus contrastées et bouton d’ajout près du compteur */
 .weekheading,
 .section-toolbar {
-  background: var(--section-bg);
-  border-color: var(--section-border);
+  background: var(--banner-bg);
+  border-color: var(--banner-border);
 }
 .weekstat-sessions {
   display: grid;
@@ -1381,8 +1388,8 @@ header {
   box-shadow: none;
 }
 .programhead {
-  background: var(--banner-bg);
-  border-bottom: 1px solid var(--banner-border-soft);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
   padding: 14px 16px;
 }
 .programbody {
@@ -1589,8 +1596,8 @@ button:disabled {
   margin: 10px 0;
 }
 .program-section-heading {
-  background: var(--section-bg);
-  color: var(--ink-soft);
+  background: var(--banner-bg);
+  color: var(--banner-ink);
   font: 800 13px Manrope;
   padding: 8px 11px;
   margin: 0 -10px 8px;
@@ -1642,7 +1649,7 @@ button:disabled {
 #nutritionboard .weekdate-label {
   font-size: 15px;
   font-weight: 700;
-  color: var(--banner-ink);
+  color: var(--ink);
   gap: 10px;
   flex: 1;
 }
@@ -1671,15 +1678,14 @@ button:disabled {
 
 /* Page Programmation : hiérarchie visuelle identique à la page Séances. */
 #view-programs .programhead {
-  background: var(--banner-bg);
-  border-bottom: 1px solid var(--banner-border-soft);
+  background: var(--surface);
   padding: 14px 16px;
 }
 #view-programs .programhead h3 {
-  color: var(--banner-ink);
+  color: var(--ink);
 }
 #view-programs .programhead small {
-  color: var(--banner-ink-soft);
+  color: var(--muted);
 }
 #view-programs .program-section {
   background: var(--content-bg);
@@ -1713,9 +1719,9 @@ button:disabled {
   margin: 16px 0;
 }
 #view-programs .program-section-heading {
-  background: var(--section-bg);
-  color: var(--ink-soft);
-  border: 1px solid var(--section-border);
+  background: var(--banner-bg);
+  color: var(--banner-ink);
+  border: 1px solid var(--banner-border);
   border-radius: 11px;
   padding: 10px 13px;
   margin: 0 0 9px;
@@ -1781,7 +1787,7 @@ button:disabled {
   margin: 5px 0 0;
 }
 #view-programs .programhead {
-  border: var(--banner-border-width) solid var(--banner-border);
+  border: var(--nav-block-border-width) solid var(--nav-block-border);
   border-radius: 11px;
   margin: 0 0 2px;
 }
@@ -1939,14 +1945,14 @@ button:disabled {
   min-height: 52px;
   padding: 9px 14px;
   margin: 0 0 var(--page-content-gap);
-  background: var(--banner-bg);
-  border: var(--banner-border-width) solid var(--banner-border);
+  background: var(--surface);
+  border: var(--nav-block-border-width) solid var(--nav-block-border);
   border-radius: 11px;
-  color: var(--banner-ink);
+  color: var(--ink);
 }
 .page-banner h2 {
   margin: 0;
-  color: var(--banner-ink);
+  color: var(--ink);
   font: 800 15px Manrope;
 }
 .account-heading {
@@ -1955,9 +1961,10 @@ button:disabled {
   gap: 7px;
   margin: var(--page-content-gap) 0 var(--section-content-gap);
   padding: 9px 11px;
-  background: var(--section-bg);
-  border: 1px solid var(--section-border);
+  background: var(--banner-bg);
+  border: 1px solid var(--banner-border);
   border-radius: 11px;
+  color: var(--banner-ink);
 }
 .page-banner + .account-heading {
   margin-top: 0;
@@ -2737,15 +2744,15 @@ button:disabled {
   font-size: 15px;
   font-weight: 700;
   line-height: 1;
-  background: var(--orange);
+  background: var(--banner-ink);
   border: 0;
   border-radius: 6px;
-  color: var(--on-accent);
-}
-.programhead .collapse-program {
-  background: var(--banner-ink);
   color: var(--banner-bg);
-} /* sur bandeau orange : couleurs inversées */
+} /* sur titre de rubrique en aplat de couleur : couleurs inversées */
+.collapse-program {
+  background: var(--orange);
+  color: var(--on-accent);
+} /* sur bloc de navigation (fond de carte) : couleur d'accent */
 #view-sessions .weekheading {
   display: flex;
   align-items: center;
