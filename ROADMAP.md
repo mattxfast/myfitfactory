@@ -9,7 +9,7 @@ dire « fais l'idée 7 ».
 - Nouvelle idée : l'ajouter dans la bonne rubrique avec le **numéro suivant le plus grand existant**.
 - *En italique* : la décision de Matt quand il y en a une.
 
-Prochain numéro libre : **49**
+Prochain numéro libre : **50**
 
 ## Fiabilité et exploitation
 
@@ -68,6 +68,7 @@ Prochain numéro libre : **49**
 - [x] **46.** Formulaire de séance plus court : date sur une ligne, « Réalisé / notes » sur 3 lignes qui s'agrandit à la saisie, « Partenaires » replié comme « Focus mouvement » (nombre affiché). — fait le 22/11/2026
 - [x] **47.** Menu du bas : libellé court sous chaque icône (Séances, Programmes, Mon fitness, Alimentation, Chrono ; idem pour les menus administration et gestionnaire). — fait le 22/11/2026
 - [x] **48.** États vides plus sobres : score de forme sans données (message au lieu du radar vide), « 7 derniers jours » de l'alimentation limité aux jours avec des repas. — fait le 22/11/2026
+- [x] **49.** Case « Comp » renommée « Compét. », avec l'info-bulle « Semaine de compétition ». — fait le 22/11/2026
 
 ## Écartées
 
