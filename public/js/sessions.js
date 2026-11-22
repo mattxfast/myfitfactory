@@ -195,6 +195,12 @@ function openSessionDetail(id) {
       (movements.length ? part("Mouvements travaillés :", [...new Set(movements)].join(", ")) : "") +
       (partners.length ? part("Partenaires :", partners.join(", ")) : "") ||
     `<p class="muted">Pas de détail pour cette séance.</p>`;
+  const history = $("#sessiondetailscores");
+  history.hidden = !s.program_score_type;
+  history.onclick = () => {
+    $("#sessiondetaildialog").close();
+    openProgramScoreHistory(s.wod_id, s.wod_name);
+  };
   $("#sessiondetailedit").onclick = () => {
     $("#sessiondetaildialog").close();
     openSession(s);
@@ -480,6 +486,14 @@ function openProgramWodDetail(wodId, week) {
   $("#dailydetailactions").innerHTML = done
     ? ""
     : `<button type="button" class="primary" data-detail-log><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg><span>Ajouter une séance</span></button>`;
+  $("#dailydetailactions").insertAdjacentHTML(
+    "beforeend",
+    '<button type="button" class="smallbtn" data-program-scores>Historique des scores</button>'
+  );
+  $("#dailydetailactions").querySelector("[data-program-scores]").onclick = () => {
+    $("#dailydetaildialog").close();
+    openProgramScoreHistory(w.id, w.name);
+  };
   const log = $("#dailydetailactions").querySelector("[data-detail-log]");
   if (log)
     log.onclick = () => {
@@ -487,6 +501,29 @@ function openProgramWodDetail(wodId, week) {
       openWodChoice(w.id);
     };
   $("#dailydetaildialog").showModal();
+}
+async function openProgramScoreHistory(id, name) {
+  const dialog = $("#programscoresdialog"),
+    body = $("#programscoresbody");
+  $("#programscoresname").textContent = name;
+  body.innerHTML = '<p class="muted">Chargement…</p>';
+  const loading = body.firstElementChild;
+  dialog.showModal();
+  try {
+    const {scores} = await api("/wods/" + id + "/scores");
+    if (!dialog.open || body.firstElementChild !== loading) return;
+    body.innerHTML = scores.length
+      ? `<ul class="leaderboard-list">${scores
+          .map(
+            s =>
+              `<li><span class="leaderboard-name">${fmt(s.session_date)}${s.pending ? ' <small class="muted">(en attente)</small>' : ""}</span><b>${esc(formatScore(s.score_type, s.score_value))}</b></li>`
+          )
+          .join("")}</ul>`
+      : '<p class="muted">Aucun score enregistré pour ce WOD.</p>';
+  } catch (e) {
+    if (dialog.open && body.firstElementChild === loading)
+      body.innerHTML = `<p class="error">${esc(e.offline ? "Consulte cet historique une première fois en ligne pour le retrouver hors connexion." : e.message)}</p>`;
+  }
 }
 // WOD de la box en fenêtre (même fenêtre que le WOD du jour) : contenu complet et séance (le classement reste sur la
 // ligne).

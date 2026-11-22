@@ -42,6 +42,10 @@ function selectedDailyWod() {
   const v = $("#sessionform").elements.wod_id.value || "";
   return v.startsWith("daily:") ? dailyWodsById.get(v.slice(6)) || null : null;
 }
+function selectedProgramWod() {
+  const f = $("#sessionform").elements;
+  return (wodsByProgram[f.program_id.value] || []).find(w => w.id === f.wod_id.value);
+}
 function fillWodOptions(pid, selected = "") {
   const f = $("#sessionform").elements.wod_id,
     ws = pid === "none" ? [] : visibleWods(pid),
@@ -97,7 +101,7 @@ function syncSessionWod(session = null) {
   }
   // Nouvelle séance sur un WOD de la programmation : ses mouvements à travailler sont cochés par défaut, une seule fois
   // par WOD choisi (dans la liste du programme, ou ajoutés en fin de liste).
-  const programWod = (wodsByProgram[f.elements.program_id.value] || []).find(w => w.id === f.elements.wod_id.value);
+  const programWod = selectedProgramWod();
   if (
     !boxWod &&
     !dailyWod &&
@@ -185,67 +189,79 @@ function selectedBenchmark() {
   return d?.benchmark_id ? benchmarkFor(d.benchmark_id) : null;
 }
 function renderSessionScore(session = null) {
-  const f = $("#sessionform"),
-    w = selectedBoxWod(),
-    bench = !w && selectedBenchmark(),
-    show = (!!w && w.score_type !== "none") || !!bench,
-    box = $("#scoreinputs");
+  const f = $("#sessionform").elements,
+    boxWod = selectedBoxWod(),
+    bench = !boxWod && selectedBenchmark(),
+    programWod = selectedProgramWod(),
+    box = $("#scoreinputs"),
+    savedType = session
+      ? programWod?.id === session.wod_id && session.program_score_type
+      : programWod && box.dataset.wod === programWod.id
+        ? box.dataset.type
+        : null,
+    type = boxWod?.score_type || savedType || programWod?.score_type || "none",
+    key = f.wod_id.value,
+    show = !!bench || type !== "none";
   $("#sessionscoresection").hidden = !show;
+  f.score_category_id.closest("label").hidden = !boxWod;
+  f.score_category_id.disabled = !boxWod || !show;
   if (!show) {
     box.innerHTML = "";
     box.dataset.wod = "";
+    box.dataset.type = "";
     return;
   }
-  // Benchmark : pas de catégorie de box, mais Rx ou Scaled ; le score est suivi dans la page PR.
-  f.elements.score_category_id.closest("label").hidden = !!bench;
+  // Les rechargements des options de la semaine ne doivent pas effacer une saisie en cours.
+  if (box.dataset.wod === key && !session) return;
+  box.dataset.wod = key;
+  box.dataset.type = type;
   $("#sessionscoresection .hint").textContent = bench
     ? "Facultatif : il est suivi dans la page PR, rubrique Benchmarks."
-    : "Facultatif : il alimente le classement du WOD entre les membres de la box.";
+    : boxWod
+      ? "Facultatif : il alimente le classement du WOD entre les membres de la box."
+      : "Facultatif : il est ajouté à ton historique pour ce WOD.";
+  const v = session?.score_value ?? null;
   if (bench) {
-    const id = "bench:" + selectedDailyWod().id;
-    if (box.dataset.wod === id && !session) return;
-    box.dataset.wod = id;
     box.innerHTML =
-      benchmarkScoreFields(bench, session?.score_value ?? null) +
+      benchmarkScoreFields(bench, v) +
       `<label class="checkbox-label"><input type="checkbox" name="score_scaled" ${Number(session?.score_scaled) ? "checked" : ""}> Scaled</label>`;
     return;
   }
-  if (box.dataset.wod === w.id && !session) return;
-  box.dataset.wod = w.id;
-  const cats = boxCategories.filter(c => c.box_id === w.box_id),
-    previous = session?.score_category_id || f.elements.score_category_id.value,
-    v = session?.score_value ?? null;
-  f.elements.score_category_id.innerHTML = cats.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
-  if (cats.some(c => c.id === previous)) f.elements.score_category_id.value = previous;
+  if (boxWod) {
+    const cats = boxCategories.filter(c => c.box_id === boxWod.box_id),
+      previous = session?.score_category_id || f.score_category_id.value;
+    f.score_category_id.innerHTML = cats.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+    if (cats.some(c => c.id === previous)) f.score_category_id.value = previous;
+  }
   box.innerHTML =
-    w.score_type === "time"
+    type === "time"
       ? `<label>Temps (min : s)<span class="score-time"><input name="score_min" type="number" min="0" max="1440" step="1" inputmode="numeric" placeholder="min" value="${v === null ? "" : Math.floor(v / 60)}"><span>:</span><input name="score_sec" type="number" min="0" max="59" step="1" inputmode="numeric" placeholder="s" value="${v === null ? "" : v % 60}"></span></label>`
-      : w.score_type === "reps"
-        ? `<label>Répétitions<input name="score_reps" type="number" min="1" max="100000" step="1" inputmode="numeric" value="${v ?? ""}"></label>`
-        : `<label>Charge (kg)<input name="score_load" type="number" min="0.5" max="1000" step="0.5" inputmode="decimal" value="${v ?? ""}"></label>`;
+      : type === "load"
+        ? `<label>Charge (kg)<input name="score_amount" type="number" min="0.5" max="1000" step="0.5" inputmode="decimal" value="${v ?? ""}"></label>`
+        : `<label>${type === "rounds" ? "Tours" : "Répétitions"}<input name="score_amount" type="number" min="1" max="100000" step="1" inputmode="numeric" value="${v ?? ""}"></label>`;
 }
 // Valeur du score saisie (null si vide) ; le temps est converti en secondes.
 function readSessionScore() {
   const f = $("#sessionform").elements,
-    w = selectedBoxWod(),
-    bench = !w && selectedBenchmark();
+    boxWod = selectedBoxWod(),
+    bench = !boxWod && selectedBenchmark(),
+    type = $("#scoreinputs").dataset.type;
   if (bench) {
     const score = readBenchmarkScore(bench, f);
     return score.error ? score : {score_value: score.value, score_scaled: !!f.score_scaled?.checked};
   }
-  if (!w || w.score_type === "none") return {score_value: null, score_category_id: null};
+  if (!type) return {score_value: null};
   let value = null;
-  if (w.score_type === "time") {
+  if (type === "time") {
     const mn = f.score_min.value,
       sec = f.score_sec.value;
     if (mn !== "" || sec !== "") value = Number(mn || 0) * 60 + Number(sec || 0);
-    if (value !== null && (!Number.isInteger(value) || value < 1 || Number(sec || 0) > 59))
-      return {error: "Temps invalide : minutes et secondes (0 à 59)."};
-  } else {
-    const raw = (w.score_type === "reps" ? f.score_reps : f.score_load).value;
-    if (raw !== "") value = Number(raw);
-  }
-  return {score_value: value, score_category_id: value === null ? null : f.score_category_id.value};
+    if (value !== null && (!Number.isInteger(value) || value < 1 || value > 86400 || Number(sec || 0) > 59))
+      return {error: "Temps invalide : minutes et secondes (0 à 59), 24 h au maximum."};
+  } else if (f.score_amount.value !== "") value = Number(f.score_amount.value);
+  return boxWod
+    ? {score_value: value, score_category_id: value === null ? null : f.score_category_id.value}
+    : {score_value: value, score_type: value === null ? null : type};
 }
 // Mouvement du programme correspondant à un mouvement du catalogue (même identifiant de catalogue ou même nom).
 const sameMovement = (pm, cm) =>
@@ -540,29 +556,27 @@ async function saveSession(event) {
     catalog_movement_ids: [...form.querySelectorAll('input[name="catalog_movement_ids"]:checked')].map(x => x.value),
     tagged_user_ids: sessionPartners.map(p => p.id),
   };
-  // WOD de box : séance « hors programme » rattachée au WOD de la box, avec son score éventuel.
-  const boxWod = selectedBoxWod();
-  if (boxWod) {
-    const score = readSessionScore();
-    if (score.error) {
-      $("#sessionerror").textContent = score.error;
-      button.disabled = false;
-      return;
-    }
-    Object.assign(body, {program_id: "none", wod_id: "other", box_wod_id: boxWod.id}, score);
+  const boxWod = selectedBoxWod(),
+    dailyWod = selectedDailyWod(),
+    score = readSessionScore();
+  if (score.error) {
+    $("#sessionerror").textContent = score.error;
+    button.disabled = false;
+    return;
   }
-  // WOD du jour : séance « hors programme » rattachée au WOD généré.
-  const dailyWod = selectedDailyWod();
-  if (dailyWod) {
-    // WOD de référence : score (temps ou tours) et Rx / Scaled.
-    const score = dailyWod.benchmark_id ? readSessionScore() : {};
-    if (score.error) {
-      $("#sessionerror").textContent = score.error;
-      button.disabled = false;
-      return;
-    }
-    Object.assign(body, {program_id: "none", wod_id: "other", daily_wod_id: dailyWod.id}, score);
-  }
+  Object.assign(
+    body,
+    {
+      box_wod_id: boxWod?.id ?? null,
+      daily_wod_id: dailyWod?.id ?? null,
+      score_category_id: null,
+      score_scaled: null,
+      score_type: null,
+    },
+    score
+  );
+  // WOD de box ou du jour : la séance est rattachée au programme technique « Hors programme ».
+  if (boxWod || dailyWod) Object.assign(body, {program_id: "none", wod_id: "other"});
   try {
     await api(id ? "/sessions/" + id : "/sessions", {method: id ? "PUT" : "POST", body: JSON.stringify(body)});
     if (!boxWod && !dailyWod)

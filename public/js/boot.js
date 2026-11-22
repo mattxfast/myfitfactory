@@ -26,6 +26,11 @@ FFOffline.init({
         wod_name: dailyWod.title,
         planned_comment: dailyWod.content || "",
         daily_wod_date: dailyWod.wod_date,
+        score_type: dailyWod.score_type,
+        benchmark_id: dailyWod.benchmark_id,
+        program_score_type: null,
+        box_name: null,
+        score_category_name: null,
         ...(activities.find(x => x.id === b.activity_id)
           ? {activity_name: activities.find(x => x.id === b.activity_id).name}
           : {}),
@@ -39,6 +44,8 @@ FFOffline.init({
         box_name: boxWod.box_name,
         box_wod_date: boxWod.wod_date,
         score_type: boxWod.score_type,
+        benchmark_id: null,
+        program_score_type: null,
         score_category_name: boxCategories.find(c => c.id === b.score_category_id)?.name || null,
         ...(activities.find(x => x.id === b.activity_id)
           ? {activity_name: activities.find(x => x.id === b.activity_id).name}
@@ -51,6 +58,10 @@ FFOffline.init({
           : programs.flatMap(x => wodsByProgram[x.id] || []).find(x => x.id === b.wod_id),
       a = activities.find(x => x.id === b.activity_id);
     return {
+      program_score_type: b.score_type ?? null,
+      benchmark_id: null,
+      box_name: null,
+      score_category_name: null,
       ...(p ? {program_name: p.name} : b.program_id === "none" ? {program_name: "Hors programme"} : {}),
       ...(w ? {wod_name: w.name === "__AUTRES__" ? "Autres" : w.name, planned_comment: w.planned_comment || ""} : {}),
       ...(a ? {activity_name: a.name} : {}),

@@ -235,6 +235,7 @@ test("programmes publics : recherche, suivi d'un seul programme à la fois, lect
   await alice.post("/programs", {name: "Bloc secret", start: addDays(start, 70), end: addDays(start, 90)});
   const wod = await alice.post(`/programs/${pub.data.id}/wods`, {
     name: "Intervalles",
+    score_type: "rounds",
     activity_id: activityId,
     duration_minutes: 45,
   });
@@ -278,18 +279,22 @@ test("programmes publics : recherche, suivi d'un seul programme à la fois, lect
     movement_ids: [],
     catalog_movement_ids: [],
   };
-  const logged = await bob.post("/sessions", {...base, wod_id: wod.data.id});
+  const logged = await bob.post("/sessions", {...base, wod_id: wod.data.id, score_type: "rounds", score_value: 7});
   assert.equal(logged.status, 200, JSON.stringify(logged.data));
   const other = await bob.post("/sessions", {...base, wod_id: "other"});
   assert.equal(other.status, 200, JSON.stringify(other.data));
   const week = (await bob.get(`/week-data?from=${start}&to=${addDays(start, 6)}`)).data.sessions;
   assert.equal(week.find(x => x.id === logged.data.id).program_name, "Bloc Engine public");
+  const path = `/wods/${wod.data.id}/scores`;
+  assert.equal((await bob.get(path)).data.scores[0].score_value, 7);
+  assert.deepEqual((await alice.get(path)).data.scores, []);
   assert.equal(week.find(x => x.id === other.data.id).program_name, "Hors programme");
   // l'auteur ne peut plus supprimer le WOD ni le programme réalisés par un suiveur
   assert.equal((await alice.del(`/wods/${wod.data.id}`)).status, 409);
   assert.equal((await alice.del(`/programs/${pub.data.id}`)).status, 409);
   // arrêter de suivre : la séance reste dans l'historique
   assert.equal((await bob.del("/program-follow")).status, 200);
+  assert.equal((await bob.get(path)).data.scores[0].score_value, 7);
   const after = (await bob.get("/program-data")).data.programs.find(x => x.id === pub.data.id);
   assert.equal(after.followed, 0);
   assert.ok(

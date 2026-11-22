@@ -32,6 +32,7 @@ function formatScore(type, value) {
     return h ? h + ":" + String(mn).padStart(2, "0") + ":" + sec : mn + ":" + sec;
   }
   if (type === "reps") return v + " rép.";
+  if (type === "rounds") return v + (v === 1 ? " tour" : " tours");
   if (type === "load") return v.toLocaleString("fr-FR") + " kg";
   return String(v);
 }

@@ -705,6 +705,18 @@
               ><input type="checkbox" name="is_tracked" /> Entraînement suivi (programmation semaine par semaine)</label
             >
           </section>
+          <section class="form-block">
+            <h3>Score</h3>
+            <label
+              >Type de score
+              <select name="score_type">
+                <option value="none">Sans score</option>
+                <option value="time">Temps (For Time)</option>
+                <option value="rounds">Tours (AMRAP)</option>
+                <option value="load">Charge (kg)</option>
+              </select>
+            </label>
+          </section>
           <!-- Mouvements à travailler du WOD : bloc à part, comme « Focus mouvement » dans l’enregistrement d’une séance. -->
           <section class="form-block">
             <details id="wodmovementdetails" class="movement-fold">
@@ -1082,6 +1094,7 @@
         <p id="sessiondetailmeta" class="muted"></p>
         <div id="sessiondetailbody" class="session-detail-body"></div>
         <div class="daily-detail-actions">
+          <button type="button" class="smallbtn" id="sessiondetailscores" hidden>Historique des scores</button>
           <button type="button" class="smallbtn" id="sessiondetailedit">Modifier</button>
         </div>
       </dialog>
@@ -1149,6 +1162,14 @@
             Intermédiaire, 60 Avancé, 80 Élite.
           </p>
         </div>
+      </dialog>
+      <dialog id="programscoresdialog" class="modal" aria-labelledby="programscorestitle">
+        <div class="sectionhead">
+          <h2 id="programscorestitle">Historique des scores</h2>
+          <button type="button" class="iconbtn" data-close-dialog="programscoresdialog" aria-label="Fermer">×</button>
+        </div>
+        <p id="programscoresname" class="muted"></p>
+        <div id="programscoresbody" aria-live="polite"></div>
       </dialog>
       <dialog id="leaderboarddialog" class="modal">
         <div class="sectionhead">

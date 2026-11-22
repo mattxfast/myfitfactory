@@ -250,3 +250,62 @@ test("modifier un programme ne rend pas visible le programme technique « Hors p
     200
   );
 });
+
+test("scores des WOD de programmation : saisie facultative et historique personnel par WOD", async () => {
+  const fields = {name: "Score programmation", activity_id: activityId, duration_minutes: 60};
+  const wods = `/programs/${programId}/wods`;
+  assert.equal((await alice.post(wods, {...fields, score_type: "reps"})).status, 400);
+  const created = await alice.post(wods, {...fields, score_type: "rounds"});
+  assert.equal(created.status, 200, JSON.stringify(created.data));
+  const wid = created.data.id,
+    path = `/wods/${wid}/scores`,
+    body = sessionBody({wod_id: wid});
+  assert.equal((await alice.get(wods)).data.wods.find(w => w.id === wid).score_type, "rounds");
+  assert.equal((await client(worker.base).get(path)).status, 401);
+  assert.equal((await alice.post("/sessions", {...body, score_value: 2.5})).status, 400);
+  assert.equal((await alice.post("/sessions", {...body, score_value: true})).status, 400);
+  assert.equal((await alice.post("/sessions", {...body, score_type: "load", score_value: 100})).status, 400);
+  assert.equal((await alice.post("/sessions", body)).status, 200);
+  const first = {
+    ...body,
+    session_date: addDays(today(), -7),
+    score_type: "rounds",
+    score_value: 4,
+    client_id: randomUUID(),
+  };
+  assert.equal((await alice.post("/sessions", first)).status, 200);
+  assert.equal((await alice.post("/sessions", first)).data.id, first.client_id);
+  assert.deepEqual((await bob.get(path)).data.scores, []);
+
+  // Les WOD changent de configuration sans changer l’unité des scores précédents.
+  assert.equal((await alice.put(`/wods/${wid}`, {...fields, score_type: "time"})).status, 200);
+  assert.equal((await alice.put(`/sessions/${first.client_id}`, {...first, score_value: 5})).status, 200);
+  assert.equal((await alice.post("/sessions", {...body, score_value: 86401})).status, 400);
+  const second = await alice.post("/sessions", {...body, score_value: 125});
+  assert.equal(second.status, 200);
+  assert.equal((await alice.put(`/wods/${wid}`, {...fields, score_type: "load"})).status, 200);
+  assert.equal((await alice.put(`/wods/${wid}`, fields)).status, 200);
+  assert.equal((await alice.post("/sessions", {...body, score_value: 0})).status, 400);
+  const third = await alice.post("/sessions", {...body, session_date: addDays(today(), -1), score_value: 82.5});
+  assert.equal(third.status, 200);
+  const scores = (await alice.get(path)).data.scores;
+  assert.deepEqual(
+    scores.map(s => [s.score_type, s.score_value]),
+    [
+      ["time", 125],
+      ["load", 82.5],
+      ["rounds", 5],
+    ]
+  );
+  const week = (await alice.get(`/week-data?from=${today()}&to=${today()}`)).data.sessions;
+  assert.equal(week.find(s => s.id === second.data.id).score_type, "time");
+  assert.equal((await alice.put(`/sessions/${second.data.id}`, body)).status, 200);
+  assert.equal((await alice.get(path)).data.scores[0].score_value, 125, "une ancienne saisie préserve le score");
+  assert.equal((await alice.put(`/sessions/${second.data.id}`, {...body, score_value: null})).status, 200);
+  assert.equal((await alice.del(`/sessions/${third.data.id}`)).status, 200);
+  assert.deepEqual(
+    (await alice.get(path)).data.scores.map(s => s.id),
+    [first.client_id]
+  );
+  assert.deepEqual((await alice.get(`/wods/${wodId}/scores`)).data.scores, []);
+});

@@ -78,6 +78,7 @@ const FFOffline = (() => {
     const m = path.match(/^\/week-data\?from=(\d{4}-\d{2}-\d{2})&to=(\d{4}-\d{2}-\d{2})$/);
     return m ? {from: m[1], to: m[2]} : null;
   };
+  const programScorePath = /^\/wods\/([\w-]+)\/scores$/;
   const inRange = (range, date) => date >= range.from && date <= range.to;
   function removeSession(data, id) {
     data.sessions = (data.sessions || []).filter(s => s.id !== id);
@@ -184,6 +185,29 @@ const FFOffline = (() => {
         data.flags = (data.flags || []).filter(x => x.week_start !== body.week_start);
         data.flags.push({week_start: body.week_start, competition: body.competition ? 1 : 0});
       }
+    } else if ((m = path.match(programScorePath))) {
+      const wodId = m[1],
+        update = op.path.match(/^\/sessions\/([\w-]+)$/),
+        id = op.method === "POST" && op.path === "/sessions" ? body.client_id : update?.[1];
+      if (id) {
+        // Ancien formulaire : sans champ score, le serveur conserve le résultat sur le même WOD.
+        if (op.method === "PUT" && body.score_value === undefined && body.wod_id === wodId) return data;
+        const previous = data.scores.find(s => s.id === id);
+        data.scores = data.scores.filter(s => s.id !== id);
+        if (op.method !== "DELETE" && body.wod_id === wodId && body.score_type && body.score_value != null) {
+          data.scores.push({
+            id,
+            session_date: body.session_date,
+            score_type: body.score_type,
+            score_value: body.score_value,
+            created_at: previous?.created_at || op.at,
+            pending: op.synced ? 0 : 1,
+          });
+          data.scores.sort(
+            (a, b) => b.session_date.localeCompare(a.session_date) || b.created_at.localeCompare(a.created_at)
+          );
+        }
+      }
     } else if (path === "/benchmark-results" && op.path === "/benchmark-results" && op.method === "POST") {
       // Résultat de benchmark saisi hors ligne (page PR).
       data.results = [
@@ -260,6 +284,19 @@ const FFOffline = (() => {
     return data;
   }
   const withPending = (path, data) => queue().reduce((d, op) => patch(path, d, op), data);
+  // Conserve aussi l'historique à jour si le réseau repart avant sa prochaine consultation.
+  function cacheSyncedScores(op, result) {
+    if (!/^\/sessions(?:\/[\w-]+)?$/.test(op.path)) return;
+    const synced = {
+      ...op,
+      synced: true,
+      body: op.method === "POST" ? {...op.body, client_id: result?.id ?? op.body?.client_id} : op.body,
+    };
+    for (const key of store.keys(CACHE + "/wods/")) {
+      const path = key.slice(CACHE.length);
+      if (programScorePath.test(path)) store.set(key, patch(path, store.get(key), synced));
+    }
+  }
 
   // ----- Lecture -----
   async function read(path, fetcher) {
@@ -297,6 +334,7 @@ const FFOffline = (() => {
     }
     try {
       const result = await send(body);
+      cacheSyncedScores(op, result);
       setOffline(false);
       return result;
     } catch (error) {
@@ -314,7 +352,8 @@ const FFOffline = (() => {
       while (queue().length) {
         const op = queue()[0];
         try {
-          await hooks.send(op.path, op.method, op.body);
+          const result = await hooks.send(op.path, op.method, op.body);
+          cacheSyncedScores(op, result);
           done++;
           setOffline(false);
         } catch (error) {

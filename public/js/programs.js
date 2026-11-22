@@ -573,6 +573,7 @@ function openWod(pid, w = null) {
   f.elements.name.value = w?.name || "";
   f.elements.planned_comment.value = w?.planned_comment || "";
   f.elements.is_tracked.checked = !!w?.is_tracked;
+  f.elements.score_type.value = w?.score_type || "none";
   fillActivitySelect(f.elements.activity_id, w?.activity_id || defaultActivity()?.id);
   f.elements.duration_minutes.value = w?.duration_minutes || defaultActivity()?.duration_minutes || 60;
   // Mouvements à travailler (catalogue) : repris par la génération IA et cochés par défaut dans la séance.
@@ -605,6 +606,7 @@ $("#wodform").onsubmit = async e => {
       activity_id: f.get("activity_id"),
       duration_minutes: Number(f.get("duration_minutes")),
       is_tracked: $("#wodform").elements.is_tracked.checked,
+      score_type: f.get("score_type"),
       catalog_movement_ids: [...$("#wodmovements").querySelectorAll("input:checked")].map(i => i.value),
     };
   try {
