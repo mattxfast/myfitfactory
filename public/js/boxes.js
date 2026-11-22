@@ -413,7 +413,7 @@ function boxWodsGroup(d) {
     filteredBoxWods(d)
       .map(
         w =>
-          `<div class="admin-row box-wod-row"><span class="admin-row-actions"><button class="smallbtn" data-edit-boxwod="${w.id}" aria-label="Modifier" title="Modifier">${BOX_ICONS.edit}</button><button class="smallbtn delete" data-del-boxwod="${w.id}" aria-label="Supprimer" title="Supprimer">${BOX_ICONS.del}</button></span><b>${esc(managerWodTitle(w))}</b><span class="box-wod-score"><span class="tracked-tag">${esc(SCORE_LABELS[w.score_type] || "")}</span></span>${w.content ? `<small class="box-wod-content">${esc(w.content)}</small>` : ""}</div>`
+          `<div class="admin-row box-wod-row"><span class="admin-row-actions"><button class="smallbtn" data-edit-boxwod="${w.id}" aria-label="Modifier" title="Modifier">${BOX_ICONS.edit}</button><button class="smallbtn delete" data-del-boxwod="${w.id}" aria-label="Supprimer" title="Supprimer">${BOX_ICONS.del}</button></span><div class="box-wod-text" role="button" tabindex="0" data-view-boxwod="${w.id}" aria-label="Voir le détail du WOD"><b>${esc(managerWodTitle(w))}</b><span class="box-wod-score"><span class="tracked-tag">${esc(SCORE_LABELS[w.score_type] || "")}</span></span>${w.content ? `<small class="box-wod-content">${esc(w.content)}</small>` : ""}</div></div>`
       )
       .join("") || boxEmpty("Pas de WOD cette semaine")
   }</div></div>`;
@@ -741,6 +741,19 @@ function bindManagedBox() {
   root
     .querySelectorAll("[data-edit-boxwod]")
     .forEach(b => (b.onclick = () => openBoxWod(d.wods.find(w => w.id === b.dataset.editBoxwod))));
+  // Liste : un toucher sur le texte d’un WOD ouvre son détail en fenêtre (comme dans les autres pages).
+  root.querySelectorAll("[data-view-boxwod]").forEach(t => {
+    t.onclick = e => {
+      blurAfterTap(t, e);
+      openManagerWodDetail(d.wods.find(w => w.id === t.dataset.viewBoxwod));
+    };
+    t.onkeydown = e => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        t.click();
+      }
+    };
+  });
   root.querySelectorAll("[data-del-boxwod]").forEach(
     b =>
       (b.onclick = () => {
@@ -752,6 +765,24 @@ function bindManagedBox() {
   bindBoxLists(root, d);
 }
 
+// Détail d’un WOD dans l’espace gestionnaire (même fenêtre que dans la page Séances) : contenu par bloc, bouton
+// Modifier.
+function openManagerWodDetail(w) {
+  if (!w) return;
+  $("#dailydetailtitle").textContent = managerWodTitle(w);
+  $("#dailydetailmeta").textContent = [w.type_name, SCORE_LABELS[w.score_type]].filter(Boolean).join(" · ");
+  fillWodBody(
+    $("#dailydetailbody"),
+    w.blocks ? boxWodBlockParts(w).map(([label, text]) => ({label, text})) : null,
+    w.content || "Pas de contenu écrit pour ce WOD."
+  );
+  $("#dailydetailactions").innerHTML = `<button type="button" class="smallbtn" data-detail-edit>Modifier</button>`;
+  $("#dailydetailactions").querySelector("[data-detail-edit]").onclick = () => {
+    $("#dailydetaildialog").close();
+    openBoxWod(w);
+  };
+  $("#dailydetaildialog").showModal();
+}
 // ----- Classement d’un WOD de box (membres de la box uniquement) -----
 async function openLeaderboard(wodId) {
   const known = boxWodsById.get(wodId);

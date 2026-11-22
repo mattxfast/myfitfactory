@@ -4346,7 +4346,8 @@ button:disabled {
   overflow-y: auto;
 }
 /* Ligne d’un WOD (programmation, WOD du jour) : toute la partie texte ouvre le détail en fenêtre. */
-.weekwod-text[role="button"] {
+.weekwod-text[role="button"],
+.box-wod-text[role="button"] {
   cursor: pointer;
 }
 /* WOD de la programmation : aperçu limité à 2 lignes, texte complet dans la fenêtre. */
