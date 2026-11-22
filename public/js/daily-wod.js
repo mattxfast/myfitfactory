@@ -40,12 +40,106 @@ function dailyWodCards() {
     })
     .join("");
 }
-// À gauche de la carte « Nombre de séances », l’un sous l’autre : WOD généré par l’IA (✨) et WOD de référence au
-// hasard (🎲), dans les deux interfaces, seulement sur la semaine qui contient aujourd’hui ou demain.
+// À gauche de la carte « Nombre de séances » : un seul bouton « Nouveau WOD » (généré par l’IA, WOD de référence
+// ou saisie manuelle, au choix dans une fenêtre), dans les deux interfaces, seulement sur la semaine qui contient
+// aujourd’hui ou demain.
 const dailyGenerateRow = from =>
   dailyCanGenerate(from)
-    ? `<div class="weekstats-generate"><button type="button" class="smallbtn" data-daily-new aria-label="Générer un WOD hors prog avec l’IA" title="Générer un WOD avec l’IA">${AI_ICON}</button><button type="button" class="smallbtn" data-bench-new aria-label="Tirer un WOD de référence (Fran, Cindy…)" title="WOD de référence au hasard">${DICE_ICON}</button></div>`
+    ? `<div class="weekstats-generate"><button type="button" class="smallbtn" data-wod-new aria-label="Nouveau WOD (IA, référence ou saisie manuelle)" title="Nouveau WOD"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M12 12v6"/><path d="M9 15h6"/></svg></button></div>`
     : "";
+// Fenêtre « Nouveau WOD » : trois façons de créer le WOD du jour.
+function openNewWodChooser() {
+  // Interface simplifiée : pas d’IA.
+  $('[data-newwod="ai"]').hidden = simpleInterface();
+  $("#newwoddialog").showModal();
+}
+document.querySelectorAll("[data-newwod]").forEach(
+  b =>
+    (b.onclick = () => {
+      $("#newwoddialog").close();
+      if (b.dataset.newwod === "ai") openAiDialog("daily");
+      else if (b.dataset.newwod === "bench") openBenchmarkDraw();
+      else openManualWod();
+    })
+);
+// Saisie manuelle : mêmes blocs que les WOD de box ; modification possible tant qu’aucune séance n’y est rattachée.
+const MANUAL_BLOCKS = [
+  ["warmup", "Échauffement"],
+  ["technique", "Travail technique"],
+  ["strength", "Force"],
+  ["metcon", "Metcon"],
+  ["finisher", "Finisher"],
+];
+function openManualWod(w = null) {
+  const form = $("#manualwodform"),
+    f = form.elements,
+    days = [today(), addDays(today(), 1)];
+  if (w && !days.includes(w.wod_date)) days.unshift(w.wod_date);
+  form.reset();
+  f.id.value = w?.id || "";
+  f.wod_date.innerHTML = days
+    .map(d => `<option value="${d}">${esc(dailyDayLabel(d) + " (" + wodDay(d) + ")")}</option>`)
+    .join("");
+  f.wod_date.value = w?.wod_date || today();
+  f.name.value = w?.manual?.name || "";
+  for (const [key] of MANUAL_BLOCKS) f["block_" + key].value = w?.manual?.blocks?.[key] || "";
+  f.score_type.value = w?.score_type || "none";
+  $("#manualwodtitle").textContent = w ? "Modifier le WOD" : "Saisir un WOD";
+  $("#manualwoderror").textContent = "";
+  $("#manualwoddialog").showModal();
+}
+// WOD saisi hors ligne : affiché tout de suite (même forme que la réponse du serveur).
+function describeManualWod(b) {
+  const filled = MANUAL_BLOCKS.filter(([key]) => String(b.blocks?.[key] || "").trim()),
+    title = String(b.name || "").trim() || "WOD perso";
+  return {
+    title,
+    content: [title, ...filled.map(([key, label]) => label + "\n" + b.blocks[key].replace(/\s+$/, ""))].join("\n\n"),
+    blocks: filled.map(([type, label]) => ({type, label, text: b.blocks[type].replace(/\s+$/, "")})),
+    chrono: null,
+    movement_ids: [],
+    benchmark_id: null,
+    score_type: b.score_type === "none" ? null : b.score_type,
+    manual: {name: String(b.name || "").trim(), blocks: b.blocks},
+  };
+}
+$("#manualwodform").onsubmit = async e => {
+  e.preventDefault();
+  const f = e.target.elements,
+    id = f.id.value,
+    body = {
+      wod_date: f.wod_date.value,
+      name: f.name.value,
+      blocks: Object.fromEntries(MANUAL_BLOCKS.map(([key]) => [key, f["block_" + key].value])),
+      score_type: f.score_type.value,
+    };
+  if (!MANUAL_BLOCKS.some(([key]) => body.blocks[key].trim())) {
+    $("#manualwoderror").textContent = "Écris au moins un bloc du WOD.";
+    return;
+  }
+  $("#manualwodsubmit").disabled = true;
+  try {
+    if (id) {
+      // Modification : demande le réseau.
+      const d = await sendApi("/daily-wods/" + id, "PUT", body);
+      rememberDailyWods([d.wod]);
+    }
+    // Création : mise en file d’attente hors ligne et affichée tout de suite (identifiant créé sur le téléphone).
+    else
+      await api("/daily-wods/manual", {
+        method: "POST",
+        body: JSON.stringify({...body, client_id: crypto.randomUUID()}),
+      });
+    $("#manualwoddialog").close();
+    selectedWeekStart = mondayOf(body.wod_date);
+    await loadSessions();
+    toast(id ? "WOD modifié." : "WOD ajouté : bon entraînement !");
+  } catch (x) {
+    $("#manualwoderror").textContent = x.offline ? OFFLINE_MESSAGE : x.message;
+  } finally {
+    $("#manualwodsubmit").disabled = false;
+  }
+};
 // Détail d’un WOD du jour, en fenêtre : texte complet, chrono et séance.
 function openDailyDetail(id) {
   const w = dailyWodsById.get(id),
@@ -59,7 +153,7 @@ function openDailyDetail(id) {
   fillWodBody($("#dailydetailbody"), w.blocks, dailyBody(w));
   $("#dailydetailactions").innerHTML = done
     ? ""
-    : `<button type="button" class="primary" data-daily-log="${w.id}" ${future ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg><span>${future ? "Prévu pour demain" : "Enregistrer la séance"}</span></button>`;
+    : `<button type="button" class="primary" data-daily-log="${w.id}" ${future ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg><span>${future ? "Prévu pour demain" : "Enregistrer la séance"}</span></button>${w.manual && !w.pending ? `<button type="button" class="smallbtn" data-daily-edit="${w.id}">Modifier</button>` : ""}`;
   bindDailySection($("#dailydetailactions"));
   // La fenêtre se ferme avant d’ouvrir le formulaire de séance.
   $("#dailydetailactions")
@@ -77,8 +171,10 @@ function bindDailySection(root) {
   root
     .querySelectorAll("[data-daily-open]")
     .forEach(b => (b.onclick = e => (blurAfterTap(b, e), openDailyDetail(b.dataset.dailyOpen))));
-  root.querySelectorAll("[data-daily-new]").forEach(b => (b.onclick = () => openAiDialog("daily")));
-  root.querySelectorAll("[data-bench-new]").forEach(b => (b.onclick = () => openBenchmarkDraw()));
+  root.querySelectorAll("[data-wod-new]").forEach(b => (b.onclick = () => openNewWodChooser()));
+  root
+    .querySelectorAll("[data-daily-edit]")
+    .forEach(b => (b.onclick = () => openManualWod(dailyWodsById.get(b.dataset.dailyEdit))));
   root
     .querySelectorAll("[data-daily-log]")
     .forEach(b => (b.onclick = () => openSession(null, "daily:" + b.dataset.dailyLog)));

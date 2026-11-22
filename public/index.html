@@ -1314,6 +1314,57 @@
           <div class="error" id="bencherror"></div>
         </form>
       </dialog>
+      <dialog id="newwoddialog" class="modal">
+        <div class="sectionhead">
+          <h2>Nouveau WOD</h2>
+          <button type="button" class="iconbtn" data-close-dialog="newwoddialog">×</button>
+        </div>
+        <div class="newwod-options">
+          <button type="button" class="newwod-option" data-newwod="ai">
+            <b>✨ Généré par l’IA</b><small>Selon ton profil, tes records et tes séances récentes.</small></button
+          ><button type="button" class="newwod-option" data-newwod="bench">
+            <b>🎲 WOD de référence</b
+            ><small>Un Girl, un Hero… tiré au hasard, pour te mesurer dans le temps.</small></button
+          ><button type="button" class="newwod-option" data-newwod="manual">
+            <b>✏️ Saisie manuelle</b><small>Tu écris ton propre WOD, bloc par bloc.</small>
+          </button>
+        </div>
+      </dialog>
+      <dialog id="manualwoddialog" class="modal">
+        <form id="manualwodform" method="dialog">
+          <div class="sectionhead">
+            <h2 id="manualwodtitle">Saisir un WOD</h2>
+            <button type="button" class="iconbtn" data-close-dialog="manualwoddialog">×</button>
+          </div>
+          <input type="hidden" name="id" />
+          <section class="form-block">
+            <h3>WOD</h3>
+            <label>Nom (facultatif)<input name="name" maxlength="100" placeholder="WOD perso" /></label>
+            <label>Pour<select name="wod_date"></select></label>
+          </section>
+          <section class="form-block">
+            <h3>Contenu</h3>
+            <label>Échauffement<textarea name="block_warmup" rows="3" maxlength="2000"></textarea></label
+            ><label>Travail technique<textarea name="block_technique" rows="3" maxlength="2000"></textarea></label
+            ><label>Force<textarea name="block_strength" rows="3" maxlength="2000"></textarea></label
+            ><label>Metcon<textarea name="block_metcon" rows="4" maxlength="2000"></textarea></label
+            ><label>Finisher<textarea name="block_finisher" rows="3" maxlength="2000"></textarea></label>
+          </section>
+          <section class="form-block">
+            <h3>Score</h3>
+            <label
+              >Type de score<select name="score_type">
+                <option value="none">Sans score</option>
+                <option value="time">Temps (For Time)</option>
+                <option value="reps">Répétitions (AMRAP)</option>
+                <option value="load">Charge (kg)</option>
+              </select></label
+            >
+          </section>
+          <button class="primary" id="manualwodsubmit">Enregistrer le WOD</button>
+          <div class="error" id="manualwoderror"></div>
+        </form>
+      </dialog>
       <dialog id="benchresultdialog" class="modal">
         <form id="benchresultform" method="dialog">
           <div class="sectionhead">

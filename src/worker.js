@@ -1162,16 +1162,63 @@ function sessionProgramScore(wod, body, previous = null) {
 // référence (benchmark) : score facultatif (temps ou répétitions) et Rx / Scaled.
 async function sessionDailyWod(e, userId, b) {
   if (!b.daily_wod_id || b.box_wod_id) return {id: null, value: null, scaled: null};
-  const row = await e.DB.prepare("SELECT id,wod_date,benchmark_id FROM daily_wods WHERE id=? AND user_id=?")
+  const row = await e.DB.prepare("SELECT id,wod_date,benchmark_id,score_type FROM daily_wods WHERE id=? AND user_id=?")
     .bind(String(b.daily_wod_id), userId)
     .first();
   if (!row) return {error: "WOD du jour introuvable.", status: 404};
   const bench = row.benchmark_id ? benchmarkById(row.benchmark_id) : null,
     raw = b.score_value;
-  if (!bench || raw === null || raw === undefined || raw === "") return {id: row.id, value: null, scaled: null};
+  if (raw === null || raw === undefined || raw === "") return {id: row.id, value: null, scaled: null};
+  // WOD saisi à la main avec un type de score : temps, répétitions ou charge.
+  if (!bench && SCORE_TYPES.includes(row.score_type) && row.score_type !== "none") {
+    if (typeof raw !== "number" && typeof raw !== "string") return {error: "Score invalide.", status: 400};
+    const score = wodScoreValue(row.score_type, raw);
+    return score.error ? {error: score.error, status: 400} : {id: row.id, value: score.value, scaled: null};
+  }
+  if (!bench) return {id: row.id, value: null, scaled: null};
   const score = benchmarkScore(bench, raw);
   if (score.error) return {error: score.error, status: 400};
   return {id: row.id, value: score.value, scaled: b.score_scaled ? 1 : 0};
+}
+function manualOf(x) {
+  try {
+    const o = x.options ? JSON.parse(x.options) : null;
+    return o?.manual ? {name: o.name || "", blocks: o.blocks || {}} : null;
+  } catch {
+    return null;
+  }
+}
+// WOD saisi à la main (page Séances, « Nouveau WOD » → Saisie manuelle) : nom facultatif, aujourd'hui ou demain (la
+// veille reste acceptée pour une saisie hors ligne envoyée plus tard, et une date déjà enregistrée peut être gardée),
+// mêmes blocs que les WOD de box, type de score. Le texte complet commence par le titre, comme les WOD générés.
+function manualDailyInput(b, keptDate = null) {
+  const date = String(b.wod_date || ""),
+    now = localToday();
+  if (!validDate(date) || (date !== keptDate && (date < addDays(now, -1) || date > addDays(now, 1))))
+    return {error: "Le WOD du jour se choisit pour aujourd'hui ou demain."};
+  const scoreType = String(b.score_type || "none");
+  if (!SCORE_TYPES.includes(scoreType)) return {error: "Type de score invalide."};
+  const parsed = boxWodBlocks(b.blocks);
+  if (!parsed || !parsed.content.trim()) return {error: "Écris au moins un bloc du WOD."};
+  const name = String(b.name || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 100),
+    title = name || "WOD perso";
+  return {
+    wod_date: date,
+    title,
+    content: (title + "\n\n" + parsed.content).slice(0, 8000),
+    blocks: JSON.stringify(
+      BOX_WOD_BLOCKS.filter(([key]) => parsed.blocks[key].trim()).map(([type, label]) => ({
+        type,
+        label,
+        text: parsed.blocks[type],
+      }))
+    ),
+    score_type: scoreType === "none" ? null : scoreType,
+    options: JSON.stringify({manual: true, name, blocks: parsed.blocks}),
+  };
 }
 const dailyWodOut = x => ({
   id: x.id,
@@ -1183,6 +1230,8 @@ const dailyWodOut = x => ({
   blocks: x.blocks ? JSON.parse(x.blocks) : null,
   benchmark_id: x.benchmark_id || null,
   score_type: x.score_type || null,
+  // WOD saisi à la main : nom et blocs tels que saisis, pour le formulaire de modification.
+  manual: manualOf(x),
   ...(x.session_ids !== undefined ? {session_ids: x.session_ids?.split(",") || []} : {}),
 });
 // WOD de box : nom facultatif (« WOD du JJ/MM/AAAA » par défaut), date, contenu et type de score.
@@ -3278,6 +3327,25 @@ async function api(r, e, p, ctx = null) {
   // WOD de référence (benchmarks) : liste (gardée sur le téléphone pour le tirage hors ligne), WOD du jour tiré de
   // la liste (sans IA), résultats suivis dans la page PR.
   if (p === "/api/benchmarks" && r.method === "GET") return json({benchmarks: BENCHMARKS.map(benchmarkOut)});
+  // WOD saisi à la main (rejouable : client_id).
+  if (p === "/api/daily-wods/manual" && r.method === "POST") {
+    const b = await r.json(),
+      cid = clientId(b.client_id);
+    const existing =
+      cid && (await e.DB.prepare("SELECT * FROM daily_wods WHERE id=? AND user_id=?").bind(cid, u.id).first());
+    if (existing) return json({ok: true, wod: dailyWodOut(existing)});
+    if (cid && (await e.DB.prepare("SELECT 1 FROM daily_wods WHERE id=?").bind(cid).first()))
+      return json({error: "Identifiant déjà utilisé."}, 409);
+    const x = manualDailyInput(b);
+    if (x.error) return json({error: x.error}, 400);
+    const row = {id: cid || uid(), chrono: null, movement_ids: "[]", ...x};
+    await e.DB.prepare(
+      "INSERT INTO daily_wods(id,user_id,wod_date,title,content,chrono,movement_ids,options,score_type,blocks) VALUES(?,?,?,?,?,NULL,'[]',?,?,?)"
+    )
+      .bind(row.id, u.id, row.wod_date, row.title, row.content, row.options, row.score_type, row.blocks)
+      .run();
+    return json({ok: true, wod: dailyWodOut(row)});
+  }
   if (p === "/api/daily-wods/benchmark" && r.method === "POST") {
     const b = await r.json(),
       cid = clientId(b.client_id),
@@ -3368,6 +3436,28 @@ async function api(r, e, p, ctx = null) {
     return json({ok: true});
   }
   m = p.match(/^\/api\/daily-wods\/([\w-]+)$/);
+  // Modification d'un WOD saisi à la main, tant qu'aucune séance n'y est rattachée.
+  if (m && r.method === "PUT") {
+    const row = await e.DB.prepare("SELECT id,wod_date,options FROM daily_wods WHERE id=? AND user_id=?")
+      .bind(m[1], u.id)
+      .first();
+    if (!row) return json({error: "WOD introuvable."}, 404);
+    if (!manualOf(row)) return json({error: "Seul un WOD saisi à la main peut être modifié."}, 400);
+    if (
+      await e.DB.prepare("SELECT 1 FROM training_sessions WHERE daily_wod_id=? AND user_id=? LIMIT 1")
+        .bind(m[1], u.id)
+        .first()
+    )
+      return json({error: "Une séance est enregistrée sur ce WOD : il ne peut plus être modifié."}, 409);
+    const x = manualDailyInput(await r.json(), row.wod_date);
+    if (x.error) return json({error: x.error}, 400);
+    await e.DB.prepare(
+      "UPDATE daily_wods SET wod_date=?,title=?,content=?,blocks=?,score_type=?,options=? WHERE id=? AND user_id=?"
+    )
+      .bind(x.wod_date, x.title, x.content, x.blocks, x.score_type, x.options, m[1], u.id)
+      .run();
+    return json({ok: true, wod: dailyWodOut({id: m[1], chrono: null, movement_ids: "[]", ...x})});
+  }
   if (m && r.method === "DELETE") {
     if (
       await e.DB.prepare("SELECT 1 FROM training_sessions WHERE daily_wod_id=? AND user_id=? LIMIT 1")
@@ -3536,7 +3626,7 @@ async function api(r, e, p, ctx = null) {
         .all(),
       daysBetween(from, to) <= 92 ? memberBoxWods(e, u.id, from, to) : [],
       e.DB.prepare(
-        "SELECT w.id,w.wod_date,w.title,w.content,w.chrono,w.movement_ids,w.benchmark_id,w.score_type,w.blocks,(SELECT group_concat(s.id) FROM training_sessions s WHERE s.daily_wod_id=w.id AND s.user_id=w.user_id) AS session_ids FROM daily_wods w WHERE w.user_id=? AND w.wod_date>=? AND w.wod_date<=? ORDER BY w.wod_date,w.created_at LIMIT 60"
+        "SELECT w.id,w.wod_date,w.title,w.content,w.chrono,w.movement_ids,w.benchmark_id,w.score_type,w.blocks,w.options,(SELECT group_concat(s.id) FROM training_sessions s WHERE s.daily_wod_id=w.id AND s.user_id=w.user_id) AS session_ids FROM daily_wods w WHERE w.user_id=? AND w.wod_date>=? AND w.wod_date<=? ORDER BY w.wod_date,w.created_at LIMIT 60"
       )
         .bind(u.id, from, to)
         .all(),

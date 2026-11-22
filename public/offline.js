@@ -45,6 +45,7 @@ const FFOffline = (() => {
       describeSession: () => ({}),
       describePr: () => ({}),
       describeBoxWod: () => ({}),
+      describeManualWod: () => ({}),
       describeMe: () => ({}),
       onChange: () => {},
       onSynced: () => {},
@@ -198,6 +199,12 @@ const FFOffline = (() => {
         data.dailyWods = [
           ...(data.dailyWods || []).filter(w => w.id !== body.client_id),
           {...hooks.describeBenchmarkWod(body), id: body.client_id, wod_date: body.wod_date, pending: 1},
+        ];
+      } else if (op.method === "POST" && op.path === "/daily-wods/manual" && inRange(range, body.wod_date)) {
+        // WOD saisi à la main hors ligne : affiché tout de suite avec les WOD du jour.
+        data.dailyWods = [
+          ...(data.dailyWods || []).filter(w => w.id !== body.client_id),
+          {...hooks.describeManualWod(body), id: body.client_id, wod_date: body.wod_date, pending: 1},
         ];
       } else if (op.method === "PUT" && op.path === "/weekly-flags" && inRange(range, body.week_start)) {
         data.flags = (data.flags || []).filter(x => x.week_start !== body.week_start);

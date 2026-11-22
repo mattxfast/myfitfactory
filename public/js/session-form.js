@@ -234,7 +234,9 @@ function renderSessionScore(session = null) {
       : programWod && box.dataset.wod === programWod.id
         ? box.dataset.type
         : null,
-    type = boxWod?.score_type || savedType || programWod?.score_type || "none",
+    // WOD saisi à la main : le type de score choisi à la saisie.
+    manualWod = !boxWod && !bench && selectedDailyWod()?.manual ? selectedDailyWod() : null,
+    type = boxWod?.score_type || manualWod?.score_type || savedType || programWod?.score_type || "none",
     key = f.wod_id.value,
     show = !!bench || type !== "none";
   $("#sessionscoresection").hidden = !show;

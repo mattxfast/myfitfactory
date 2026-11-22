@@ -2108,6 +2108,32 @@ button:disabled {
   min-width: var(--list-button-size);
   padding: 0;
 }
+/* Fenêtre « Nouveau WOD » : trois choix (IA, WOD de référence, saisie manuelle) en blocs gris. */
+.newwod-options {
+  display: grid;
+  gap: 12px;
+}
+.newwod-option {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  text-align: left;
+  color: var(--ink);
+  background: var(--content-bg);
+  border: 1px solid var(--content-border);
+  border-radius: 12px;
+  cursor: pointer;
+}
+.newwod-option[hidden] {
+  display: none;
+}
+.newwod-option b {
+  font: 700 15px Manrope;
+}
+.newwod-option small {
+  font-size: 13px;
+  color: var(--muted);
+}
 .competition-toggle {
   display: flex;
   align-items: center;

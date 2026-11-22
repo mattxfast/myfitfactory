@@ -4,6 +4,8 @@
 FFOffline.init({
   send: sendApi,
   // WOD de référence tiré hors ligne : titre, texte et chrono repris de la liste gardée sur le téléphone.
+  // WOD saisi à la main hors ligne : titre, texte et blocs construits sur le téléphone.
+  describeManualWod: b => describeManualWod(b),
   describeBenchmarkWod: b => {
     const bench = benchmarkFor(b.benchmark_id);
     return {
