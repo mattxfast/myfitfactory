@@ -283,11 +283,13 @@ function renderAdmin(users, movements = []) {
           `<div class="admin-row"><span>${esc(a.name)} · ${a.duration_minutes} min ${a.is_default ? "(par défaut)" : ""} ${a.is_active ? "" : "· inactive"}</span><span class="admin-row-actions"><button class="smallbtn admin-reorder" data-move-admin="activity" data-id="${a.id}" data-direction="-1" aria-label="Monter" title="Monter" ${i === 0 ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"/><path d="m6 11 6-6 6 6"/></svg></button><button class="smallbtn admin-reorder" data-move-admin="activity" data-id="${a.id}" data-direction="1" aria-label="Descendre" title="Descendre" ${i === activities.length - 1 ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="m6 13 6 6 6-6"/></svg></button><button class="smallbtn" data-edit-activity="${a.id}" aria-label="Modifier" title="Modifier"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.83 2.83 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg></button><button class="smallbtn delete" data-del-activity="${a.id}" aria-label="Désactiver ou supprimer" title="Désactiver si utilisée, supprimer sinon"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button><button class="smallbtn" data-default-activity="${a.id}" aria-label="Définir par défaut" title="Définir par défaut" ${a.is_default ? "disabled" : ""}>★</button></span></div>`
       )
       .join("") || `<p class="muted">Aucune activité.</p>`;
+  // Demandes de rôle coach à valider en tête de liste.
   $("#userlist").innerHTML =
-    users
+    [...users]
+      .sort((a, b) => (b.coach_status === "pending") - (a.coach_status === "pending"))
       .map(
         u =>
-          `<div class="admin-row"><span>${esc([u.first_name, u.last_name].filter(Boolean).join(" ") || u.email)}${u.first_name || u.last_name ? ` <small class="muted">${esc(u.email)}</small>` : ""} <small class="muted">· ${u.is_owner ? "admin principal" : u.is_admin ? "admin" : "utilisateur"}${u.is_active ? "" : " · inactif"}</small></span><span class="admin-row-actions"><button class="smallbtn reorder-toggle ${u.is_admin || u.is_owner ? "active" : ""}" data-admin-user="${u.id}" aria-pressed="${!!(u.is_admin || u.is_owner)}" aria-label="${u.is_admin ? "Retirer les droits d’administration" : "Nommer administrateur"}" title="${u.is_owner ? "Administrateur principal (ADMIN_EMAIL)" : u.is_admin ? "Retirer les droits d’administration" : "Nommer administrateur"}" ${u.is_owner || u.id === user.id || !u.is_active ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.4 3 8.3 7 9.5 4-1.2 7-5.1 7-9.5V6z"/></svg></button><button class="smallbtn" data-reset-user="${u.id}" aria-label="Lien de réinitialisation du mot de passe" title="Lien de réinitialisation du mot de passe" ${u.is_active ? "" : "disabled"}>🔑</button><button class="smallbtn delete" data-toggle-user="${u.id}" aria-label="${u.is_active ? "Désactiver" : "Réactiver"}" title="${u.is_active ? "Désactiver" : "Réactiver"}" ${u.id === user.id || u.is_owner ? "disabled" : ""}>${u.is_active ? "×" : "↻"}</button></span></div>`
+          `<div class="admin-row"><span>${esc([u.first_name, u.last_name].filter(Boolean).join(" ") || u.email)}${u.first_name || u.last_name ? ` <small class="muted">${esc(u.email)}</small>` : ""} <small class="muted">· ${u.is_owner ? "admin principal" : u.is_admin ? "admin" : "utilisateur"}${u.coach_status === "approved" ? " · coach" : u.coach_status === "pending" ? " · demande de coach à valider" : ""}${u.is_active ? "" : " · inactif"}</small></span><span class="admin-row-actions"><button class="smallbtn reorder-toggle ${u.coach_status === "approved" ? "active" : ""}" data-coach-user="${u.id}" aria-pressed="${u.coach_status === "approved"}" aria-label="${u.coach_status === "approved" ? "Retirer le rôle de coach" : u.coach_status === "pending" ? "Valider ou refuser la demande de coach" : "Nommer coach"}" title="${u.coach_status === "approved" ? "Retirer le rôle de coach" : u.coach_status === "pending" ? "Valider ou refuser la demande de coach" : "Nommer coach"}" ${u.is_active ? "" : "disabled"}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6v3H9z"/><path d="M9 5H6v16h12V5h-3"/><path d="M9 12h6"/><path d="M9 16h4"/></svg></button><button class="smallbtn reorder-toggle ${u.is_admin || u.is_owner ? "active" : ""}" data-admin-user="${u.id}" aria-pressed="${!!(u.is_admin || u.is_owner)}" aria-label="${u.is_admin ? "Retirer les droits d’administration" : "Nommer administrateur"}" title="${u.is_owner ? "Administrateur principal (ADMIN_EMAIL)" : u.is_admin ? "Retirer les droits d’administration" : "Nommer administrateur"}" ${u.is_owner || u.id === user.id || !u.is_active ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.4 3 8.3 7 9.5 4-1.2 7-5.1 7-9.5V6z"/></svg></button><button class="smallbtn" data-reset-user="${u.id}" aria-label="Lien de réinitialisation du mot de passe" title="Lien de réinitialisation du mot de passe" ${u.is_active ? "" : "disabled"}>🔑</button><button class="smallbtn delete" data-toggle-user="${u.id}" aria-label="${u.is_active ? "Désactiver" : "Réactiver"}" title="${u.is_active ? "Désactiver" : "Réactiver"}" ${u.id === user.id || u.is_owner ? "disabled" : ""}>${u.is_active ? "×" : "↻"}</button></span></div>`
       )
       .join("") || `<p class="muted">Aucun utilisateur.</p>`;
   $("#activitylist")
@@ -379,6 +381,34 @@ function renderAdmin(users, movements = []) {
             await api("/admin/users/" + u.id, {method: "PUT", body: JSON.stringify({is_admin: !u.is_admin})});
             await loadAdmin();
             toast(u.is_admin ? "Droits d’administration retirés." : "Administrateur ajouté.");
+          } catch (e) {
+            toast(e.message);
+          }
+        })
+    );
+  $("#userlist")
+    .querySelectorAll("[data-coach-user]")
+    .forEach(
+      b =>
+        (b.onclick = async () => {
+          const u = users.find(x => x.id === b.dataset.coachUser),
+            label = [u.first_name, u.last_name].filter(Boolean).join(" ") || u.email;
+          let coach;
+          if (u.coach_status === "approved") {
+            if (!confirm("Retirer le rôle de coach de " + label + " ? Ses programmes déjà proposés restent suivis."))
+              return;
+            coach = false;
+          } else if (u.coach_status === "pending") {
+            if (confirm("Valider la demande de coach de " + label + " ?")) coach = true;
+            else if (confirm("Refuser la demande de coach de " + label + " ?")) coach = false;
+            else return;
+          } else if (confirm("Nommer " + label + " coach ?")) coach = true;
+          else return;
+          try {
+            await api("/admin/users/" + u.id, {method: "PUT", body: JSON.stringify({coach})});
+            await loadAdmin();
+            await loadBoxes();
+            toast(coach ? "Rôle de coach donné." : "Rôle de coach retiré ou demande refusée.");
           } catch (e) {
             toast(e.message);
           }

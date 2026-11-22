@@ -374,7 +374,7 @@ function openSession(s = null, presetWodId = "") {
   // Programmes réels + « Hors programme » (programme technique caché, créé par le serveur si besoin).
   f.elements.program_id.innerHTML =
     programs
-      .filter(p => !isFallbackProgram(p))
+      .filter(p => !isFallbackProgram(p) && !(p.coach_mode && !p.read_only))
       .map(p => `<option value="${p.id}">${esc(p.name)}</option>`)
       .join("") + `<option value="none">Sans programme</option>`;
   let selectedProgram = s ? programs.find(p => p.id === s.program_id) : null;

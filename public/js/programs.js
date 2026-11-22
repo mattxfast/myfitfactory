@@ -7,6 +7,12 @@ function programWeeks(program) {
     weeks.push(start);
   return weeks;
 }
+// Nom d’une semaine : « semaine du JJ/MM/AAAA », ou « semaine N » pour un programme de coach sans dates.
+function weekName(program, week) {
+  return program?.coach_mode === "free"
+    ? "semaine " + (programWeeks(program).indexOf(week) + 1)
+    : "semaine du " + fmt(week);
+}
 // Le WOD technique « __AUTRES__ » (séances « Autres ») n’est jamais affiché dans les listes de WOD.
 function visibleWods(pid) {
   return (wodsByProgram[pid] || []).filter(w => w.name !== "__AUTRES__");
@@ -15,7 +21,9 @@ function weeklyWodContent(wodId, weekStart) {
   return weeklyWodPrograms.find(x => x.wod_id === wodId && x.week_start === weekStart)?.content || "";
 }
 function renderWodWeeklyProgramming(program, wod) {
+  // Programme de coach sans dates : semaines numérotées seulement (chacun choisit sa date de début en l’acceptant).
   const weeks = programWeeks(program),
+    weekDate = week => (program.coach_mode === "free" ? "" : fmt(week)),
     expanded = window.cfExpandedWodProgramming || (window.cfExpandedWodProgramming = new Set()),
     key = wod.id;
   return (
@@ -37,7 +45,7 @@ function renderWodWeeklyProgramming(program, wod) {
           '<div class="wod-week-row"><div class="wod-week-head"><b>S' +
           (index + 1) +
           "</b><small>" +
-          fmt(week) +
+          weekDate(week) +
           '</small><button type="button" class="smallbtn" data-ai-wod-week="' +
           wod.id +
           '" data-program="' +
@@ -55,8 +63,7 @@ function renderWodWeeklyProgramming(program, wod) {
           Math.min(12, Math.max(2, weeklyWodContent(wod.id, week).split("\n").length)) +
           '" maxlength="2000" aria-label="Contenu prévu, semaine ' +
           (index + 1) +
-          " du " +
-          fmt(week) +
+          (weekDate(week) ? " du " + weekDate(week) : "") +
           '" data-wod-week-content="' +
           wod.id +
           '" data-week="' +
@@ -97,11 +104,11 @@ function renderPrograms() {
       ? shown
           .map(
             p =>
-              `<article class="program card ${collapsed.has(p.id) ? "collapsed" : ""}"><div class="programhead"><div class="program-title"><button class="smallbtn collapse-program" data-toggle-program="${p.id}" aria-expanded="${!collapsed.has(p.id)}">${collapsed.has(p.id) ? "＋" : "−"}</button><div><h3>${esc(p.name)}</h3><small>${p.is_default ? "Programme par défaut · 01/01/1970 → 31/12/2100" : fmt(p.start_monday) + " → " + fmt(p.end_monday)}${p.is_public ? ` · public${p.followers ? ", suivi par " + p.followers + " personne" + (p.followers > 1 ? "s" : "") : ""}` : ""}</small></div></div><div class="entryactions"><button class="smallbtn" data-edit-program="${p.id}" aria-label="Modifier" title="Modifier"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.83 2.83 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg></button><button class="smallbtn delete ${p.has_sessions ? "is-disabled" : ""}" data-del-program="${p.id}" aria-label="Supprimer le programme" title="${p.has_sessions ? "Ce programme a déjà une séance réalisée et ne peut pas être supprimé" : "Supprimer le programme"}" ${p.has_sessions ? 'aria-disabled="true"' : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button></div></div><div class="programbody"><div class="program-section program-subsection ${folded.has(p.id + ":wods") ? "collapsed" : ""}"><div class="program-section-heading program-section-toolbar"><button class="smallbtn section-collapse program-section-toggle" data-toggle-program-section="${p.id}:wods" aria-label="Replier les WOD" aria-expanded="${!folded.has(p.id + ":wods")}">${folded.has(p.id + ":wods") ? "＋" : "−"}</button><span>WOD</span>${reorderToggle(p.id + ":wods", visibleWods(p.id).length, "Réorganiser les WOD")}<button type="button" class="smallbtn" data-ai-program="${p.id}" aria-label="Générer le programme avec l’IA" title="Générer le programme avec l’IA">${AI_ICON}</button><button class="primary addsession-compact addwod" data-add-wod="${p.id}" aria-label="Ajouter un WOD" title="Ajouter un WOD">＋</button></div><div class="program-subsection-body"><div class="wodlist">${
+              `<article class="program card ${collapsed.has(p.id) ? "collapsed" : ""}"><div class="programhead"><div class="program-title"><button class="smallbtn collapse-program" data-toggle-program="${p.id}" aria-expanded="${!collapsed.has(p.id)}">${collapsed.has(p.id) ? "＋" : "−"}</button><div><h3>${esc(p.name)}${p.coach_mode ? ` <span class="tracked-tag">Coach</span>` : ""}</h3><small>${programSubtitle(p)}</small></div></div><div class="entryactions">${p.coach_mode ? `<button class="smallbtn" data-coach-invite="${p.id}" aria-label="Proposer à des inscrits" title="Proposer à des inscrits"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0"/><path d="M19 8v6"/><path d="M16 11h6"/></svg></button>` : ""}<button class="smallbtn" data-edit-program="${p.id}" aria-label="Modifier" title="Modifier"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.83 2.83 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg></button><button class="smallbtn delete ${p.has_sessions ? "is-disabled" : ""}" data-del-program="${p.id}" aria-label="Supprimer le programme" title="${p.has_sessions ? "Ce programme a déjà une séance réalisée et ne peut pas être supprimé" : "Supprimer le programme"}" ${p.has_sessions ? 'aria-disabled="true"' : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button></div></div><div class="programbody"><div class="program-section program-subsection ${folded.has(p.id + ":wods") ? "collapsed" : ""}"><div class="program-section-heading program-section-toolbar"><button class="smallbtn section-collapse program-section-toggle" data-toggle-program-section="${p.id}:wods" aria-label="Replier les WOD" aria-expanded="${!folded.has(p.id + ":wods")}">${folded.has(p.id + ":wods") ? "＋" : "−"}</button><span>WOD</span>${reorderToggle(p.id + ":wods", visibleWods(p.id).length, "Réorganiser les WOD")}<button type="button" class="smallbtn" data-ai-program="${p.id}" aria-label="Générer le programme avec l’IA" title="Générer le programme avec l’IA">${AI_ICON}</button>${p.published_at ? "" : `<button class="primary addsession-compact addwod" data-add-wod="${p.id}" aria-label="Ajouter un WOD" title="Ajouter un WOD">＋</button>`}</div><div class="program-subsection-body"><div class="wodlist">${
                 visibleWods(p.id)
                   .map(
                     (w, i) =>
-                      `<div class="wod-entry"><div class="wodrow"><div class="wod-title"><b>${esc(w.name)}</b>${w.is_tracked ? `<span class="tracked-tag">Suivi</span>` : ""}</div><div class="entryactions reorder-actions">${reordering.has(p.id + ":wods") ? `<button class="smallbtn reorder-btn" data-move-wod="${w.id}" data-direction="-1" aria-label="Monter" title="Monter" ${i === 0 ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"/><path d="m6 11 6-6 6 6"/></svg></button><button class="smallbtn reorder-btn" data-move-wod="${w.id}" data-direction="1" aria-label="Descendre" title="Descendre" ${i === visibleWods(p.id).length - 1 ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="m6 13 6 6 6-6"/></svg></button>` : ""}<button type="button" class="smallbtn" data-ai-wod="${w.id}" data-program="${p.id}" aria-label="Générer ce WOD sur toutes les semaines avec l’IA" title="Générer ce WOD sur toutes les semaines avec l’IA">${AI_ICON}</button><button class="smallbtn" data-edit-wod="${w.id}" aria-label="Modifier" title="Modifier"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.83 2.83 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg></button><button class="smallbtn delete ${w.has_sessions ? "is-disabled" : ""}" data-del-wod="${w.id}" aria-label="Supprimer le WOD" title="${w.has_sessions ? "Ce WOD a déjà été réalisé et ne peut pas être supprimé" : "Supprimer le WOD"}" ${w.has_sessions ? 'disabled aria-disabled="true"' : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button></div>${w.planned_comment ? `<p>${esc(w.planned_comment)}</p>` : ""}${w.is_tracked ? renderWodWeeklyProgramming(p, w) : ""}</div></div>`
+                      `<div class="wod-entry"><div class="wodrow"><div class="wod-title"><b>${esc(w.name)}</b>${w.is_tracked ? `<span class="tracked-tag">Suivi</span>` : ""}</div><div class="entryactions reorder-actions">${reordering.has(p.id + ":wods") ? `<button class="smallbtn reorder-btn" data-move-wod="${w.id}" data-direction="-1" aria-label="Monter" title="Monter" ${i === 0 ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"/><path d="m6 11 6-6 6 6"/></svg></button><button class="smallbtn reorder-btn" data-move-wod="${w.id}" data-direction="1" aria-label="Descendre" title="Descendre" ${i === visibleWods(p.id).length - 1 ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="m6 13 6 6 6-6"/></svg></button>` : ""}<button type="button" class="smallbtn" data-ai-wod="${w.id}" data-program="${p.id}" aria-label="Générer ce WOD sur toutes les semaines avec l’IA" title="Générer ce WOD sur toutes les semaines avec l’IA">${AI_ICON}</button><button class="smallbtn" data-edit-wod="${w.id}" aria-label="Modifier" title="Modifier"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.83 2.83 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg></button>${p.published_at ? "" : `<button class="smallbtn delete ${w.has_sessions ? "is-disabled" : ""}" data-del-wod="${w.id}" aria-label="Supprimer le WOD" title="${w.has_sessions ? "Ce WOD a déjà été réalisé et ne peut pas être supprimé" : "Supprimer le WOD"}" ${w.has_sessions ? 'disabled aria-disabled="true"' : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button>`}</div>${w.planned_comment ? `<p>${esc(w.planned_comment)}</p>` : ""}${w.is_tracked ? renderWodWeeklyProgramming(p, w) : ""}</div></div>`
                   )
                   .join("") || programEmpty("Pas de WOD pour cette programmation")
               }</div></div></div><div class="movement-editor compact program-section program-subsection ${folded.has(p.id + ":movements") ? "collapsed" : ""}"><div class="program-section-heading program-section-toolbar"><button class="smallbtn section-collapse program-section-toggle" data-toggle-program-section="${p.id}:movements" aria-label="Replier les mouvements" aria-expanded="${!folded.has(p.id + ":movements")}">${folded.has(p.id + ":movements") ? "＋" : "−"}</button><span>Focus mouvement</span>${reorderToggle(p.id + ":movements", (movementsByProgram[p.id] || []).length, "Réorganiser les mouvements")}<button class="primary addsession-compact addwod" data-pick-movements="${p.id}" aria-label="Ajouter un mouvement depuis le catalogue" title="Ajouter un mouvement depuis le catalogue">＋</button></div><div class="program-subsection-body"><div class="program-movement-list">${(movementsByProgram[p.id] || []).map((m, i) => `<div class="movement-row"><span>${esc(m.name)}</span><div class="entryactions reorder-actions">${reordering.has(p.id + ":movements") ? `<button class="smallbtn reorder-btn" data-move-movement="${m.id}" data-direction="-1" aria-label="Monter" title="Monter" ${i === 0 ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"/><path d="m6 11 6-6 6 6"/></svg></button><button class="smallbtn reorder-btn" data-move-movement="${m.id}" data-direction="1" aria-label="Descendre" title="Descendre" ${i === (movementsByProgram[p.id] || []).length - 1 ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="m6 13 6 6 6-6"/></svg></button>` : ""}${m.catalog_movement_id ? "" : `<button class="smallbtn" data-edit-movement="${m.id}" aria-label="Modifier" title="Modifier"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.83 2.83 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg></button>`}<button class="smallbtn delete" data-del-movement="${m.id}" aria-label="Supprimer" title="Supprimer"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button></div></div>`).join("") || programEmpty("Pas de mouvement pour cette programmation")}</div></div></div></div></div></article>`
@@ -116,14 +123,16 @@ function renderPrograms() {
     .forEach(b => {
       const p = programs.find(x => x.id === b.dataset.followDates);
       b.onclick = () =>
-        openFollowDialog(
-          {
-            ...p,
-            start_monday: p.author_start_monday || p.start_monday,
-            end_monday: p.author_end_monday || p.end_monday,
-          },
-          {start: p.start_monday, end: p.end_monday}
-        );
+        p.coach_mode
+          ? openCoachStartDialog(p, null, p.start_monday)
+          : openFollowDialog(
+              {
+                ...p,
+                start_monday: p.author_start_monday || p.start_monday,
+                end_monday: p.author_end_monday || p.end_monday,
+              },
+              {start: p.start_monday, end: p.end_monday}
+            );
     });
   $("#programlist")
     .querySelectorAll("[data-unfollow-program]")
@@ -287,6 +296,10 @@ function renderPrograms() {
         })
     );
   $("#programlist")
+    .querySelectorAll("[data-coach-invite]")
+    .forEach(b => (b.onclick = () => openCoachInvite(b.dataset.coachInvite)));
+  renderCoachInvites();
+  $("#programlist")
     .querySelectorAll("[data-ai-program]")
     .forEach(b => (b.onclick = () => openAiDialog("program", b.dataset.aiProgram)));
   $("#programlist")
@@ -322,7 +335,28 @@ function renderPrograms() {
         })
     );
 }
-// Programme public d'un autre utilisateur, suivi en lecture seule (mis à jour en direct par son auteur).
+// Sous-titre d’un programme : dates (ou nombre de semaines d’un programme de coach sans dates), partage.
+function programSubtitle(p) {
+  const people = n => n + " personne" + (n > 1 ? "s" : "");
+  if (p.is_default) return "Programme par défaut · 01/01/1970 → 31/12/2100";
+  if (p.coach_mode)
+    return (
+      p.coach_weeks +
+      " semaine" +
+      (p.coach_weeks > 1 ? "s" : "") +
+      " · " +
+      (p.coach_mode === "free" ? "sans dates" : fmt(p.start_monday) + " → " + fmt(p.end_monday)) +
+      (p.published_at ? " · proposé" + (p.followers ? ", suivi par " + people(p.followers) : "") : "")
+    );
+  return (
+    fmt(p.start_monday) +
+    " → " +
+    fmt(p.end_monday) +
+    (p.is_public ? " · public" + (p.followers ? ", suivi par " + people(p.followers) : "") : "")
+  );
+}
+// Programme suivi (programme public d’un autre utilisateur, ou programme de coach accepté), en lecture seule et mis à
+// jour en direct par son auteur.
 function followedProgramCard(p) {
   // Lecture seule, mais le programme et ses rubriques se plient et se déplient comme ceux de l’utilisateur.
   const author = [p.author_first_name, p.author_last_name].filter(Boolean).join(" "),
@@ -332,7 +366,7 @@ function followedProgramCard(p) {
     folded = window.cfProgramSections || (window.cfProgramSections = new Set()),
     fold = (key, label) =>
       `<button class="smallbtn section-collapse program-section-toggle" data-toggle-program-section="${p.id}:${key}" aria-label="${label}" aria-expanded="${!folded.has(p.id + ":" + key)}">${folded.has(p.id + ":" + key) ? "＋" : "−"}</button>`;
-  return `<article class="program card program-followed ${collapsed.has(p.id) ? "collapsed" : ""}"><div class="programhead"><div class="program-title"><button class="smallbtn collapse-program" data-toggle-program="${p.id}" aria-expanded="${!collapsed.has(p.id)}">${collapsed.has(p.id) ? "＋" : "−"}</button><div><h3>${esc(p.name)} <span class="tracked-tag">Suivi</span></h3><small>${author ? "par " + esc(author) + " · " : ""}mes dates : ${fmt(p.start_monday)} → ${fmt(p.end_monday)}</small></div></div></div><div class="programbody"><div class="program-section program-subsection ${folded.has(p.id + ":wods") ? "collapsed" : ""}"><div class="program-section-heading program-section-toolbar">${fold("wods", "Replier les WOD")}<span>WOD</span></div><div class="program-subsection-body"><div class="wodlist">${
+  return `<article class="program card program-followed ${collapsed.has(p.id) ? "collapsed" : ""}"><div class="programhead"><div class="program-title"><button class="smallbtn collapse-program" data-toggle-program="${p.id}" aria-expanded="${!collapsed.has(p.id)}">${collapsed.has(p.id) ? "＋" : "−"}</button><div><h3>${esc(p.name)} <span class="tracked-tag">${p.coach_mode ? "Coach" : "Suivi"}</span></h3><small>${author ? (p.coach_mode ? "coach : " : "par ") + esc(author) + " · " : ""}mes dates : ${fmt(p.start_monday)} → ${fmt(p.end_monday)}</small></div></div></div><div class="programbody"><div class="program-section program-subsection ${folded.has(p.id + ":wods") ? "collapsed" : ""}"><div class="program-section-heading program-section-toolbar">${fold("wods", "Replier les WOD")}<span>WOD</span></div><div class="program-subsection-body"><div class="wodlist">${
     visibleWods(p.id)
       .map(w => {
         const content = weeklyWodContent(w.id, week) || w.planned_comment;
@@ -343,7 +377,7 @@ function followedProgramCard(p) {
     movements.length
       ? `<div class="movement-editor compact program-section program-subsection ${folded.has(p.id + ":movements") ? "collapsed" : ""}"><div class="program-section-heading program-section-toolbar">${fold("movements", "Replier les mouvements")}<span>Focus mouvement</span></div><div class="program-subsection-body"><div class="program-movement-list">${movements.map(m => `<div class="movement-row"><span>${esc(m.name)}</span></div>`).join("")}</div></div></div>`
       : ""
-  }<div class="program-follow-actions"><button type="button" class="smallbtn" data-follow-dates="${p.id}">Modifier mes dates</button><button type="button" class="smallbtn" data-unfollow-program="${p.id}">Arrêter de suivre</button></div></div></article>`;
+  }<div class="program-follow-actions">${p.coach_mode === "dated" ? "" : `<button type="button" class="smallbtn" data-follow-dates="${p.id}">Modifier mes dates</button>`}<button type="button" class="smallbtn" data-unfollow-program="${p.id}">Arrêter de suivre</button></div></div></article>`;
 }
 // Recherche de programmes publics et suivi (un seul programme à la fois).
 let programSearchTimer = null;
@@ -382,6 +416,9 @@ function openFollowDialog(program, current = null) {
     author = [program.author_first_name, program.author_last_name].filter(Boolean).join(" ");
   $("#followform").reset();
   $("#followform").dataset.editing = current ? "1" : "";
+  $("#followform").dataset.invite = $("#followform").dataset.weeks = "";
+  $("#followendfield").hidden = false;
+  f.end.required = true;
   f.program_id.value = program.id;
   f.start.value = current?.start || mondayOf(today());
   f.end.value = current?.end || addDays(f.start.value, length);
@@ -409,10 +446,15 @@ $("#followform").onsubmit = async e => {
   e.preventDefault();
   const f = e.target.elements,
     editing = !!e.target.dataset.editing;
+  if (e.target.dataset.invite) return acceptCoachInvite(e.target.dataset.invite, f.start.value);
+  // Programme de coach sans dates : la semaine 1 commence le lundi choisi, pour le nombre de semaines du coach.
+  const weeks = Number(e.target.dataset.weeks),
+    start = weeks ? mondayOf(f.start.value) : f.start.value,
+    end = weeks ? addDays(start, weeks * 7 - 1) : f.end.value;
   try {
     await api("/program-follow", {
       method: "PUT",
-      body: JSON.stringify({program_id: f.program_id.value, start: f.start.value, end: f.end.value}),
+      body: JSON.stringify({program_id: f.program_id.value, start, end}),
     });
     $("#followdialog").close();
     await load();
@@ -505,11 +547,26 @@ $("#movementpickerform").onsubmit = async e => {
 
 function syncProgramDateFields() {
   const f = $("#programform"),
-    isDefault = f.elements.is_default.checked;
-  f.elements.start.disabled = isDefault;
-  f.elements.end.disabled = isDefault;
-  f.elements.start.required = !isDefault;
-  f.elements.end.required = !isDefault;
+    isDefault = f.elements.is_default.checked,
+    coach = f.elements.coach.checked,
+    dated = f.elements.coach_dated.checked;
+  // Programme de coach : nombre de semaines obligatoire, date de début facultative (la fin s’en déduit), pas public.
+  $("#programcoachoptions").hidden = !coach;
+  $("#programsharefield").hidden = coach;
+  $("#programendfield").hidden = coach;
+  $("#programstartfield").hidden = coach && !dated;
+  f.elements.coach_weeks.required = coach;
+  $("#programcoachhint").textContent = !coach
+    ? ""
+    : f.elements.coach.disabled && f.elements.coach_weeks.disabled
+      ? "Programme déjà proposé : seul son nom se modifie."
+      : dated
+        ? "Le programme commence la semaine de la date de début, pour tous ceux qui l’acceptent."
+        : "Sans dates, chacun choisit sa date de début en acceptant le programme.";
+  f.elements.start.disabled = isDefault || (coach && !dated);
+  f.elements.end.disabled = isDefault || coach;
+  f.elements.start.required = !isDefault && (!coach || dated);
+  f.elements.end.required = !isDefault && !coach;
   if (isDefault) {
     f.elements.start.value = "1970-01-01";
     f.elements.end.value = "2100-12-31";
@@ -519,6 +576,8 @@ function syncProgramDateFields() {
   }
 }
 $("#programform").elements.is_default.onchange = syncProgramDateFields;
+$("#programform").elements.coach.onchange = syncProgramDateFields;
+$("#programform").elements.coach_dated.onchange = syncProgramDateFields;
 function openProgram(p = null) {
   const f = $("#programform");
   f.reset();
@@ -528,9 +587,18 @@ function openProgram(p = null) {
   f.elements.is_public.checked = !!p?.is_public;
   // L'option « programme par défaut » n'est plus proposée : elle n'apparaît que pour un ancien programme par défaut.
   $("#programdefaultfield").hidden = !p?.is_default;
-  f.elements.start.value = p && !p.is_default ? p.start_monday : "";
+  f.elements.start.value = p && !p.is_default && p.coach_mode !== "free" ? p.start_monday : "";
   f.elements.end.value = p && !p.is_default ? p.end_monday : "";
+  // Programme de coach : réservé aux coachs validés ; un programme existant ne change pas de nature, et une fois
+  // proposé à des inscrits, seul son nom se modifie.
+  $("#programcoachfield").hidden = p ? !p.coach_mode : preferences?.coach !== "approved";
+  f.elements.coach.checked = !!p?.coach_mode;
+  f.elements.coach.disabled = !!p;
+  f.elements.coach_weeks.value = p?.coach_weeks || "";
+  f.elements.coach_dated.checked = p ? p.coach_mode === "dated" : false;
+  f.elements.coach_weeks.disabled = f.elements.coach_dated.disabled = !!p?.published_at;
   syncProgramDateFields();
+  if (p?.published_at) f.elements.start.disabled = true;
   $("#programtitle").textContent = p ? "Modifier le programme" : "Nouveau programme";
   $("#programsubmit").textContent = p ? "Enregistrer les modifications" : "Créer le programme";
   $("#programerror").textContent = "";
@@ -548,7 +616,13 @@ $("#programform").onsubmit = async e => {
       end: f.get("end"),
       is_default: $("#programform").elements.is_default.checked,
       is_public: $("#programform").elements.is_public.checked,
-    };
+    },
+    form = $("#programform").elements;
+  if (form.coach.checked) {
+    body.coach = {weeks: Number(form.coach_weeks.value), dated: form.coach_dated.checked};
+    body.start = form.start.value;
+    delete body.end;
+  }
   try {
     const saved = await api(id ? "/programs/" + id : "/programs", {
       method: id ? "PUT" : "POST",

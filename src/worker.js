@@ -88,7 +88,7 @@ async function me(r, e) {
   const t = sessionToken(r);
   if (!t) return null;
   return await e.DB.prepare(
-    "SELECT u.id,u.email,u.first_name,u.last_name,u.is_admin,u.body_weight_kg,u.birth_date,u.sex FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.id_hash=? AND s.expires_at>? AND u.is_active=1"
+    "SELECT u.id,u.email,u.first_name,u.last_name,u.is_admin,u.body_weight_kg,u.birth_date,u.sex,u.coach_status FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.id_hash=? AND s.expires_at>? AND u.is_active=1"
   )
     .bind(await sha(t), Math.floor(Date.now() / 1000))
     .first();
@@ -643,6 +643,33 @@ async function ensureV2Schema(env) {
       if (!columns.results.some(column => column.name === "common_wod_enabled"))
         await env.DB.prepare("ALTER TABLE users ADD COLUMN common_wod_enabled INTEGER NOT NULL DEFAULT 0").run();
     });
+    await runMigration("v43-coach-programs", async () => {
+      // Programmes de coach : rôle coach (demandé par l'utilisateur, validé par un administrateur), programme de coach
+      // (nombre de semaines, avec ou sans dates, date de publication), invitations des utilisateurs tagués, et contenu
+      // remplacé après publication (les semaines déjà passées d'un utilisateur gardent le contenu de l'époque).
+      const [users, programs] = await Promise.all([
+        env.DB.prepare("PRAGMA table_info(users)").all(),
+        env.DB.prepare("PRAGMA table_info(programs)").all(),
+      ]);
+      if (!users.results.some(column => column.name === "coach_status"))
+        await env.DB.prepare("ALTER TABLE users ADD COLUMN coach_status TEXT").run();
+      for (const [name, type] of [
+        ["coach_mode", "TEXT"],
+        ["coach_weeks", "INTEGER"],
+        ["published_at", "TEXT"],
+      ])
+        if (!programs.results.some(column => column.name === name))
+          await env.DB.prepare(`ALTER TABLE programs ADD COLUMN ${name} ${type}`).run();
+      await env.DB.batch(
+        [
+          "CREATE TABLE IF NOT EXISTS coach_invites (id TEXT PRIMARY KEY, program_id TEXT NOT NULL REFERENCES programs(id) ON DELETE CASCADE, coach_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, responded_at TEXT, notified_at TEXT, UNIQUE(program_id,user_id))",
+          "CREATE INDEX IF NOT EXISTS coach_invites_user ON coach_invites(user_id,status)",
+          "CREATE TABLE IF NOT EXISTS coach_wod_history (id INTEGER PRIMARY KEY AUTOINCREMENT, wod_id TEXT NOT NULL REFERENCES program_wods(id) ON DELETE CASCADE, week_start TEXT NOT NULL, content TEXT NOT NULL, blocks TEXT, replaced_on TEXT NOT NULL)",
+          "CREATE INDEX IF NOT EXISTS coach_wod_history_wod ON coach_wod_history(wod_id,week_start)",
+          "CREATE INDEX IF NOT EXISTS users_coach_status ON users(coach_status)",
+        ].map(sql => env.DB.prepare(sql))
+      );
+    });
   })().catch(err => {
     schemaReady = null;
     throw err;
@@ -1152,9 +1179,10 @@ async function sendMonthlyReportPushes(e) {
   return {sent};
 }
 // Un seul programme à la fois : un programme suivi ne chevauche aucun programme personnel en cours ou à venir.
+// Les programmes de coach écrits par l'utilisateur (pour d'autres) ne comptent pas.
 async function followOverlap(e, userId, start, end) {
   return await e.DB.prepare(
-    "SELECT name FROM programs WHERE user_id=? AND is_default=0 AND end_monday>=? AND NOT(end_monday<? OR start_monday>?)"
+    "SELECT name FROM programs WHERE user_id=? AND is_default=0 AND coach_mode IS NULL AND end_monday>=? AND NOT(end_monday<? OR start_monday>?)"
   )
     .bind(userId, localToday(), start, end)
     .first();
@@ -1166,6 +1194,86 @@ async function followedOverlap(e, userId, start, end) {
   )
     .bind(userId, start, end)
     .first();
+}
+// Programmes de coach : un coach écrit un programme (nombre de semaines obligatoire, dates facultatives) et tague des
+// utilisateurs, qui l'acceptent (il devient leur programme suivi) ou le refusent. Sans dates, la semaine 1 est rangée
+// au lundi COACH_FREE_START et chacun choisit sa date de début en acceptant.
+const COACH_FREE_START = "2001-01-01",
+  COACH_MAX_WEEKS = 52,
+  COACH_INVITE_MAX = 20;
+const coachEnd = (start, weeks) => addDays(start, weeks * 7 - 1);
+const isMonday = d => validDate(d) && new Date(d + "T12:00:00Z").getUTCDay() === 1;
+// Avant de taguer : tous les WOD écrits sur toutes les semaines (WOD suivi : contenu de chaque semaine ; WOD non
+// suivi : sa description, la même chaque semaine). Renvoie le message d'erreur, ou null.
+async function coachProgramMissing(e, program) {
+  const wods = (
+    await e.DB.prepare(
+      "SELECT w.name,w.is_tracked,w.planned_comment,(SELECT COUNT(*) FROM weekly_wod_programming x WHERE x.wod_id=w.id AND x.week_start>=? AND x.week_start<=? AND TRIM(x.content)<>'') AS written FROM program_wods w WHERE w.program_id=? AND w.name<>'__AUTRES__' ORDER BY w.sort_order,w.created_at"
+    )
+      .bind(program.start_monday, program.end_monday, program.id)
+      .all()
+  ).results;
+  if (!wods.length) return "Ajoute au moins un WOD au programme avant de taguer des utilisateurs.";
+  const missing = wods.find(w =>
+    w.is_tracked ? w.written < program.coach_weeks : !String(w.planned_comment || "").trim()
+  );
+  return missing
+    ? "Le WOD « " +
+        missing.name +
+        " » n’est pas écrit pour toutes les semaines : écris-le (ou génère-le avec l’IA) avant de taguer des utilisateurs."
+    : null;
+}
+// Programme de coach publié : le contenu d'une semaine qui va être remplacé est gardé avec la date du remplacement.
+// Les semaines déjà passées de ceux qui le suivent continuent d'afficher le contenu de l'époque (voir program-data).
+const coachHistoryStatement = (e, wodId, week, content) =>
+  e.DB.prepare(
+    "INSERT INTO coach_wod_history(wod_id,week_start,content,blocks,replaced_on) SELECT x.wod_id,x.week_start,x.content,x.blocks,? FROM weekly_wod_programming x JOIN program_wods w ON w.id=x.wod_id JOIN programs p ON p.id=w.program_id WHERE x.wod_id=? AND x.week_start=? AND p.published_at IS NOT NULL AND x.content<>?"
+  ).bind(localToday(), wodId, week, content);
+// Programme de coach déjà publié : WOD et semaines figés (on ne peut plus qu'en modifier le contenu).
+const publishedCoachProgram = (e, programId) =>
+  e.DB.prepare("SELECT 1 FROM programs WHERE id=? AND coach_mode IS NOT NULL AND published_at IS NOT NULL")
+    .bind(programId)
+    .first();
+// Formulaire d'un programme de coach : nom, nombre de semaines (obligatoire) et, s'il est daté, son premier lundi.
+function coachProgramInput(b) {
+  const name = String(b.name || "")
+      .trim()
+      .slice(0, 100),
+    weeks = Number(b.coach?.weeks),
+    dated = !!b.coach?.dated;
+  if (!name) return {error: "Nom du programme requis."};
+  if (!Number.isInteger(weeks) || weeks < 1 || weeks > COACH_MAX_WEEKS)
+    return {error: "Nombre de semaines : de 1 à " + COACH_MAX_WEEKS + "."};
+  if (dated && !validDate(b.start)) return {error: "Choisis la date de début du programme."};
+  const start = dated ? mondayOfDate(b.start) : COACH_FREE_START;
+  return {name, weeks, start, end: coachEnd(start, weeks), mode: dated ? "dated" : "free"};
+}
+// Notification push des invitations pas encore annoncées (une seule par invitation), 10 envois au plus.
+async function notifyCoachInvites(e, coach, programId) {
+  const rows = (
+    await e.DB.prepare(
+      "SELECT i.id,i.user_id,p.name FROM coach_invites i JOIN programs p ON p.id=i.program_id WHERE i.program_id=? AND i.coach_id=? AND i.status='pending' AND i.notified_at IS NULL"
+    )
+      .bind(programId, coach.id)
+      .all()
+  ).results;
+  if (!rows.length) return;
+  const list = rows.map(() => "?").join(",");
+  await e.DB.prepare(`UPDATE coach_invites SET notified_at=? WHERE id IN (${list})`)
+    .bind(new Date().toISOString(), ...rows.map(x => x.id))
+    .run();
+  const name = [coach.first_name, coach.last_name].filter(Boolean).join(" ") || "Un coach",
+    message = {
+      title: "myFitFactory",
+      body: `${name} te propose son programme « ${rows[0].name} » : accepte-le dans l’onglet Programmes.`,
+      tag: "coach-invite",
+      url: "/",
+    };
+  let sent = 0;
+  for (const row of rows) {
+    if (sent >= 10) break;
+    sent += (await pushToUser(e, row.user_id, message)).devices;
+  }
 }
 // Mot de passe oublié : lien à usage unique valable 30 minutes (seule l'empreinte du jeton est gardée en base).
 // Envoi par e-mail via Resend si RESEND_API_KEY et MAIL_FROM sont configurés ; sinon le lien est écrit dans les logs
@@ -1932,7 +2040,7 @@ async function api(r, e, p, ctx = null) {
     }
     if (r.method === "GET" && p === "/api/admin/users") {
       const x = await e.DB.prepare(
-        "SELECT id,email,first_name,last_name,is_active,is_admin,email=? AS is_owner FROM users ORDER BY email"
+        "SELECT id,email,first_name,last_name,is_active,is_admin,coach_status,email=? AS is_owner FROM users ORDER BY email"
       )
         .bind(adminEmail)
         .all();
@@ -1963,6 +2071,11 @@ async function api(r, e, p, ctx = null) {
           .bind(b.is_admin ? 1 : 0, m[1])
           .run();
       }
+      // Rôle coach : demande validée (ou rôle donné directement), ou rôle retiré (demande refusée).
+      if (b.coach !== undefined)
+        await e.DB.prepare("UPDATE users SET coach_status=? WHERE id=?")
+          .bind(b.coach ? "approved" : null, m[1])
+          .run();
       return json({ok: true});
     }
     if (r.method === "PUT" && p === "/api/admin/activities/order") {
@@ -2226,6 +2339,7 @@ async function api(r, e, p, ctx = null) {
       interface: row?.interface_mode === "simple" ? "simple" : "advanced",
       common_wod: row?.common_wod_enabled ? 1 : 0,
       box_prompt_dismissed: row?.box_prompt_dismissed ? 1 : 0,
+      coach: u.coach_status === "approved" || u.coach_status === "pending" ? u.coach_status : null,
       default_theme: st.defaults.theme,
       reminders: {enabled: st.enabled, days: st.days, hour: st.hour},
       choices: {themes: THEMES, days: REMINDER_DAYS, hours: REMINDER_HOURS},
@@ -2267,7 +2381,7 @@ async function api(r, e, p, ctx = null) {
     ]);
     // Tâches à valider (icônes rouges en haut) : adhésions des box gérées, demandes de gestionnaire pour un admin.
     const pending = await e.DB.prepare(
-      "SELECT (SELECT COUNT(*) FROM box_members r JOIN box_members g ON g.box_id=r.box_id AND g.user_id=? AND g.role='manager' AND g.status='approved' WHERE r.role='member' AND r.status='pending') AS members,(SELECT COUNT(*) FROM box_members WHERE role='manager' AND status='pending') AS managers"
+      "SELECT (SELECT COUNT(*) FROM box_members r JOIN box_members g ON g.box_id=r.box_id AND g.user_id=? AND g.role='manager' AND g.status='approved' WHERE r.role='member' AND r.status='pending') AS members,(SELECT COUNT(*) FROM box_members WHERE role='manager' AND status='pending') AS managers,(SELECT COUNT(*) FROM users WHERE coach_status='pending' AND is_active=1) AS coaches"
     )
       .bind(u.id)
       .first();
@@ -2275,7 +2389,7 @@ async function api(r, e, p, ctx = null) {
       boxes: boxes.results,
       memberships: mine.results,
       categories: categories.results,
-      pending: {members: pending.members, managers: admin ? pending.managers : 0},
+      pending: {members: pending.members, managers: admin ? pending.managers : 0, coaches: admin ? pending.coaches : 0},
     });
   }
   // Demande d'adhésion (role=member) ou de gestion (role=manager) : rejouable sans effet (mode hors ligne).
@@ -3015,9 +3129,34 @@ async function api(r, e, p, ctx = null) {
       programOfWod.set(row.id, row.program_id);
     }
     for (const row of mv.results) (movements[row.program_id] ??= []).push(row);
+    // Programme de coach suivi : une semaine déjà passée (pour l'utilisateur) garde le contenu qu'elle avait à sa fin,
+    // même si le coach l'a modifié depuis (contenu remplacé gardé dans coach_wod_history, du plus ancien au plus récent).
+    const coachFollowed = p.results.filter(x => x.followed && x.coach_mode && x.published_at).map(x => x.id),
+      history = new Map(),
+      todayLocal = localToday();
+    const replaced = coachFollowed.length
+      ? (
+          await e.DB.prepare(
+            "SELECT h.wod_id,h.week_start,h.content,h.blocks,h.replaced_on FROM coach_wod_history h JOIN program_wods w ON w.id=h.wod_id WHERE w.program_id IN (" +
+              coachFollowed.map(() => "?").join(",") +
+              ") ORDER BY h.id"
+          )
+            .bind(...coachFollowed)
+            .all()
+        ).results
+      : [];
+    for (const h of replaced) {
+      const key = h.wod_id + "|" + h.week_start;
+      if (!history.has(key)) history.set(key, []);
+      history.get(key).push(h);
+    }
     const weekly = wp.results.map(x => {
       const shift = shifts.get(programOfWod.get(x.wod_id));
-      return shift ? {...x, week_start: addDays(x.week_start, shift)} : x;
+      if (!shift && shift !== 0) return x;
+      const week = addDays(x.week_start, shift),
+        end = addDays(week, 6),
+        old = end < todayLocal && history.get(x.wod_id + "|" + x.week_start)?.find(h => h.replaced_on > end);
+      return {...x, week_start: week, ...(old ? {content: old.content, blocks: old.blocks} : {})};
     });
     return json({programs: p.results, wods, movements, weeklyWodPrograms: weekly});
   }
@@ -3032,19 +3171,28 @@ async function api(r, e, p, ctx = null) {
       .all();
     return json({programs: x.results});
   }
-  // Suivre un programme public (un seul à la fois : remplace le programme suivi) ou arrêter de le suivre.
+  // Suivre un programme public (un seul à la fois : remplace le programme suivi) ou arrêter de le suivre. Un programme
+  // de coach sans dates déjà suivi (invitation acceptée) peut aussi changer de date de début, pour le même nombre de
+  // semaines ; un programme de coach daté garde les dates du coach.
   if (p === "/api/program-follow" && r.method === "PUT") {
     const b = await r.json(),
       program = await e.DB.prepare(
-        "SELECT id,name,start_monday,end_monday FROM programs WHERE id=? AND is_public=1 AND is_default=0 AND user_id<>?"
+        "SELECT id,name,start_monday,end_monday,coach_mode,coach_weeks FROM programs WHERE id=? AND is_default=0 AND user_id<>? AND (is_public=1 OR (coach_mode='free' AND id IN (SELECT program_id FROM program_follows WHERE user_id=?)))"
       )
-        .bind(String(b.program_id || ""), u.id)
+        .bind(String(b.program_id || ""), u.id, u.id)
         .first();
     if (!program) return json({error: "Programme introuvable ou privé."}, 404);
+    if (program.coach_mode && !isMonday(b.start)) return json({error: "Choisis un lundi pour commencer."}, 400);
     // Dates choisies par l'utilisateur (par défaut : début choisi, ou celui de l'auteur, et même durée).
     const length = daysBetween(program.start_monday, program.end_monday),
       start = b.start === undefined ? program.start_monday : b.start,
-      end = b.end === undefined ? (validDate(start) ? addDays(start, length) : "") : b.end;
+      end = program.coach_mode
+        ? coachEnd(start, program.coach_weeks)
+        : b.end === undefined
+          ? validDate(start)
+            ? addDays(start, length)
+            : ""
+          : b.end;
     if (!validDate(start) || !validDate(end) || start > end)
       return json({error: "Vérifie les dates du programme."}, 400);
     if (daysBetween(start, end) > 3 * 366) return json({error: "Un programme dure au plus trois ans."}, 400);
@@ -3070,6 +3218,135 @@ async function api(r, e, p, ctx = null) {
     await e.DB.prepare("DELETE FROM program_follows WHERE user_id=?").bind(u.id).run();
     return json({ok: true});
   }
+  // Rôle coach : demande (validée par un administrateur), annulation de la demande ou abandon du rôle. Les programmes
+  // déjà proposés restent suivis.
+  if (p === "/api/coach-request" && r.method === "PUT") {
+    const b = await r.json();
+    if (b.request) {
+      if (!String(u.first_name || "").trim() || !String(u.last_name || "").trim())
+        return json(
+          {error: "Renseigne ton prénom et ton nom dans ton profil avant de demander le rôle de coach."},
+          400
+        );
+      await e.DB.prepare("UPDATE users SET coach_status='pending' WHERE id=? AND coach_status IS NULL")
+        .bind(u.id)
+        .run();
+    } else await e.DB.prepare("UPDATE users SET coach_status=NULL WHERE id=?").bind(u.id).run();
+    return json({ok: true});
+  }
+  // Invitations d'un programme de coach (vues par le coach) : personnes taguées et réponse.
+  m = p.match(/^\/api\/coach-programs\/([\w-]+)\/invites$/);
+  if (m && (r.method === "GET" || r.method === "POST")) {
+    const program = await e.DB.prepare(
+      "SELECT id,name,start_monday,end_monday,coach_mode,coach_weeks FROM programs WHERE id=? AND user_id=? AND coach_mode IS NOT NULL"
+    )
+      .bind(m[1], u.id)
+      .first();
+    if (!program) return json({error: "Programme introuvable."}, 404);
+    if (r.method === "GET") {
+      const x = await e.DB.prepare(
+        "SELECT i.id,i.user_id,i.status,us.first_name,us.last_name,EXISTS(SELECT 1 FROM program_follows f WHERE f.user_id=i.user_id AND f.program_id=i.program_id) AS following FROM coach_invites i JOIN users us ON us.id=i.user_id WHERE i.program_id=? AND i.coach_id=? ORDER BY i.created_at,us.first_name COLLATE NOCASE"
+      )
+        .bind(program.id, u.id)
+        .all();
+      return json({invites: x.results});
+    }
+    if (u.coach_status !== "approved") return json({error: "Réservé aux coachs validés par un administrateur."}, 403);
+    const b = await r.json(),
+      wanted = [...new Set((Array.isArray(b.user_ids) ? b.user_ids : []).map(String))].filter(id => id !== u.id);
+    if (!wanted.length) return json({error: "Tague au moins une personne."}, 400);
+    if (wanted.length > COACH_INVITE_MAX)
+      return json({error: "Au plus " + COACH_INVITE_MAX + " personnes à la fois."}, 400);
+    if (program.coach_mode === "dated" && program.end_monday < localToday())
+      return json({error: "Ce programme est terminé : change ses dates ou crée-en un autre."}, 400);
+    const missing = await coachProgramMissing(e, program);
+    if (missing) return json({error: missing}, 400);
+    const found = (
+      await e.DB.prepare(`SELECT id FROM users WHERE is_active=1 AND id IN (${wanted.map(() => "?").join(",")})`)
+        .bind(...wanted)
+        .all()
+    ).results.map(x => x.id);
+    if (!found.length) return json({error: "Personne introuvable."}, 404);
+    const now = new Date().toISOString();
+    // Une invitation refusée peut être renouvelée ; une invitation en attente ou acceptée ne change pas.
+    await e.DB.batch([
+      e.DB.prepare("UPDATE programs SET published_at=COALESCE(published_at,?) WHERE id=?").bind(now, program.id),
+      ...found.map(id =>
+        e.DB.prepare(
+          "INSERT INTO coach_invites(id,program_id,coach_id,user_id,status,created_at) VALUES(?,?,?,?,'pending',?) ON CONFLICT(program_id,user_id) DO UPDATE SET status='pending',created_at=excluded.created_at,responded_at=NULL,notified_at=NULL WHERE coach_invites.status='declined'"
+        ).bind(uid(), program.id, u.id, id, now)
+      ),
+    ]);
+    const job = notifyCoachInvites(e, u, program.id).catch(err =>
+      console.error("myFitFactory push coach", {message: err?.message})
+    );
+    if (ctx?.waitUntil) ctx.waitUntil(job);
+    else await job;
+    return json({ok: true, invited: found.length});
+  }
+  // Le coach retire une invitation encore sans réponse.
+  m = p.match(/^\/api\/coach-invites\/([\w-]+)$/);
+  if (m && r.method === "DELETE") {
+    await e.DB.prepare("DELETE FROM coach_invites WHERE id=? AND coach_id=? AND status='pending'")
+      .bind(m[1], u.id)
+      .run();
+    return json({ok: true});
+  }
+  // Programmes de coach proposés à l'utilisateur, en attente de sa réponse (pastille rouge de l'onglet Programmes).
+  if (r.method === "GET" && p === "/api/coach-invites") {
+    const x = await e.DB.prepare(
+      "SELECT i.id,i.program_id,p.name,p.coach_mode,p.coach_weeks,CASE WHEN p.coach_mode='dated' THEN p.start_monday END AS start_monday,CASE WHEN p.coach_mode='dated' THEN p.end_monday END AS end_monday,c.first_name,c.last_name,(SELECT COUNT(*) FROM program_wods w WHERE w.program_id=p.id AND w.name<>'__AUTRES__') AS wods FROM coach_invites i JOIN programs p ON p.id=i.program_id JOIN users c ON c.id=i.coach_id WHERE i.user_id=? AND i.status='pending' ORDER BY i.created_at DESC LIMIT 20"
+    )
+      .bind(u.id)
+      .all();
+    return json({invites: x.results});
+  }
+  // Réponse à une invitation : refus, ou acceptation (le programme devient le programme suivi, comme un programme
+  // public choisi, et remplace le programme suivi jusque-là ; sans dates, l'utilisateur choisit son lundi de départ).
+  m = p.match(/^\/api\/coach-invites\/([\w-]+)\/(accept|decline)$/);
+  if (m && r.method === "POST") {
+    const invite = await e.DB.prepare(
+      "SELECT i.id,p.id AS program_id,p.start_monday,p.end_monday,p.coach_mode,p.coach_weeks FROM coach_invites i JOIN programs p ON p.id=i.program_id WHERE i.id=? AND i.user_id=? AND i.status='pending'"
+    )
+      .bind(m[1], u.id)
+      .first();
+    if (!invite) return json({error: "Invitation introuvable ou déjà traitée."}, 404);
+    const now = new Date().toISOString();
+    if (m[2] === "decline") {
+      await e.DB.prepare("UPDATE coach_invites SET status='declined',responded_at=? WHERE id=? AND status='pending'")
+        .bind(now, invite.id)
+        .run();
+      return json({ok: true});
+    }
+    const b = await r.json().catch(() => ({})),
+      dated = invite.coach_mode === "dated",
+      start = dated ? invite.start_monday : String(b.start || ""),
+      end = dated ? invite.end_monday : isMonday(start) ? coachEnd(start, invite.coach_weeks) : "";
+    if (!dated && (!isMonday(start) || start < mondayOfDate(localToday())))
+      return json({error: "Choisis un lundi, à partir de cette semaine, pour commencer le programme."}, 400);
+    if (end < localToday()) return json({error: "Ce programme est déjà terminé."}, 400);
+    const overlap = await followOverlap(e, u.id, start, end);
+    if (overlap)
+      return json(
+        {
+          error:
+            "Un seul programme à la fois : ce programme chevauche ton programme « " +
+            overlap.name +
+            " ». Modifie ses dates ou supprime-le d’abord.",
+        },
+        409
+      );
+    await e.DB.batch([
+      e.DB.prepare(
+        "INSERT INTO program_follows(user_id,program_id,start_monday,end_monday) VALUES(?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET program_id=excluded.program_id,start_monday=excluded.start_monday,end_monday=excluded.end_monday,created_at=CURRENT_TIMESTAMP"
+      ).bind(u.id, invite.program_id, start, end),
+      e.DB.prepare("UPDATE coach_invites SET status='accepted',responded_at=? WHERE id=? AND status='pending'").bind(
+        now,
+        invite.id
+      ),
+    ]);
+    return json({ok: true, start, end});
+  }
   if (r.method === "GET" && p === "/api/programs") {
     const x = await e.DB.prepare("SELECT * FROM programs WHERE user_id=? ORDER BY is_default ASC,start_monday DESC")
       .bind(u.id)
@@ -3077,8 +3354,20 @@ async function api(r, e, p, ctx = null) {
     return json({programs: x.results});
   }
   if (r.method === "POST" && p === "/api/programs") {
-    const b = await r.json(),
-      name = String(b.name || "")
+    const b = await r.json();
+    if (b.coach) {
+      if (u.coach_status !== "approved") return json({error: "Réservé aux coachs validés par un administrateur."}, 403);
+      const v = coachProgramInput(b);
+      if (v.error) return json({error: v.error}, 400);
+      const id = uid();
+      await e.DB.prepare(
+        "INSERT INTO programs(id,user_id,name,start_monday,end_monday,is_default,is_public,coach_mode,coach_weeks) VALUES(?,?,?,?,?,0,0,?,?)"
+      )
+        .bind(id, u.id, v.name, v.start, v.end, v.mode, v.weeks)
+        .run();
+      return json({ok: true, id});
+    }
+    const name = String(b.name || "")
         .trim()
         .slice(0, 100),
       isDefault = !!b.is_default,
@@ -3088,7 +3377,7 @@ async function api(r, e, p, ctx = null) {
       return json({error: "Vérifie le nom et les dates."}, 400);
     if (!isDefault) {
       const overlap = await e.DB.prepare(
-        "SELECT id FROM programs WHERE user_id=? AND is_default=0 AND NOT(end_monday<? OR start_monday>?)"
+        "SELECT id FROM programs WHERE user_id=? AND is_default=0 AND coach_mode IS NULL AND NOT(end_monday<? OR start_monday>?)"
       )
         .bind(u.id, start, end)
         .first();
@@ -3209,6 +3498,61 @@ async function api(r, e, p, ctx = null) {
     return json({ok: true});
   }
   m = p.match(/^\/api\/programs\/([\w-]+)$/);
+  // Programme de coach : nom, nombre de semaines et dates modifiables jusqu'à la publication ; ensuite, le nom seul.
+  const coachRow =
+    m && r.method !== "GET"
+      ? await e.DB.prepare(
+          "SELECT id,coach_mode,coach_weeks,published_at,(SELECT COUNT(*) FROM program_follows f WHERE f.program_id=programs.id) AS followers FROM programs WHERE id=? AND user_id=? AND coach_mode IS NOT NULL"
+        )
+          .bind(m[1], u.id)
+          .first()
+      : null;
+  if (coachRow && r.method === "PUT") {
+    const b = await r.json();
+    if (coachRow.published_at) {
+      const name = String(b.name || "")
+        .trim()
+        .slice(0, 100);
+      if (!name) return json({error: "Nom du programme requis."}, 400);
+      await e.DB.prepare("UPDATE programs SET name=? WHERE id=? AND user_id=?").bind(name, m[1], u.id).run();
+      return json({ok: true});
+    }
+    const v = coachProgramInput(b);
+    if (v.error) return json({error: v.error}, 400);
+    // Changer de semaine 1 (dates ajoutées, retirées ou déplacées) décale tout le contenu déjà écrit : les semaines
+    // sont réécrites (supprimées puis recréées) pour ne jamais heurter la clé (WOD, semaine) pendant le décalage.
+    const old = await e.DB.prepare("SELECT start_monday FROM programs WHERE id=?").bind(m[1]).first(),
+      shift = daysBetween(old.start_monday, v.start),
+      written = shift
+        ? (
+            await e.DB.prepare(
+              "SELECT x.* FROM weekly_wod_programming x JOIN program_wods w ON w.id=x.wod_id WHERE w.program_id=?"
+            )
+              .bind(m[1])
+              .all()
+          ).results
+        : [];
+    await e.DB.batch([
+      e.DB.prepare(
+        "UPDATE programs SET name=?,start_monday=?,end_monday=?,coach_mode=?,coach_weeks=? WHERE id=? AND user_id=?"
+      ).bind(v.name, v.start, v.end, v.mode, v.weeks, m[1], u.id),
+      ...(written.length
+        ? [
+            e.DB.prepare(
+              "DELETE FROM weekly_wod_programming WHERE wod_id IN (SELECT id FROM program_wods WHERE program_id=?)"
+            ).bind(m[1]),
+            ...written.map(x =>
+              e.DB.prepare(
+                "INSERT INTO weekly_wod_programming(wod_id,user_id,week_start,content,blocks,updated_at) VALUES(?,?,?,?,?,?)"
+              ).bind(x.wod_id, x.user_id, addDays(x.week_start, shift), x.content, x.blocks ?? null, x.updated_at)
+            ),
+          ]
+        : []),
+    ]);
+    return json({ok: true});
+  }
+  if (coachRow && r.method === "DELETE" && coachRow.followers)
+    return json({error: "Ce programme est suivi : il ne peut plus être supprimé."}, 409);
   if (m && r.method === "PUT") {
     const b = await r.json(),
       name = String(b.name || "")
@@ -3223,7 +3567,7 @@ async function api(r, e, p, ctx = null) {
     if (!exists) return json({error: "Programme introuvable."}, 404);
     if (!isDefault) {
       const overlap = await e.DB.prepare(
-        "SELECT id FROM programs WHERE user_id=? AND id<>? AND is_default=0 AND NOT(end_monday<? OR start_monday>?)"
+        "SELECT id FROM programs WHERE user_id=? AND id<>? AND is_default=0 AND coach_mode IS NULL AND NOT(end_monday<? OR start_monday>?)"
       )
         .bind(u.id, m[1], start, end)
         .first();
@@ -3306,6 +3650,8 @@ async function api(r, e, p, ctx = null) {
     const pid = m[1],
       ok = await e.DB.prepare("SELECT id FROM programs WHERE id=? AND user_id=?").bind(pid, u.id).first();
     if (!ok) return json({error: "Programme introuvable."}, 404);
+    if (await publishedCoachProgram(e, pid))
+      return json({error: "Programme déjà proposé à des utilisateurs : on ne peut plus y ajouter de WOD."}, 409);
     const id = uid();
     try {
       await e.DB.prepare(
@@ -3414,6 +3760,7 @@ async function api(r, e, p, ctx = null) {
     const content = wodToText(out.wod, 2000, false),
       blocks = JSON.stringify(wodBlocks(out.wod));
     await e.DB.batch([
+      coachHistoryStatement(e, wod.id, week, content),
       e.DB.prepare(
         "INSERT INTO weekly_wod_programming(wod_id,user_id,week_start,content,blocks,updated_at) VALUES(?,?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(wod_id,week_start) DO UPDATE SET content=excluded.content,blocks=excluded.blocks,updated_at=CURRENT_TIMESTAMP"
       ).bind(wod.id, u.id, week, content, blocks),
@@ -3813,11 +4160,12 @@ async function api(r, e, p, ctx = null) {
     if (addDays(week, 6) < wod.start_monday || week > wod.end_monday)
       return json({error: "Cette semaine est hors période du programme."}, 400);
     // Texte modifié à la main : les blocs générés par l'IA ne correspondent plus, ils sont oubliés.
-    await e.DB.prepare(
-      "INSERT INTO weekly_wod_programming(wod_id,user_id,week_start,content,updated_at) VALUES(?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(wod_id,week_start) DO UPDATE SET blocks=CASE WHEN weekly_wod_programming.content=excluded.content THEN weekly_wod_programming.blocks ELSE NULL END,content=excluded.content,updated_at=CURRENT_TIMESTAMP"
-    )
-      .bind(m[1], u.id, week, content)
-      .run();
+    await e.DB.batch([
+      coachHistoryStatement(e, m[1], week, content),
+      e.DB.prepare(
+        "INSERT INTO weekly_wod_programming(wod_id,user_id,week_start,content,updated_at) VALUES(?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(wod_id,week_start) DO UPDATE SET blocks=CASE WHEN weekly_wod_programming.content=excluded.content THEN weekly_wod_programming.blocks ELSE NULL END,content=excluded.content,updated_at=CURRENT_TIMESTAMP"
+      ).bind(m[1], u.id, week, content),
+    ]);
     return json({ok: true});
   }
   m = p.match(/^\/api\/wods\/([\w-]+)$/);
@@ -3839,7 +4187,8 @@ async function api(r, e, p, ctx = null) {
       return json({error: "Activité ou durée invalide."}, 400);
     try {
       const result = await e.DB.prepare(
-        "UPDATE program_wods SET name=?,planned_comment=?,activity_id=?,duration_minutes=?,is_tracked=?,score_type=COALESCE(?,score_type) WHERE id=? AND user_id=?"
+        // Programme de coach publié : un WOD suivi le reste (son contenu semaine par semaine est déjà proposé).
+        "UPDATE program_wods SET name=?,planned_comment=?,activity_id=?,duration_minutes=?,is_tracked=CASE WHEN program_id IN (SELECT id FROM programs WHERE coach_mode IS NOT NULL AND published_at IS NOT NULL) THEN is_tracked ELSE ? END,score_type=COALESCE(?,score_type) WHERE id=? AND user_id=?"
       )
         .bind(
           name,
@@ -3868,6 +4217,11 @@ async function api(r, e, p, ctx = null) {
       .bind(m[1], u.id)
       .first();
     if (completed) return json({error: "Ce WOD a déjà été réalisé et ne peut plus être supprimé."}, 409);
+    const owner = await e.DB.prepare("SELECT program_id FROM program_wods WHERE id=? AND user_id=?")
+      .bind(m[1], u.id)
+      .first();
+    if (owner && (await publishedCoachProgram(e, owner.program_id)))
+      return json({error: "Programme déjà proposé à des utilisateurs : ce WOD ne peut plus être supprimé."}, 409);
     await e.DB.prepare("DELETE FROM program_wods WHERE id=? AND user_id=?").bind(m[1], u.id).run();
     return json({ok: true});
   }
