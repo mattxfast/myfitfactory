@@ -2129,7 +2129,8 @@ button:disabled {
   justify-content: flex-end;
   margin-bottom: 12px;
 }
-.manualwod-ai[hidden] {
+.manualwod-ai[hidden],
+.newwod-option[hidden] {
   display: none;
 }
 .newwod-option b {

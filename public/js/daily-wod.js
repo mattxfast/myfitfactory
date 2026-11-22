@@ -48,7 +48,11 @@ const dailyGenerateRow = from =>
     ? `<div class="weekstats-generate"><button type="button" class="smallbtn" data-wod-new aria-label="Nouveau WOD (IA, référence ou saisie manuelle)" title="Nouveau WOD"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M12 12v6"/><path d="M9 15h6"/></svg></button></div>`
     : "";
 // Fenêtre « Nouveau WOD » : trois façons de créer le WOD du jour.
+// « Généré par l’IA » et « Saisie manuelle » mènent au même formulaire : l’IA le pré-remplit (sa fenêtre de
+// génération s’ouvre par-dessus), on relit et on ajuste avant d’enregistrer.
 function openNewWodChooser() {
+  // Interface simplifiée : pas d’IA.
+  $('[data-newwod="ai"]').hidden = simpleInterface();
   $("#newwoddialog").showModal();
 }
 document.querySelectorAll("[data-newwod]").forEach(
@@ -56,7 +60,10 @@ document.querySelectorAll("[data-newwod]").forEach(
     (b.onclick = () => {
       $("#newwoddialog").close();
       if (b.dataset.newwod === "bench") openBenchmarkDraw();
-      else openManualWod();
+      else {
+        openManualWod();
+        if (b.dataset.newwod === "ai") openAiDialog("daily");
+      }
     })
 );
 // Création d’un WOD : mêmes blocs que les WOD de box, écrits à la main ou pré-remplis par l’IA (puis relus et
