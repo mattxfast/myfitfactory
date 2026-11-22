@@ -433,7 +433,7 @@ function openBoxWod(w = null, presetDate = "") {
     f.elements.type_id.value = [...boxWodTypeFilter][0];
   f.elements.name.value = w?.name && w.name !== defaultWodName(w.wod_date, w.type_name) ? w.name : "";
   syncBoxWodPlaceholder();
-  f.elements.score_type.value = w?.score_type || "time";
+  f.elements.score_type.value = w?.score_type || "none";
   // Blocs du WOD ; un WOD saisi avant les blocs a tout son contenu dans « Metcon ».
   let blocks = null;
   try {
