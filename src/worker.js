@@ -14,6 +14,7 @@ import {
   dailyChrono,
   dailyMovementIds,
   dailyOptionsInput,
+  dailyWodToText,
 } from "./ai.js";
 import {
   MEAL_DAILY_LIMIT,
@@ -3171,9 +3172,9 @@ async function api(r, e, p, ctx = null) {
         return json({error: "Une séance est déjà enregistrée sur ce WOD."}, 409);
     }
     const used = await e.DB.prepare(
-      "SELECT COUNT(*) AS n,SUM(prompt_version=?) AS daily FROM ai_generations WHERE user_id=? AND created_at>datetime('now','-1 day')"
+      "SELECT COUNT(*) AS n,SUM(prompt_version GLOB 'wod-du-jour-v*') AS daily FROM ai_generations WHERE user_id=? AND created_at>datetime('now','-1 day')"
     )
-      .bind(DAILY_PROMPT_VERSION, u.id)
+      .bind(u.id)
       .first();
     if ((used?.n || 0) >= AI_DAILY_LIMIT)
       return json({error: "Limite de " + AI_DAILY_LIMIT + " générations par 24 h atteinte. Réessaie demain."}, 429);
@@ -3211,16 +3212,25 @@ async function api(r, e, p, ctx = null) {
     });
     const out = await callOpenAIDaily(e, prompt);
     if (out.error) return json({error: out.error}, 502);
+    const blocs = options.blocks
+      ? Object.keys(options.blocks)
+          .filter(k => options.blocks[k])
+          .map(k => out.wod.blocs.find(b => b.type === k))
+      : out.wod.blocs;
+    if (blocs.some(b => !b)) return json({error: "L’IA n’a pas généré tous les blocs demandés. Réessaie."}, 502);
+    const wod = {...out.wod, blocs},
+      title =
+        String(wod.titre || "")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 120) || "WOD du jour";
     const row = {
       id: replaceId || uid(),
       wod_date: date,
-      title: String(out.wod.titre || "WOD du jour")
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 120),
-      content: wodToText(out.wod),
-      chrono: JSON.stringify(dailyChrono(out.wod.chrono)),
-      movement_ids: JSON.stringify(dailyMovementIds(out.wod, catalog.results)),
+      title,
+      content: dailyWodToText(wod, title),
+      chrono: JSON.stringify(blocs.some(b => b.type === "metcon") ? dailyChrono(wod.chrono) : null),
+      movement_ids: JSON.stringify(dailyMovementIds(wod, catalog.results)),
     };
     await e.DB.batch([
       e.DB.prepare(

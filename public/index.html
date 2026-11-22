@@ -739,84 +739,6 @@
         </form>
       </dialog>
 
-      <dialog id="dailydialog" class="modal">
-        <form id="dailyform" method="dialog">
-          <div class="sectionhead">
-            <h2 id="dailytitle">WOD du jour</h2>
-            <button type="button" class="iconbtn" id="closedaily">×</button>
-          </div>
-          <p class="hint">
-            L’IA prépare ton entraînement selon ton profil, tes records et tes séances récentes. Il reste disponible
-            dans la semaine : lance le chrono quand tu veux et enregistre ta séance une fois terminée.
-          </p>
-          <div class="two">
-            <label>Pour<select name="wod_date"></select></label>
-            <label
-              >Durée<select name="duration_minutes">
-                <option value="20">20 min</option>
-                <option value="30">30 min</option>
-                <option value="45">45 min</option>
-                <option value="60" selected>1 h</option>
-                <option value="75">1 h 15</option>
-                <option value="90">1 h 30</option>
-              </select></label
-            >
-          </div>
-          <fieldset class="daily-choice">
-            <legend>Où ?</legend>
-            <div class="choice-chips">
-              <label><input type="radio" name="place" value="box" checked /><span>Box</span></label>
-              <label><input type="radio" name="place" value="maison" /><span>Maison</span></label>
-              <label><input type="radio" name="place" value="exterieur" /><span>Extérieur</span></label>
-              <label><input type="radio" name="place" value="sans_materiel" /><span>Sans matériel</span></label>
-            </div>
-          </fieldset>
-          <fieldset class="daily-choice">
-            <legend>Ma forme</legend>
-            <div class="choice-chips">
-              <label><input type="radio" name="energy" value="normal" checked /><span>Normale</span></label>
-              <label><input type="radio" name="energy" value="en_forme" /><span>En forme</span></label>
-              <label><input type="radio" name="energy" value="fatigue" /><span>Fatigué</span></label>
-            </div>
-          </fieldset>
-          <label
-            >Envie particulière (facultatif)<input
-              name="instructions"
-              maxlength="300"
-              placeholder="Ex. : cardio, haut du corps, pas de course"
-          /></label>
-          <details class="ai-profile">
-            <summary>Mon profil d’athlète (mémorisé)</summary>
-            <label
-              >Niveau<select name="level">
-                <option value="">Non précisé</option>
-                <option value="debutant">Débutant</option>
-                <option value="intermediaire">Intermédiaire</option>
-                <option value="avance">Avancé</option>
-                <option value="competiteur">Compétiteur</option>
-              </select></label
-            >
-            <label>Objectifs<input name="goals" maxlength="300" placeholder="Ex. : force, premier muscle-up" /></label>
-            <label
-              >Matériel habituel<input
-                name="equipment"
-                maxlength="300"
-                placeholder="Box complète, ou : 2 kettlebells, barre de traction…"
-            /></label>
-            <label
-              >Contraintes<input
-                name="constraints"
-                maxlength="300"
-                placeholder="Ex. : pas de course, éviter le travail au-dessus de la tête"
-            /></label>
-            <p class="hint">Pas de données médicales. Tes records (PR) sont pris en compte automatiquement.</p>
-          </details>
-          <p class="ai-wait" id="dailyprogress" role="status" hidden></p>
-          <button class="primary" id="dailysubmit">Générer mon WOD</button>
-          <div class="error" id="dailyerror"></div>
-        </form>
-      </dialog>
-
       <dialog id="aidialog" class="modal">
         <form id="aiform" method="dialog">
           <div class="sectionhead">
@@ -828,6 +750,7 @@
           <label data-ai-mode="program"
             >WOD par semaine<input name="per_week" type="number" min="1" max="7" value="3" required
           /></label>
+          <label data-ai-mode="daily" hidden>Pour<select name="wod_date"></select></label>
           <label
             >Durée de la séance (min)<input
               name="duration_minutes"
@@ -838,6 +761,23 @@
               value="60"
               required
           /></label>
+          <fieldset class="daily-choice" data-ai-mode="daily" hidden>
+            <legend>Où ?</legend>
+            <div class="choice-chips">
+              <label><input type="radio" name="place" value="box" checked /><span>Box</span></label>
+              <label><input type="radio" name="place" value="maison" /><span>Maison</span></label>
+              <label><input type="radio" name="place" value="exterieur" /><span>Extérieur</span></label>
+              <label><input type="radio" name="place" value="sans_materiel" /><span>Sans matériel</span></label>
+            </div>
+          </fieldset>
+          <fieldset class="daily-choice" data-ai-mode="daily" hidden>
+            <legend>Ma forme</legend>
+            <div class="choice-chips">
+              <label><input type="radio" name="energy" value="normal" checked /><span>Normale</span></label>
+              <label><input type="radio" name="energy" value="en_forme" /><span>En forme</span></label>
+              <label><input type="radio" name="energy" value="fatigue" /><span>Fatigué</span></label>
+            </div>
+          </fieldset>
           <fieldset class="ai-blocks">
             <legend>Blocs de la séance</legend>
             <label class="checkbox-label"><input type="checkbox" name="echauffement" checked /> Échauffement</label>

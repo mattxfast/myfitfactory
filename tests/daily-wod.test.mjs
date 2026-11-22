@@ -23,7 +23,7 @@ const FAKE_WOD = {
     },
   ],
   objectif_score: "6 tours",
-  notes_coach: null,
+  notes_coach: "Note de test à omettre",
   chrono: {mode: "amrap", minutes: 15, intervalle_s: null, tours: null, travail_s: null, repos_s: null},
 };
 let worker,
@@ -39,13 +39,26 @@ before(async () => {
     let raw = "";
     req.on("data", c => (raw += c));
     req.on("end", () => {
-      requests.push(JSON.parse(raw));
+      const call = JSON.parse(raw);
+      requests.push(call);
+      const wod = call.input.includes("Force : oui")
+        ? {
+            ...FAKE_WOD,
+            blocs: [
+              ...FAKE_WOD.blocs,
+              {
+                type: "force",
+                mouvements: [{nom: "Back squat", reps: "5 x 5", charge: "80 %", scaling: "Plus léger"}],
+              },
+            ],
+          }
+        : FAKE_WOD;
       res.setHeader("content-type", "application/json");
       res.end(
         JSON.stringify({
           model: "faux-modele",
           status: "completed",
-          output: [{type: "message", content: [{type: "output_text", text: JSON.stringify(FAKE_WOD)}]}],
+          output: [{type: "message", content: [{type: "output_text", text: JSON.stringify(wod)}]}],
         })
       );
     });
@@ -89,6 +102,7 @@ test("WOD du jour : contrôles de saisie", async () => {
   assert.equal((await alice.post("/daily-wods", request({duration_minutes: 5}))).status, 400);
   assert.equal((await alice.post("/daily-wods", request({place: "plage"}))).status, 400);
   assert.equal((await alice.post("/daily-wods", request({energy: "excellent"}))).status, 400);
+  assert.equal((await alice.post("/daily-wods", request({blocks: {}}))).status, 400);
   assert.equal(requests.length, 0, "aucun appel au service d'IA pour une demande refusée");
 });
 
@@ -100,7 +114,7 @@ test("WOD du jour : génération, chrono et mouvements reconnus", async () => {
   dailyId = wod.id;
   assert.equal(wod.title, "Thrusters et burpees");
   assert.equal(wod.wod_date, today());
-  assert.match(wod.content, /⚡ METCON — AMRAP 15 min\n/);
+  assert.match(wod.content, /Metcon :\nAMRAP 15 min\n10 back squat @ 40 kg/);
   assert.deepEqual(wod.chrono, {
     mode: "amrap",
     minutes: 15,
@@ -114,7 +128,7 @@ test("WOD du jour : génération, chrono et mouvements reconnus", async () => {
   assert.equal(call.text.format.name, "wod_du_jour");
   assert.match(call.input, /Lieu : À la maison/);
   assert.match(call.input, /Forme du jour : Fatigué/);
-  assert.match(call.input, /Envie particulière : Cardio/);
+  assert.match(call.input, /Consigne particulière : Cardio/);
   const data = await weekData(alice);
   assert.equal(data.dailyWods.length, 1);
   assert.equal(data.dailyWods[0].id, dailyId);
@@ -144,7 +158,7 @@ test("WOD du jour : séance rattachée, remplacement et suppression bloqués", a
   const s = (await weekData(alice)).sessions.find(x => x.id === saved.data.id);
   assert.equal(s.daily_wod_id, dailyId);
   assert.equal(s.wod_name, "Thrusters et burpees");
-  assert.match(s.planned_comment, /⚡ METCON — AMRAP 15 min/);
+  assert.match(s.planned_comment, /Metcon :\nAMRAP 15 min/);
   assert.equal(s.program_name, "Hors programme");
 
   assert.equal((await alice.post("/daily-wods", request({replace_id: dailyId}))).status, 409);
@@ -155,4 +169,20 @@ test("WOD du jour : séance rattachée, remplacement et suppression bloqués", a
   assert.equal(replaced.data.wod.id, dailyId, "« Autre WOD » remplace le WOD sans en créer un nouveau");
   assert.equal(replaced.data.wod.wod_date, addDays(today(), 1));
   assert.equal((await alice.del("/daily-wods/" + dailyId)).status, 200);
+});
+
+test("WOD du jour : utilise les blocs et les mouvements choisis dans le formulaire commun", async () => {
+  const res = await alice.post(
+    "/daily-wods",
+    request({duration_minutes: 180, blocks: {force: true}, force_movements: [squatId]})
+  );
+  assert.equal(res.status, 200, JSON.stringify(res.data));
+  assert.match(requests.at(-1).input, /Durée totale : 180 min/);
+  assert.match(requests.at(-1).input, /Force : oui — mouvements imposés : Back squat/);
+  assert.match(requests.at(-1).input, /Metcon : non/);
+  assert.equal(res.data.wod.content, "Thrusters et burpees\n\nForce :\n5 x 5 Back squat @ 80 %");
+  assert.equal(res.data.wod.chrono, null);
+  const missing = await alice.post("/daily-wods", request({blocks: {technique: true}}));
+  assert.equal(missing.status, 502);
+  assert.equal((await weekData(alice)).dailyWods.length, 1);
 });

@@ -5,9 +5,7 @@
 // La génération demande le réseau : elle n’entre jamais dans la file d’attente hors ligne.
 
 const dailyWodsById = new Map();
-let dailyWods = [],
-  dailyReplaceId = null,
-  dailyRunning = false;
+let dailyWods = [];
 // WOD du jour déjà chargés (semaine affichée, séances) : retrouvés dans le formulaire de séance, même hors ligne.
 // Ceux de la semaine chargée que le serveur ne renvoie plus (supprimés, ici ou sur un autre appareil) sont oubliés.
 function rememberDailyWods(list, from = null) {
@@ -82,7 +80,7 @@ function bindDailySection(root) {
   root
     .querySelectorAll("[data-daily-open]")
     .forEach(b => (b.onclick = e => (blurAfterTap(b, e), openDailyDetail(b.dataset.dailyOpen))));
-  root.querySelectorAll("#dailynew, [data-daily-new]").forEach(b => (b.onclick = () => openDailyDialog()));
+  root.querySelectorAll("#dailynew, [data-daily-new]").forEach(b => (b.onclick = () => openAiDialog("daily")));
   root.querySelectorAll("[data-bench-new]").forEach(b => (b.onclick = () => openBenchmarkDraw()));
   root
     .querySelectorAll("[data-daily-log]")
@@ -112,92 +110,35 @@ function dailyLastChoices() {
     return {};
   }
 }
-async function openDailyDialog(replaceId = null) {
-  const form = $("#dailyform"),
-    f = form.elements,
+function setupDailyAiForm(form, replaceId) {
+  const f = form.elements,
     last = dailyLastChoices(),
-    replaced = replaceId ? dailyWodsById.get(replaceId) : null;
-  form.reset();
-  dailyReplaceId = replaceId;
-  const days = [today(), addDays(today(), 1)];
+    replaced = dailyWodsById.get(replaceId),
+    days = [today(), addDays(today(), 1)];
   f.wod_date.innerHTML = days
     .map(d => `<option value="${d}">${esc(dailyDayLabel(d) + " (" + wodDay(d) + ")")}</option>`)
     .join("");
-  f.wod_date.value = replaced && days.includes(replaced.wod_date) ? replaced.wod_date : today();
-  // Durée : toujours 1 h par défaut (le lieu et la forme reprennent le dernier choix).
-  f.duration_minutes.value = "60";
-  for (const k of ["place", "energy"]) {
-    const input = form.querySelector(`input[name="${k}"][value="${last[k]}"]`);
-    if (input) input.checked = true;
+  f.wod_date.value = replaced && days.includes(replaced.wod_date) ? replaced.wod_date : days[0];
+  for (const key of ["place", "energy"]) {
+    if ([...f[key]].some(input => input.value === last?.[key])) f[key].value = last[key];
   }
-  $("#dailytitle").textContent = replaced ? "Autre WOD du jour" : "WOD du jour";
-  $("#dailysubmit").textContent = replaced ? "Générer un autre WOD" : "Générer mon WOD";
-  $("#dailyerror").textContent = "";
-  $("#dailyprogress").hidden = true;
-  $("#dailysubmit").disabled = false;
-  $("#dailydialog").showModal();
-  try {
-    const d = await sendApi("/ai-profile", "GET");
-    for (const k of ["level", "goals", "equipment", "constraints"]) f[k].value = d.profile[k] || "";
-    if (!d.enabled) {
-      $("#dailyerror").textContent =
-        "La génération par IA n’est pas encore activée : l’administrateur doit configurer la clé OpenAI.";
-      $("#dailysubmit").disabled = true;
-    }
-  } catch (e) {
-    $("#dailyerror").textContent = e.offline ? OFFLINE_MESSAGE : e.message;
-    $("#dailysubmit").disabled = true;
-  }
+  $("#aititle").textContent = replaced ? "Générer un autre WOD du jour" : "Générer le WOD du jour";
 }
-$("#dailyform").onsubmit = async e => {
-  e.preventDefault();
-  if (dailyRunning) return;
-  const f = e.target.elements,
-    request = {
-      wod_date: f.wod_date.value,
-      duration_minutes: Number(f.duration_minutes.value),
-      place: f.place.value,
-      energy: f.energy.value,
-      instructions: f.instructions.value.trim(),
-      ...(dailyReplaceId ? {replace_id: dailyReplaceId} : {}),
-    };
-  $("#dailyerror").textContent = "";
-  if (!navigator.onLine) {
-    $("#dailyerror").textContent = OFFLINE_MESSAGE;
-    return;
-  }
+async function generateDailyWod(f, request, replaceId) {
+  const {value: place} = f.place,
+    {value: energy} = f.energy,
+    wod_date = f.wod_date.value;
   try {
-    localStorage.setItem(
-      "fitfactory-daily",
-      JSON.stringify({duration_minutes: request.duration_minutes, place: request.place, energy: request.energy})
-    );
+    localStorage.setItem("fitfactory-daily", JSON.stringify({place, energy}));
   } catch {}
-  dailyRunning = true;
-  $("#dailysubmit").disabled = true;
-  aiWaitStart($("#dailyprogress"), "Ton coach prépare le WOD… (jusqu’à une minute)");
-  try {
-    await sendApi("/ai-profile", "PUT", {
-      level: f.level.value,
-      goals: f.goals.value,
-      equipment: f.equipment.value,
-      constraints: f.constraints.value,
-    });
-    const d = await sendApi("/daily-wods", "POST", request, AI_TIMEOUT);
-    rememberDailyWods([d.wod]);
-    await aiWaitDone($("#dailyprogress"), "WOD prêt !");
-    $("#dailydialog").close();
-    selectedWeekStart = mondayOf(d.wod.wod_date);
-    await loadSessions();
-    toast("WOD du jour prêt : bon entraînement !");
-  } catch (x) {
-    $("#dailyerror").textContent = x.offline ? OFFLINE_MESSAGE : x.message;
-  } finally {
-    dailyRunning = false;
-    $("#dailysubmit").disabled = false;
-    $("#dailyprogress").hidden = true;
-  }
-};
-$("#closedaily").onclick = () => {
-  if (dailyRunning && !confirm("Abandonner la génération en cours ?")) return;
-  $("#dailydialog").close();
-};
+  aiProgress("Génération en cours… (jusqu’à une minute)");
+  const {wod} = await sendApi(
+    "/daily-wods",
+    "POST",
+    {...request, wod_date, place, energy, ...(replaceId ? {replace_id: replaceId} : {})},
+    AI_TIMEOUT
+  );
+  rememberDailyWods([wod]);
+  selectedWeekStart = mondayOf(wod.wod_date);
+  return "WOD du jour prêt.";
+}

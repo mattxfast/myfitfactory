@@ -84,14 +84,26 @@ ${WRITING_RULES}
 - Rédige en français.
 - Si la demande est incompatible (trop de blocs pour la durée, par exemple), adapte au mieux et explique-le dans "notes_coach".`;
 
+function aiBlockLines(o, catalog) {
+  const names = ids => ids.map(id => catalog.find(m => m.id === id)?.name).filter(Boolean),
+    yes = (k, extra = "") => (o.blocks[k] ? "oui" + extra : "non"),
+    imposed = ids => {
+      const picked = names(ids);
+      return picked.length ? " — mouvements imposés : " + picked.join(", ") : " — mouvements au choix du coach";
+    };
+  return [
+    "Échauffement : " + yes("echauffement"),
+    "Travail technique : " + yes("technique", imposed(o.technique_movements)),
+    "Force : " + yes("force", imposed(o.force_movements)),
+    "Metcon : " + yes("metcon", " — format au choix du coach"),
+    "Retour au calme : " + yes("retour_au_calme"),
+  ];
+}
+
 // Message utilisateur : contexte de l'athlète, du programme et de la séance demandée.
 export function buildPrompt(c) {
   const p = c.profile || {},
-    o = c.options,
-    names = ids => ids.map(id => c.catalog.find(m => m.id === id)?.name).filter(Boolean),
-    yes = (k, extra = "") => (o.blocks[k] ? "oui" + extra : "non"),
-    imposed = ids =>
-      names(ids).length ? " — mouvements imposés : " + names(ids).join(", ") : " — mouvements au choix du coach";
+    o = c.options;
   const prs = c.records.map(r => {
     const unit = r.measurement_method === "reps" ? " rép." : r.measurement_method === "distance" ? " m" : " kg";
     return `${r.name} : ${r.value}${unit}${r.rep_count ? " (" + r.rep_count + " RM)" : ""}`;
@@ -121,11 +133,7 @@ export function buildPrompt(c) {
     "",
     "## Séance demandée",
     "Durée totale : " + o.duration_minutes + " min",
-    "Échauffement : " + yes("echauffement"),
-    "Travail technique : " + yes("technique", imposed(o.technique_movements)),
-    "Force : " + yes("force", imposed(o.force_movements)),
-    "Metcon : " + yes("metcon", " — format au choix du coach"),
-    "Retour au calme : " + yes("retour_au_calme"),
+    ...aiBlockLines(o, c.catalog),
     "Consigne particulière : " + (o.instructions || "aucune"),
     "",
     "## Catalogue des mouvements",
@@ -234,7 +242,7 @@ export async function callOpenAI(env, prompt) {
 }
 
 // ----- WOD du jour (page Séances) : un entraînement hors programme, généré pour aujourd'hui ou demain -----
-export const DAILY_PROMPT_VERSION = "wod-du-jour-v2";
+export const DAILY_PROMPT_VERSION = "wod-du-jour-v3";
 export const DAILY_WOD_LIMIT = 10; // WOD du jour par utilisateur et par 24 h (en plus de la limite générale)
 export const DAILY_PLACES = {
   box: "En box (matériel CrossFit complet)",
@@ -246,30 +254,39 @@ export const DAILY_ENERGY = {en_forme: "En forme", normal: "Normale", fatigue: "
 export const DAILY_CHRONO_MODES = ["fortime", "amrap", "emom", "tabata"];
 
 export function dailyOptionsInput(b) {
-  const duration = Number(b.duration_minutes);
-  if (!Number.isInteger(duration) || duration < 15 || duration > 120)
-    return {error: "La durée doit être comprise entre 15 et 120 minutes."};
+  let options;
+  if (b.blocks === undefined) {
+    // Anciens formulaires : les blocs sont encore choisis par l’IA.
+    const duration = Number(b.duration_minutes);
+    if (!Number.isInteger(duration) || duration < 15 || duration > 120)
+      return {error: "La durée doit être comprise entre 15 et 120 minutes."};
+    options = {duration_minutes: duration, instructions: text(b.instructions, 300)};
+  } else {
+    options = aiOptionsInput(b);
+    if (options.error) return options;
+  }
   const place = String(b.place || ""),
     energy = String(b.energy || "");
-  if (!DAILY_PLACES[place]) return {error: "Lieu invalide."};
-  if (!DAILY_ENERGY[energy]) return {error: "Forme du jour invalide."};
-  return {duration_minutes: duration, place, energy, instructions: text(b.instructions, 300)};
+  if (!Object.hasOwn(DAILY_PLACES, place)) return {error: "Lieu invalide."};
+  if (!Object.hasOwn(DAILY_ENERGY, energy)) return {error: "Forme du jour invalide."};
+  return {...options, place, energy};
 }
 
-const DAILY_SYSTEM = `Tu es un coach CrossFit expérimenté. Tu écris le WOD du jour d'un athlète qui s'entraîne au jour le jour, hors programme : une séance sûre, complète et motivante.
+const DAILY_SYSTEM = `Écris le WOD du jour au format tableau blanc pour un athlète qui s'entraîne hors programme.
 
 Règles :
 - Respecte la durée totale (tolérance ±5 min) en incluant les transitions.
-- Commence toujours par un échauffement court. Le cœur de la séance est un metcon ; ajoute un bloc force ou technique seulement si la durée le permet (45 min et plus). Termine par un retour au calme si la durée le permet.
+- Si des blocs sont indiqués, génère exactement un bloc par type activé, dans l'ordre indiqué. Utilise les mouvements imposés pour la force et la technique s'ils sont compatibles avec le matériel et les contraintes.
+- Si aucun choix de blocs n'est indiqué, commence par un échauffement court, programme un metcon et ajoute de la force, de la technique ou un retour au calme si la durée le permet.
 - Choisis le format du metcon (AMRAP, EMOM, For Time, Tabata, intervalles…) en variant par rapport aux séances récentes.
 - Adapte le volume et l'intensité à la forme du jour : séance plus légère et plus technique si l'athlète est fatigué.
 - Utilise uniquement le matériel disponible pour le lieu du jour. Utilise de préférence les noms de mouvements du catalogue fourni, à l'identique.
 - Adapte mouvements et charges au niveau et aux records. Exprime les charges en kg (ou en % du 1RM quand un record est connu), les distances en mètres.
-- Respecte les contraintes de l'athlète ; propose une alternative pour tout mouvement qui ne convient pas.
+- Choisis directement des mouvements et des charges qui respectent les contraintes de l'athlète.
 - Assure la variété avec les séances récentes : évite de solliciter lourdement le même groupe musculaire que la veille.
 - Le champ "chrono" décrit le minuteur du metcon : mode "fortime" (minutes = time cap, ou null sans cap), "amrap" (minutes = durée), "emom" (intervalle_s = durée d'un intervalle en secondes, tours = nombre d'intervalles), "tabata" (travail_s, repos_s, tours). Mets null dans les champs qui ne concernent pas le mode, et mode "aucun" si le metcon ne se chronomètre pas ainsi.
-- Sois concis : le texte final doit tenir sur un écran de téléphone.
-${WRITING_RULES}
+- Pour chaque bloc, indique le format s'il apporte une information (par exemple « AMRAP 15 min »). Mets toutes les prescriptions dans les mouvements : nom, séries et répétitions ou durée/distance, charge si pertinente. Évite de répéter le format dans chaque mouvement.
+- Laisse "description" vide et mets "scaling", "objectif_score" et "notes_coach" à null.
 - Rédige en français.`;
 
 export function buildDailyPrompt(c) {
@@ -300,7 +317,8 @@ export function buildDailyPrompt(c) {
     "Durée totale : " + o.duration_minutes + " min",
     "Lieu : " + DAILY_PLACES[o.place],
     "Forme du jour : " + DAILY_ENERGY[o.energy],
-    "Envie particulière : " + (o.instructions || "aucune"),
+    ...(o.blocks ? aiBlockLines(o, c.catalog) : []),
+    "Consigne particulière : " + (o.instructions || "aucune"),
     "",
     "## Catalogue des mouvements",
     c.catalog
@@ -424,8 +442,22 @@ export function dailyMovementIds(wod, catalog) {
   return [...ids].slice(0, 40);
 }
 
-// Mise en texte du WOD (2 000 caractères au plus). withTitle : première ligne « titre (~durée) », gardée pour le WOD du
-// jour (elle lui sert de titre) ; pas pour un WOD de programme, qui a déjà son nom.
+// Le détail du WOD du jour retire la première ligne, car son titre est déjà affiché au-dessus.
+export function dailyWodToText(wod, title) {
+  const blocks = wod.blocs.map(b =>
+    [
+      (BLOCK_LABELS[b.type] || b.type) + " :",
+      text(b.format, 60),
+      b.time_cap_min ? "Time cap " + b.time_cap_min + " min" : "",
+      ...(b.mouvements || []).map(m => [m.reps, m.nom, m.charge && "@ " + m.charge].filter(Boolean).join(" ")),
+    ]
+      .filter(Boolean)
+      .join("\n")
+  );
+  return [title, ...blocks].join("\n\n").slice(0, 2000);
+}
+
+// Mise en texte du WOD (2 000 caractères au plus). withTitle : première ligne « titre (~durée) ».
 export function wodToText(wod, max = 2000, withTitle = true) {
   // Une rubrique par bloc : « ⚡ METCON — AMRAP 12 min · 15 min », consignes, puis un mouvement par ligne.
   const render = withScaling => {

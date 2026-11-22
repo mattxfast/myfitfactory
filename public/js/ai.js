@@ -1,13 +1,14 @@
-// FitFactory — génération de WOD par IA dans ses propres programmes. Trois modes :
+// myFitFactory — génération de WOD par IA.
 // « program » (page Programmes) : tous les WOD sur toute la période ; « wod » (page Programmes) : un WOD sur toutes les
-// semaines ; « week » (page Séances) : un WOD pour la semaine affichée.
+// semaines ; « week » : un WOD pour la semaine affichée ; « daily » (page Séances) : un WOD du jour hors programme.
 // Scripts classiques chargés dans l’ordre par index.html (portée globale partagée) ; boot.js démarre l’application en dernier.
 // La génération demande le réseau : elle n’entre jamais dans la file d’attente hors ligne.
 
 const AI_MAX_MOVEMENTS = 5,
   AI_TIMEOUT = 100000;
 let aiRunning = false,
-  aiCancelled = false;
+  aiCancelled = false,
+  aiProfileRequest;
 
 function aiBlocks(f) {
   const blocks = {};
@@ -41,27 +42,31 @@ function syncAiForm() {
   for (const kind of ["technique", "force"])
     $(`[data-ai-movements="${kind}"]`).hidden = mode === "program" || !f[kind].checked;
 }
-// origin : page où revenir après la génération (Séances pour le ✨ de la semaine, Programmes sinon).
+// origin : page où revenir après la génération (Séances pour la semaine et le WOD du jour, Programmes sinon).
 async function openAiDialog(mode, pid, wodId = null, week = null, origin = mode === "week" ? "sessions" : "programs") {
-  const form = $("#aiform"),
+  const dialog = $("#aidialog"),
+    form = $("#aiform"),
     f = form.elements,
     p = programs.find(x => x.id === pid);
-  if (!p) return;
+  if (aiRunning || dialog.open || (mode !== "daily" && !p)) return;
   form.reset();
   form.dataset.mode = mode;
   form.dataset.week = week || "";
-  form.dataset.origin = origin;
-  f.program_id.value = pid;
+  form.dataset.origin = mode === "daily" ? "sessions" : origin;
+  f.program_id.value = pid || "";
   f.wod_id.value = wodId || "";
   form.querySelectorAll("[data-ai-mode]").forEach(el => (el.hidden = !el.dataset.aiMode.split(" ").includes(mode)));
   f.per_week.disabled = mode !== "program";
   $("#aierror").textContent = "";
   $("#aiprogress").hidden = true;
-  $("#aisubmit").disabled = false;
-  const weeks = programWeeks(p),
+  $("#aisubmit").disabled = true;
+  const weeks = p ? programWeeks(p) : [],
     plural = weeks.length + " semaine" + (weeks.length > 1 ? "s" : ""),
-    w = visibleWods(pid).find(x => x.id === wodId);
-  if (mode === "program") {
+    w = p ? visibleWods(pid).find(x => x.id === wodId) : null;
+  $("#aiintro").hidden = mode === "daily";
+  if (mode === "daily") {
+    setupDailyAiForm(form, wodId);
+  } else if (mode === "program") {
     $("#aititle").textContent = "Générer le programme";
     $("#aiintro").textContent =
       "L’IA écrit le contenu de chaque WOD, semaine par semaine (" +
@@ -85,22 +90,26 @@ async function openAiDialog(mode, pid, wodId = null, week = null, origin = mode 
           "du " +
           fmt(week) +
           (weeklyWodContent(wodId, week).trim() ? " (le contenu déjà écrit est remplacé)." : ".");
-    renderAiMovements("technique");
-    renderAiMovements("force");
   }
+  if (mode !== "program") for (const kind of ["technique", "force"]) renderAiMovements(kind);
   ["echauffement", "technique", "force", "metcon"].forEach(k => (f[k].onchange = syncAiForm));
   syncAiForm();
-  $("#aidialog").showModal();
+  dialog.showModal();
+  // Un chargement du profil terminé après la fermeture ne doit pas modifier la prochaine ouverture.
+  const profileRequest = sendApi("/ai-profile", "GET");
+  aiProfileRequest = profileRequest;
   try {
-    const d = await sendApi("/ai-profile", "GET");
+    const d = await profileRequest;
+    if (!dialog.open || aiProfileRequest !== profileRequest) return;
     for (const k of ["level", "goals", "equipment", "constraints"]) f[k].value = d.profile[k] || "";
     form.dataset.remaining = d.remaining;
+    $("#aisubmit").disabled = !d.enabled;
     if (!d.enabled) {
       $("#aierror").textContent =
         "La génération par IA n’est pas encore activée : l’administrateur doit configurer la clé OpenAI.";
-      $("#aisubmit").disabled = true;
     }
   } catch (e) {
+    if (!dialog.open || aiProfileRequest !== profileRequest) return;
     $("#aierror").textContent = e.offline ? OFFLINE_MESSAGE : e.message;
     $("#aisubmit").disabled = true;
   }
@@ -226,11 +235,16 @@ async function generateWodWeeks(f, request) {
 }
 $("#aiform").onsubmit = async e => {
   e.preventDefault();
-  if (aiRunning) return;
+  if (aiRunning || $("#aisubmit").disabled) return;
   const form = e.target,
     f = form.elements,
-    request = aiRequest(f);
+    request = aiRequest(f),
+    {mode, origin} = form.dataset;
   $("#aierror").textContent = "";
+  if (!Object.values(request.blocks).some(Boolean)) {
+    $("#aierror").textContent = "Choisis au moins un bloc.";
+    return;
+  }
   if (!navigator.onLine) {
     $("#aierror").textContent = OFFLINE_MESSAGE;
     return;
@@ -246,11 +260,12 @@ $("#aiform").onsubmit = async e => {
       equipment: f.equipment.value,
       constraints: f.constraints.value,
     });
-    if (form.dataset.mode === "week") {
+    if (mode === "daily") message = await generateDailyWod(f, request, f.wod_id.value);
+    else if (mode === "week") {
       aiProgress("Génération en cours… (jusqu’à une minute)");
       await aiGenerate(f.wod_id.value, form.dataset.week, request);
       message = "WOD généré : relis-le et ajuste-le si besoin.";
-    } else if (form.dataset.mode === "wod") message = await generateWodWeeks(f, request);
+    } else if (mode === "wod") message = await generateWodWeeks(f, request);
     else message = await generateProgram(f, request);
     if (message && !aiCancelled) await aiWaitDone($("#aiprogress"), "C’est prêt !");
   } catch (x) {
@@ -264,11 +279,21 @@ $("#aiform").onsubmit = async e => {
     $("#aidialog").close();
     toast(message);
   }
+  if (mode === "daily") {
+    if (message) {
+      try {
+        await loadSessions();
+      } catch (x) {
+        toast("WOD enregistré. Actualisation impossible pour le moment.");
+      }
+    }
+    return;
+  }
   // Recharge aussi après une erreur : des WOD ont pu être créés ou générés avant elle.
   // On reste sur la page d’où la génération a été lancée (Séances ou Programmes).
   if (message !== false) {
     await load();
-    switchView(form.dataset.origin);
+    switchView(origin);
   }
 };
 $("#closeai").onclick = () => {
