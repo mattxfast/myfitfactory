@@ -9,7 +9,7 @@ dire « fais l'idée 7 ».
 - Nouvelle idée : l'ajouter dans la bonne rubrique avec le **numéro suivant le plus grand existant**.
 - *En italique* : la décision de Matt quand il y en a une.
 
-Prochain numéro libre : **51**
+Prochain numéro libre : **52**
 
 ## Fiabilité et exploitation
 
@@ -36,7 +36,7 @@ Prochain numéro libre : **51**
 - [ ] **12.** Calculateur de charges : pourcentages des PR (WOD « à 75 % du 1RM »).
 - [ ] **13.** Rappeler le dernier commentaire laissé sur le même WOD au moment d'enregistrer une séance.
 - [x] **14.** WOD du jour : WOD de référence tirés au hasard (Fran, Cindy, Murph…), sans IA, gratuits et hors ligne. Résultats suivis dans la page PR (rubrique Benchmarks). — fait le 21/11/2026 (`1127792`)
-- [ ] **15.** WOD du jour : mode « Mon coach » (WOD proposé chaque matin, semaine équilibrée, notification possible).
+- [ ] **15.** Coach virtuel : case à cocher à la création d'un programme, avec le nombre de WOD par semaine. La première semaine est générée tout de suite, puis chaque semaine suivante automatiquement à l'ouverture de l'app (dès le dimanche), en s'appuyant sur les séances réellement faites et les PR ; bouton pour tout générer d'un coup si on préfère. Semaine équilibrée (force, gym, haltéro, engine), avec l'idée 16. *Remplace le mode « Mon coach » ; Matt : option retenue le 22/11/2026.*
 - [ ] **16.** WOD du jour : privilégier les mouvements peu travaillés ces dernières semaines.
 - [ ] **18.** Affichage dynamique sur un écran dans la box (WOD du jour, scores, anniversaires, mot du jour, événements) : voir le détail plus bas.
 - [x] **31.** Score de fitness de l'athlète (0–100) : régularité, force (PR rapportés au poids de corps), gym, engine, polyvalence, progression ; radar par pilier et score global, calculé à partir des données déjà saisies (profil à compléter : poids, sexe, année de naissance, facultatifs). — fait le 20/11/2026 (page PR)
@@ -56,6 +56,7 @@ Prochain numéro libre : **51**
 - [x] **42.** Page Séances : rubrique « WOD de la programmation » renommée « WOD Perso » (WOD du programme puis WOD générés ; compteur limité au programme, « 2/3 »), même nom pour l'étiquette de l'historique, le groupe du formulaire de séance et la répartition de la progression ; petits boutons ✨ (IA) et 🎲 (WOD de référence) à gauche de la carte « Nombre de séances », l'un sous l'autre, dans les deux interfaces ; WOD générés marqués « Hors prog » ; en interface simplifiée, pas de rubrique « WOD Perso » (le WOD généré est proposé dans le formulaire de séance). — fait le 22/11/2026
 - [ ] **43.** Refaire ce WOD : depuis le détail d’une séance dans l’historique, reprendre son contenu et ses charges, consulter le dernier score et enregistrer un nouveau résultat.
 - [ ] **44.** Favoris : mettre de côté un WOD généré pour le retrouver et le faire plus tard. La séance apparaît dans l’historique quand l’utilisateur enregistre son résultat.
+- [ ] **51.** WOD commun du jour : une tâche planifiée génère chaque jour un seul WOD par IA, le même pour tous les inscrits (avec une version adaptée pour peu de matériel ou les débutants). Il est proposé par une notification et sur la page Séances ; « Je le fais » l'ajoute aux WOD Perso. Classement entre les participants, comme pour les WOD de box. Une seule génération par jour pour toute l'application. *Pour plus tard, quand il y aura assez d'inscrits actifs.*
 
 ## Look and feel
 
