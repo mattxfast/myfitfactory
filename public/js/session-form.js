@@ -185,7 +185,16 @@ function applyPlannedSessionNote() {
     field.value = planned;
     field.dataset.plannedDefault = planned;
   }
+  fitSessionNote();
 }
+// « Réalisé / notes » : 3 lignes au repos, la zone s’agrandit pendant la saisie (jusqu’à environ 12 lignes).
+function fitSessionNote() {
+  const field = $("#sessionform").elements.actual_comment;
+  field.style.height = "";
+  if (document.activeElement === field) field.style.height = Math.min(field.scrollHeight + 2, 300) + "px";
+}
+$("#sessionform").elements.actual_comment.addEventListener("input", fitSessionNote);
+$("#sessionform").elements.actual_comment.addEventListener("focus", fitSessionNote);
 $("#sessionform").elements.wod_id.onchange = e => {
   const w = (wodsByProgram[$("#sessionform").elements.program_id.value] || []).find(x => x.id === e.target.value);
   if (w) {
@@ -345,6 +354,7 @@ function openSession(s = null, presetWodId = "") {
   $("#sessionmovementchecks").innerHTML = "";
   $("#sessionmovementchecks").dataset.presetWod = "";
   $("#sessionmovementdetails").open = false;
+  $("#sessionpartnerdetails").open = false;
   f.elements.session_date.max = today();
   f.elements.session_id.value = s?.id || "";
   f.elements.actual_comment.value = s?.actual_comment || "";
@@ -450,6 +460,8 @@ function setSessionPartners(s) {
   renderPartners();
 }
 function renderPartners() {
+  const n = sessionPartners.length;
+  $("#sessionpartnercount").textContent = n ? n + (n > 1 ? " partenaires" : " partenaire") : "aucun";
   $("#partnerchips").innerHTML = sessionPartners
     .map(
       p =>

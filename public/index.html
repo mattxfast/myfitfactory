@@ -926,7 +926,7 @@
           <section class="form-block">
             <h3>WOD effectué</h3>
             <label>WOD<select name="wod_id" required></select></label>
-            <label>Date<input name="session_date" type="date" required /></label>
+            <label class="inline-field">Date<input name="session_date" type="date" required /></label>
             <div class="session-time-row">
               <label hidden>Activité<select name="activity_id"></select></label
               ><label hidden>Heure<input name="start_time" type="time" required /></label
@@ -937,7 +937,7 @@
             <label
               >Réalisé / notes<textarea
                 name="actual_comment"
-                rows="4"
+                rows="3"
                 placeholder="Charges, répétitions, sensations, adaptations, résultat…"
               ></textarea>
             </label>
@@ -951,20 +951,26 @@
             <p class="hint">Facultatif : il alimente le classement du WOD entre les membres de la box.</p>
           </section>
           <section class="form-block" id="sessionpartners">
-            <h3>Partenaires</h3>
-            <p class="hint">
-              Tague les personnes qui se sont entraînées avec toi : elles pourront ajouter la séance à leur historique.
-            </p>
-            <div id="partnerchips" class="partner-chips"></div>
-            <label
-              >Ajouter un partenaire<input
-                id="partnersearch"
-                type="search"
-                maxlength="60"
-                placeholder="Prénom ou nom"
-                autocomplete="off"
-            /></label>
-            <div id="partnerresults" class="partner-results"></div>
+            <details id="sessionpartnerdetails" class="movement-fold">
+              <summary>
+                <h3>Partenaires</h3>
+                <span id="sessionpartnercount"></span>
+              </summary>
+              <p class="hint">
+                Tague les personnes qui se sont entraînées avec toi : elles pourront ajouter la séance à leur
+                historique.
+              </p>
+              <div id="partnerchips" class="partner-chips"></div>
+              <label
+                >Ajouter un partenaire<input
+                  id="partnersearch"
+                  type="search"
+                  maxlength="60"
+                  placeholder="Prénom ou nom"
+                  autocomplete="off"
+              /></label>
+              <div id="partnerresults" class="partner-results"></div>
+            </details>
           </section>
           <section id="sessionmovementsection" class="form-block">
             <details id="sessionmovementdetails" class="movement-fold">
