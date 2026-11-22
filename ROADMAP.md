@@ -9,7 +9,7 @@ dire « fais l'idée 7 ».
 - Nouvelle idée : l'ajouter dans la bonne rubrique avec le **numéro suivant le plus grand existant**.
 - *En italique* : la décision de Matt quand il y en a une.
 
-Prochain numéro libre : **43**
+Prochain numéro libre : **45**
 
 ## Fiabilité et exploitation
 
@@ -54,6 +54,8 @@ Prochain numéro libre : **43**
 - [x] **37.** Notification push quand on est tagué sur une séance (en plus de la pastille rouge), pour les comptes qui ont activé les notifications. — fait le 21/11/2026
 - [x] **41.** Page Séances : plus de rubrique « WOD du jour » séparée (doublon de la séance « Autres », écran alourdi). Les WOD du jour (IA ou WOD de référence) s'affichent « en plus » en fin de rubrique « WOD de la programmation », rattachés à aucun programme et hors de son compteur (« +N ») ; boutons 🎲 et ✨ dans le titre de cette rubrique. — fait le 22/11/2026
 - [x] **42.** Page Séances : rubrique « WOD de la programmation » renommée « WOD Perso » (WOD du programme puis WOD générés ; compteur limité au programme, « 2/3 »), même nom pour l'étiquette de l'historique, le groupe du formulaire de séance et la répartition de la progression ; petits boutons ✨ (IA) et 🎲 (WOD de référence) à gauche de la carte « Nombre de séances », l'un sous l'autre, dans les deux interfaces ; WOD générés marqués « Hors prog » ; en interface simplifiée, pas de rubrique « WOD Perso » (le WOD généré est proposé dans le formulaire de séance). — fait le 22/11/2026
+- [ ] **43.** Refaire ce WOD : depuis le détail d’une séance dans l’historique, reprendre son contenu et ses charges, consulter le dernier score et enregistrer un nouveau résultat.
+- [ ] **44.** Favoris : mettre de côté un WOD généré pour le retrouver et le faire plus tard. La séance apparaît dans l’historique quand l’utilisateur enregistre son résultat.
 
 ## Look and feel
 
