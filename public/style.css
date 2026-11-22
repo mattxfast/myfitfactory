@@ -5527,6 +5527,10 @@ button:active:not(:disabled) {
   gap: 4px;
   --block-color: var(--orange-strong);
 }
+/* Titre de chaque bloc dans la couleur de la barre de séparation. */
+.wod-detail-blocks .box-planning-part em {
+  color: color-mix(in srgb, var(--block-color) 70%, transparent);
+}
 .wod-detail-blocks .box-planning-part:first-child {
   padding-top: 0;
   margin-top: 0;
