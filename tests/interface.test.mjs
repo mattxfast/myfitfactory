@@ -13,14 +13,15 @@ before(async () => {
 });
 after(() => worker?.stop());
 
-test("interface : avancée par défaut, simplifiée au choix, valeur inconnue refusée", async () => {
-  assert.equal((await alice.get("/preferences")).data.interface, "advanced");
+test("interface : simplifiée à l’inscription, avancée au choix, valeur inconnue refusée", async () => {
+  assert.equal((await alice.get("/preferences")).data.interface, "simple");
   assert.equal((await alice.put("/preferences", {interface: "expert"})).status, 400);
-  assert.equal((await alice.put("/preferences", {interface: "simple", theme: "light"})).status, 200);
+  assert.equal((await alice.get("/preferences")).data.interface, "simple");
+  assert.equal((await alice.put("/preferences", {interface: "advanced", theme: "light"})).status, 200);
   const prefs = (await alice.get("/preferences")).data;
-  assert.equal(prefs.interface, "simple");
+  assert.equal(prefs.interface, "advanced");
   assert.equal(prefs.theme, "light");
-  assert.equal((await bob.get("/preferences")).data.interface, "advanced", "chacun son interface");
-  assert.equal((await alice.put("/preferences", {interface: "advanced"})).status, 200);
-  assert.equal((await alice.get("/preferences")).data.interface, "advanced");
+  assert.equal((await bob.get("/preferences")).data.interface, "simple", "chacun son interface");
+  assert.equal((await alice.put("/preferences", {interface: "simple"})).status, 200);
+  assert.equal((await alice.get("/preferences")).data.interface, "simple");
 });

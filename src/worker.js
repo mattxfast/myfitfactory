@@ -602,7 +602,7 @@ const REMINDER_DAYS = [2, 3, 4, 5, 7],
 // Réglages par défaut définis par un administrateur (table app_settings) : thème et rappels des comptes qui n'ont
 // rien choisi. Le thème et les rappels sont propres à chaque compte, quel que soit l'appareil.
 const THEMES = ["light", "dark", "massilia", "massilia2"];
-// Interface du compte : complète (« advanced », par défaut) ou simplifiée (« simple »).
+// Interface du compte : complète (« advanced ») ou simplifiée (« simple »).
 const INTERFACES = ["advanced", "simple"];
 async function appDefaults(e) {
   const rows = (
@@ -1408,7 +1408,7 @@ async function api(r, e, p, ctx = null) {
     if (await e.DB.prepare("SELECT id FROM users WHERE email=?").bind(email).first())
       return json({error: "Ce compte existe déjà."}, 409);
     const id = uid();
-    await e.DB.prepare("INSERT INTO users(id,email,password_hash) VALUES(?,?,?)")
+    await e.DB.prepare("INSERT INTO users(id,email,password_hash,interface_mode) VALUES(?,?,?,'simple')")
       .bind(id, email, await hashPass(pw))
       .run();
     return session(id, email, e);
