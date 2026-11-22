@@ -9,7 +9,7 @@ dire « fais l'idée 7 ».
 - Nouvelle idée : l'ajouter dans la bonne rubrique avec le **numéro suivant le plus grand existant**.
 - *En italique* : la décision de Matt quand il y en a une.
 
-Prochain numéro libre : **42**
+Prochain numéro libre : **43**
 
 ## Fiabilité et exploitation
 
@@ -53,6 +53,7 @@ Prochain numéro libre : **42**
 - [x] **36.** Taguer des partenaires sur une séance : invitation (pastille rouge sur l'onglet Séances, rubrique « Séances partagées »), acceptation qui copie la séance dans son historique (copie indépendante) ou refus. — fait le 21/11/2026
 - [x] **37.** Notification push quand on est tagué sur une séance (en plus de la pastille rouge), pour les comptes qui ont activé les notifications. — fait le 21/11/2026
 - [x] **41.** Page Séances : plus de rubrique « WOD du jour » séparée (doublon de la séance « Autres », écran alourdi). Les WOD du jour (IA ou WOD de référence) s'affichent « en plus » en fin de rubrique « WOD de la programmation », rattachés à aucun programme et hors de son compteur (« +N ») ; boutons 🎲 et ✨ dans le titre de cette rubrique. — fait le 22/11/2026
+- [x] **42.** Page Séances : rubrique « WOD de la programmation » renommée « WOD Perso » (WOD du programme puis WOD générés ; compteur limité au programme, « 2/3 »), même nom pour l'étiquette de l'historique, le groupe du formulaire de séance et la répartition de la progression ; boutons « Générer un WOD » et « WOD de référence » sous ＋ et « Comp », dans les deux interfaces ; en interface simplifiée, « WOD Perso » n'apparaît que s'il y a un WOD généré. — fait le 22/11/2026
 
 ## Look and feel
 

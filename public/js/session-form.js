@@ -82,14 +82,13 @@ function fillWodOptions(pid, selected = "") {
     .sort((a, b) => a.wod_date.localeCompare(b.wod_date))
     .map(w => `<option value="daily:${w.id}">${esc(wodDay(w.wod_date) + " · " + w.title)}</option>`)
     .join("");
-  // WOD du jour : à la suite des WOD de la programmation, dans le même groupe (comme sur la page Séances, où ils
-  // s’affichent « en plus » dans la rubrique « WOD de la programmation »).
+  // WOD du jour : à la suite des WOD de la programmation, dans le même groupe « WOD Perso » (comme la rubrique de la
+  // page Séances).
   const planned = programOptions + dailyOptions;
   f.innerHTML =
     (boxOptions
-      ? (planned
-          ? `<optgroup label="${esc(programs.find(p => p.id === pid)?.name || "WOD de la programmation")}">${planned}</optgroup>`
-          : "") + `<optgroup label="WOD de la box">${boxOptions}</optgroup>`
+      ? (planned ? `<optgroup label="WOD Perso">${planned}</optgroup>` : "") +
+        `<optgroup label="WOD de la box">${boxOptions}</optgroup>`
       : planned) + `<option value="other">Autres</option>`;
   if (!selected && pid === "none") {
     // Parmi les WOD disponibles, privilégie celui du jour, puis celui de la box à la date de la séance.

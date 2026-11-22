@@ -103,9 +103,8 @@ document.querySelectorAll(".navtab[data-view]").forEach(b => (b.onclick = () => 
 // (« Autres »).
 function sessionSource(s) {
   if (s.box_wod_id) return s.box_name || "WOD de la box";
-  if (s.daily_wod_id) return "WOD du jour";
-  if (s.wod_name === "Autres") return "Séance libre";
-  return "WOD de la prog";
+  if (s.wod_name === "Autres" && !s.daily_wod_id) return "Séance libre";
+  return "WOD Perso"; // WOD de la programmation ou WOD généré (rubrique « WOD Perso »)
 }
 function renderSessions() {
   $("#sessionlist").classList.toggle("session-list-collapsed", !!window.cfSessionHistoryCollapsed);
@@ -269,18 +268,19 @@ function weekMovementsSection(week, programMovements, folded) {
     baseItems = movementCounts.filter(x => x.base);
   return `<section class="weekother session-fold ${folded.has("movements") ? "collapsed" : ""}" data-session-fold="movements"><div class="weekheading"><button class="smallbtn section-collapse" aria-label="Replier les mouvements" aria-expanded="${!folded.has("movements")}">${folded.has("movements") ? "＋" : "−"}</button><h2>Focus mouvement</h2><span>${programMovements.length ? baseItems.filter(x => x.count > 0).length + "/" + baseItems.length : movementCounts.length}</span></div><div class="session-fold-body"><div class="weekwodlist">${movementCounts.length ? movementCounts.map(x => `<article class="weekwod card ${x.count ? "done" : ""}"><b>${esc(x.movement.name)}</b><div class="weekcount"><strong>${x.count}×</strong></div></article>`).join("") : sectionEmpty("Pas de mouvement travaillé cette semaine")}</div></div></section>`;
 }
-// Rubrique « WOD de la programmation » : toujours affichée (« Pas de programmation en cours » sans programme).
+// Rubrique « WOD Perso » (WOD de la programmation, puis WOD générés) : toujours affichée en interface avancée (« Pas de programmation en cours » sans programme).
 function weekProgramSection(p, week, folded, from) {
   const ws = p ? visibleWods(p.id) : [],
     countFor = w => week.filter(x => x.wod_id === w.id).length,
     done = ws.filter(w => countFor(w) > 0),
     // Génération par IA : seulement dans ses propres programmes (pas un programme suivi).
     own = p && !p.followed && !p.read_only && !p.is_default,
-    // WOD du jour (IA ou WOD de référence) : entraînements en plus, en fin de liste, hors du compteur du programme.
+    // WOD du jour (IA ou WOD de référence) : entraînements en plus, en fin de liste, hors du compteur du programme
+    // (2 WOD faits sur 3 : « 2/3 », quel que soit le nombre de WOD en plus).
     extras = dailyWodCards();
-  return `<section class="session-fold ${folded.has("wods") ? "collapsed" : ""}" data-session-fold="wods"><div class="weekheading"><button class="smallbtn section-collapse" aria-label="Replier les WOD" aria-expanded="${!folded.has("wods")}">${folded.has("wods") ? "＋" : "−"}</button><h2>WOD de la programmation</h2>${p || extras ? dailyHeadingActions(from) : ""}<span>${done.length}/${ws.length}${dailyWods.length ? " +" + dailyWods.length : ""}</span></div><div class="session-fold-body"><div class="weekwodlist">${
+  return `<section class="session-fold ${folded.has("wods") ? "collapsed" : ""}" data-session-fold="wods"><div class="weekheading"><button class="smallbtn section-collapse" aria-label="Replier les WOD" aria-expanded="${!folded.has("wods")}">${folded.has("wods") ? "＋" : "−"}</button><h2>WOD Perso</h2><span>${done.length}/${ws.length}</span></div><div class="session-fold-body"><div class="weekwodlist">${
     !p
-      ? extras || dailyEmptyCard(from, "Pas de programmation en cours")
+      ? extras || sectionEmpty("Pas de programmation en cours")
       : ws.length
         ? ws
             .map(w => {
@@ -333,7 +333,7 @@ function renderWeek() {
     to = addDays(from, 6),
     future = from > mondayOf(now),
     dateInput = addDays(from, 0);
-  // Interface simplifiée : ni programme, ni rubriques de WOD (programmation et WOD du jour, box) ; les mouvements
+  // Interface simplifiée : ni programme, ni rubrique WOD de la box ; « WOD Perso » seulement s’il y a un WOD généré ; les mouvements
   // travaillés passent sous l’historique (#weekafter).
   const simple = simpleInterface(),
     p = simple ? null : programForDate(from);
@@ -342,18 +342,18 @@ function renderWeek() {
   const nav = `<div class="weeknav"><button class="smallbtn" id="prevweek" aria-label="Semaine précédente" title="Semaine précédente">‹</button><div class="weekdate-label"><button type="button" class="week-current" id="thisweek" title="Revenir à la semaine en cours">Semaine du</button><input id="weekdate" type="date" value="${dateInput}" max="${now}" aria-label="Semaine du"></div><button class="smallbtn" id="nextweek" aria-label="Semaine suivante" title="Semaine suivante">›</button></div>`;
   if (future && (!p || isFallbackProgram(p))) {
     $("#weekboard").innerHTML =
-      `<div class="weekbar card">${nav}</div><div class="card empty">Cette semaine est dans le futur. La saisie d’entraînements n’est pas autorisée.</div>${simple ? "" : weekProgramSection(null, week, folded, from) + weekBoxSection(week, folded) + weekMovementsSection(week, [], folded)}`;
+      `<div class="weekbar card">${nav}</div><div class="card empty">Cette semaine est dans le futur. La saisie d’entraînements n’est pas autorisée.</div>${simple ? (dailyWods.length ? weekProgramSection(null, week, folded, from) : "") : weekProgramSection(null, week, folded, from) + weekBoxSection(week, folded) + weekMovementsSection(week, [], folded)}`;
   } else if (!p || isFallbackProgram(p)) {
     // Semaine sans programme : les séances sont enregistrées « hors programme ».
     $("#weekboard").innerHTML =
-      `<div class="weekbar card">${nav}</div><div class="weekstats card"><div class="weekstat weekstat-sessions"><strong>${week.length}</strong><span>Nombre de séances</span></div><button id="addsession" class="primary addsession-compact" aria-label="Ajouter une séance" title="Ajouter une séance">＋</button><label class="competition-toggle"><span>Comp</span><input type="checkbox" id="weekcompetition" ${weekCompetition ? "checked" : ""}></label></div>${simple ? "" : weekProgramSection(null, week, folded, from) + weekBoxSection(week, folded) + weekMovementsSection(week, [], folded)}`;
+      `<div class="weekbar card">${nav}</div><div class="weekstats card"><div class="weekstat weekstat-sessions"><strong>${week.length}</strong><span>Nombre de séances</span></div><button id="addsession" class="primary addsession-compact" aria-label="Ajouter une séance" title="Ajouter une séance">＋</button><label class="competition-toggle"><span>Comp</span><input type="checkbox" id="weekcompetition" ${weekCompetition ? "checked" : ""}></label>${dailyGenerateRow(from)}</div>${simple ? (dailyWods.length ? weekProgramSection(null, week, folded, from) : "") : weekProgramSection(null, week, folded, from) + weekBoxSection(week, folded) + weekMovementsSection(week, [], folded)}`;
   } else {
     const ws = visibleWods(p.id),
       countFor = w => week.filter(x => x.wod_id === w.id).length,
       done = ws.filter(w => countFor(w) > 0);
     const programMovements = movementsByProgram[p.id] || [];
     $("#weekboard").innerHTML =
-      `<div class="weekbar card">${nav}</div><div class="weekstats card"><div class="weekstat weekstat-sessions"><strong>${week.length}</strong><span>Nombre de séances</span></div><div class="weekstat weekstat-program"><strong>${done.length}/${ws.length}</strong><span>Nombre de séances de la programmation</span></div><button id="addsession" class="primary addsession-compact" aria-label="Ajouter une séance" title="Ajouter une séance" ${future ? "disabled" : ""}>＋</button><label class="competition-toggle"><span>Comp</span><input type="checkbox" id="weekcompetition" ${weekCompetition ? "checked" : ""}></label></div>${weekProgramSection(p, week, folded, from)}${weekBoxSection(week, folded)}${weekMovementsSection(week, programMovements, folded)}`;
+      `<div class="weekbar card">${nav}</div><div class="weekstats card"><div class="weekstat weekstat-sessions"><strong>${week.length}</strong><span>Nombre de séances</span></div><div class="weekstat weekstat-program"><strong>${done.length}/${ws.length}</strong><span>Nombre de séances de la programmation</span></div><button id="addsession" class="primary addsession-compact" aria-label="Ajouter une séance" title="Ajouter une séance" ${future ? "disabled" : ""}>＋</button><label class="competition-toggle"><span>Comp</span><input type="checkbox" id="weekcompetition" ${weekCompetition ? "checked" : ""}></label>${dailyGenerateRow(from)}</div>${weekProgramSection(p, week, folded, from)}${weekBoxSection(week, folded)}${weekMovementsSection(week, programMovements, folded)}`;
   }
   $("#weekafter").innerHTML = simple ? weekMovementsSection(week, [], folded) : "";
   // Séances où l’on est tagué : rubrique en tête de page et pastille rouge sur l’onglet Séances.

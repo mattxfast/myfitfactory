@@ -9,12 +9,13 @@ async function loadProgress() {
   } catch {}
   if (!$("#view-prs").hidden) renderPrs();
 }
+// Origines regroupées comme sur la page Séances : « WOD Perso » = WOD de la programmation + WOD générés.
 const PROGRESS_SOURCES = [
-  ["prog", "WOD de la prog"],
-  ["box", "WOD de la box"],
-  ["daily", "WOD du jour"],
-  ["libre", "Séances libres"],
+  [["prog", "daily"], "WOD Perso"],
+  [["box"], "WOD de la box"],
+  [["libre"], "Séances libres"],
 ];
+const progressSourceCount = (bySource, keys) => keys.reduce((n, k) => n + (bySource?.[k] || 0), 0);
 const progressPlural = (n, word) => n + " " + word + (n === 1 ? "" : "s");
 // Barres horizontales (une seule série : longueur = valeur, texte en clair) : répartition, mouvements.
 function progressBars(rows) {
@@ -83,7 +84,7 @@ function renderProgressSection() {
       `<p class="progress-period">${esc(period)}</p>` +
       `<div class="progress-tiles"><div><strong>${d.total}</strong><span>${d.total === 1 ? "séance" : "séances"} en ${progressPlural(d.weeks.length, "semaine")}</span></div><div><strong>${avg}</strong><span>par semaine en moyenne</span></div><div><strong>${d.streak_weeks}</strong><span>${d.streak_weeks > 1 ? "semaines actives d’affilée" : "semaine active d’affilée"}</span></div></div>` +
       `<h4 class="progress-title">Séances par semaine</h4><p class="progress-caption" aria-live="polite">${esc(progressWeekCaption(first, d.weeks.length === 1))}</p>${progressWeekChart(d.weeks)}` +
-      `<h4 class="progress-title">Répartition</h4>${progressBars(PROGRESS_SOURCES.map(([k, label]) => ({label, value: d.by_source?.[k] || 0})))}` +
+      `<h4 class="progress-title">Répartition</h4>${progressBars(PROGRESS_SOURCES.map(([keys, label]) => ({label, value: progressSourceCount(d.by_source, keys)})))}` +
       `<h4 class="progress-title">Mouvements les plus travaillés</h4>${
         d.movements?.length
           ? progressBars(d.movements.slice(0, 8).map(m => ({label: m.name, value: m.count})))

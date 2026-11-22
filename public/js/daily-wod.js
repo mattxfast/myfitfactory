@@ -1,5 +1,5 @@
 // myFitFactory — WOD du jour (page Séances) : l’athlète qui s’entraîne au jour le jour, hors programme, fait générer
-// son entraînement par l’IA (aujourd’hui ou demain), le retrouve « en plus » dans la rubrique « WOD de la programmation »
+// son entraînement par l’IA (aujourd’hui ou demain), le retrouve « en plus » dans la rubrique « WOD Perso »
 // de la semaine (rattaché à aucun programme), lance
 // le chrono préréglé et enregistre sa séance quand il veut (elle est rattachée au WOD).
 // Scripts classiques chargés dans l’ordre par index.html (portée globale partagée) ; boot.js démarre l’application en dernier.
@@ -28,7 +28,7 @@ const dailyCanGenerate = from => {
   return (today() >= from && today() <= to) || (addDays(today(), 1) >= from && addDays(today(), 1) <= to);
 };
 
-// WOD du jour de la semaine : affichés en fin de rubrique « WOD de la programmation », comme des entraînements
+// WOD du jour de la semaine : affichés en fin de rubrique « WOD Perso » (après ceux de la programmation), comme des entraînements
 // en plus, rattachés à aucun programme. Même forme que les cartes de la programmation : texte à gauche, boutons à
 // droite ; le titre du WOD en gras, « En plus · JJ/MM/AAAA » dessous ; un toucher sur la ligne ouvre le détail.
 function dailyWodCards() {
@@ -40,18 +40,12 @@ function dailyWodCards() {
     })
     .join("");
 }
-// Boutons du titre de la rubrique « WOD de la programmation » : WOD de référence au hasard (🎲) et WOD généré par
-// l’IA (✨), seulement sur la semaine qui contient aujourd’hui ou demain.
-const dailyHeadingActions = from =>
+// Sous ＋ et « Comp » (carte « Nombre de séances », séparés par un trait) : WOD généré par l’IA (✨) et WOD de
+// référence au hasard (🎲), dans les deux interfaces, seulement sur la semaine qui contient aujourd’hui ou demain.
+const dailyGenerateRow = from =>
   dailyCanGenerate(from)
-    ? `<button type="button" class="smallbtn weekheading-action" data-bench-new aria-label="Tirer un WOD de référence (Fran, Cindy…)" title="WOD de référence au hasard">${DICE_ICON}</button><button type="button" class="smallbtn weekheading-action" data-daily-new aria-label="Générer un WOD en plus avec l’IA" title="Générer un WOD en plus avec l’IA">${AI_ICON}</button>`
+    ? `<div class="weekstats-generate"><button type="button" class="primary" data-daily-new>${AI_ICON}<span>Générer un WOD</span></button><button type="button" class="smallbtn" data-bench-new>${DICE_ICON}<span>WOD de référence</span></button></div>`
     : "";
-// Sans programmation ni WOD en plus : le message de la rubrique vide propose directement de générer un WOD (✨ IA)
-// ou d’en tirer un de référence (🎲), à la place des boutons du titre.
-const dailyEmptyCard = (from, text) =>
-  dailyCanGenerate(from)
-    ? `<article class="weekwod card section-empty daily-empty"><span>${esc(text)}</span><span class="daily-empty-actions"><button type="button" class="primary" data-daily-new>${AI_ICON}<span>Générer</span></button><button type="button" class="smallbtn" data-bench-new>${DICE_ICON}<span>WOD de référence</span></button></span></article>`
-    : sectionEmpty(text);
 // Détail d’un WOD du jour, en fenêtre : texte complet, chrono et séance.
 function openDailyDetail(id) {
   const w = dailyWodsById.get(id),
