@@ -104,8 +104,8 @@ Une planification n'est pas une séance réalisée : elle sert de repère dans l
 - L'onglet « Mon fitness » (icône courbe, anciennement « PR ») a trois sous-onglets en tête de page, le dernier ouvert étant mémorisé sur l'appareil : **Forme** (score de forme et progression), **Records** (PR LIFT / FORCE / GYM / ENGINE et benchmarks), **Bilans** (bilans mensuels).
 
 ### Progression (Mon fitness → Forme)
-- Rubrique repliable **PROGRESSION** de la page PR, sur les 12 dernières semaines (semaine en cours comprise) : nombre de séances, moyenne par semaine, semaines actives d'affilée (la semaine en cours ne casse pas la série tant qu'elle est vide) ; histogramme des séances par semaine (un toucher ou le survol d'une colonne affiche son détail, les autres s'atténuent) ; répartition par origine (WOD de la prog, de la box, du jour, séances libres) ; mouvements les plus travaillés (une fois par séance, regroupés par nom).
-- Calculée par le serveur (`GET /api/progress`, fonctions `trainingStats` et `activeWeekStreak`, réutilisées par le bilan mensuel), gardée hors ligne, rechargée à chaque ouverture de la page PR.
+- Rubrique repliable **PROGRESSION** de Mon fitness → Forme, du lundi de la première séance enregistrée (selon la date de la séance) à aujourd’hui : nombre de séances, moyenne par semaine, semaines actives d'affilée (la semaine en cours ne casse pas la série tant qu'elle est vide) ; histogramme des séances par semaine (un toucher ou le survol d'une colonne affiche son détail, les autres s'atténuent, défilement horizontal si nécessaire) ; répartition par origine (WOD de la prog, de la box, du jour, séances libres) ; mouvements les plus travaillés (une fois par séance, regroupés par nom).
+- Calculée par le serveur (`GET /api/progress`, fonction `trainingStats` réutilisée par le bilan mensuel), gardée hors ligne, rechargée à chaque ouverture de la page PR.
 - Une seule série par graphique : couleur `--chart-mark` propre à chaque thème (contraste d'au moins 3:1 avec le fond), grille et axes discrets, valeurs écrites en clair.
 
 ### Bilan mensuel

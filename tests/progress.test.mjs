@@ -65,23 +65,26 @@ const session = (date, movements) =>
     catalog_movement_ids: movements,
   });
 
-test("progression : 12 semaines, régularité, répartition et mouvements", async () => {
+test("progression : depuis la première séance, régularité, répartition et mouvements", async () => {
   const monday = mondayOf(today()),
     squat = catalog.find(m => m.name === "Back squat").id,
     pull = catalog.find(m => m.name === "Pull-up").id;
-  // cette semaine (lundi), la précédente, puis un trou, puis 4 semaines plus tôt
+  // Première séance datée d’un mercredi, puis deux semaines vides dans l’historique.
   for (const [date, moves] of [
     [monday, [squat, pull]],
     [addDays(monday, -7), [squat]],
     [addDays(monday, -6), []],
-    [addDays(monday, -28), [squat]],
+    [addDays(monday, -26), [squat]],
   ])
     assert.equal((await session(date, moves)).status, 200);
   const d = (await alice.get("/progress")).data;
-  assert.equal(d.weeks.length, 12);
-  assert.equal(d.weeks[11].week_start, monday);
-  assert.equal(d.weeks[11].count, 1);
-  assert.equal(d.weeks[10].count, 2);
+  assert.equal(d.from, addDays(monday, -28));
+  assert.equal(d.to, today());
+  assert.deepEqual(
+    d.weeks.map(w => w.count),
+    [1, 0, 0, 2, 1]
+  );
+  assert.equal(d.weeks.at(-1).week_start, monday);
   assert.equal(d.total, 4);
   assert.equal(d.active_weeks, 3);
   assert.equal(d.streak_weeks, 2, "la semaine vide arrête la série");
@@ -92,7 +95,19 @@ test("progression : 12 semaines, régularité, répartition et mouvements", asyn
   ]);
   const other = (await bob.get("/progress")).data;
   assert.equal(other.total, 0, "les séances d'un autre compte ne comptent pas");
+  assert.equal(other.from, null);
+  assert.deepEqual(other.weeks, []);
   assert.equal(other.streak_weeks, 0);
+
+  const older = await session(addDays(monday, -18 * 7 + 2), [pull]);
+  assert.equal(older.status, 200);
+  const extended = (await alice.get("/progress")).data;
+  assert.equal(extended.from, addDays(monday, -18 * 7));
+  assert.equal(extended.weeks.length, 19);
+  assert.equal(extended.total, 5);
+  assert.equal(extended.streak_weeks, 2);
+  assert.equal((await alice.del("/sessions/" + older.data.id)).status, 200);
+  assert.equal((await alice.get("/progress")).data.from, d.from);
 });
 
 test("bilan mensuel : mois disponibles, bilan d'un mois, commentaire du coach", async () => {

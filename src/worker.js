@@ -850,50 +850,47 @@ const mondayOfDate = d => addDays(d, -((new Date(d + "T12:00:00Z").getUTCDay() +
 // Statistiques d'entraînement sur une période (progression, bilan mensuel) : séances par semaine, par origine
 // (programmation, box, WOD du jour, séance libre) et mouvements les plus travaillés (une fois par séance).
 async function trainingStats(e, userId, from, to) {
-  const [rows, moves] = await Promise.all([
+  const lowerBound = from ?? "0000-01-01";
+  const [rows, moves] = await e.DB.batch([
     e.DB.prepare(
-      "SELECT s.session_date,s.box_wod_id,s.daily_wod_id,w.name AS wod_name FROM training_sessions s JOIN program_wods w ON w.id=s.wod_id WHERE s.user_id=? AND s.session_date BETWEEN ? AND ?"
-    )
-      .bind(userId, from, to)
-      .all(),
+      "SELECT s.session_date,CASE WHEN s.box_wod_id IS NOT NULL THEN 'box' WHEN s.daily_wod_id IS NOT NULL THEN 'daily' WHEN w.name='__AUTRES__' THEN 'libre' ELSE 'prog' END AS source,COUNT(*) AS n FROM training_sessions s JOIN program_wods w ON w.id=s.wod_id WHERE s.user_id=? AND s.session_date BETWEEN ? AND ? GROUP BY s.session_date,source ORDER BY s.session_date"
+    ).bind(userId, lowerBound, to),
     e.DB.prepare(
       "SELECT name,COUNT(*) AS n FROM (SELECT DISTINCT s.id AS sid,LOWER(TRIM(COALESCE(mc.name,pm.name))) AS k,COALESCE(mc.name,pm.name) AS name FROM training_sessions s JOIN session_movement_checks c ON c.session_id=s.id JOIN program_movements pm ON pm.id=c.movement_id LEFT JOIN movement_catalog mc ON mc.id=pm.catalog_movement_id WHERE s.user_id=? AND s.session_date BETWEEN ? AND ? UNION SELECT DISTINCT s.id,LOWER(TRIM(mc.name)),mc.name FROM training_sessions s JOIN session_catalog_movement_checks c ON c.session_id=s.id JOIN movement_catalog mc ON mc.id=c.catalog_movement_id WHERE s.user_id=? AND s.session_date BETWEEN ? AND ?) GROUP BY k ORDER BY n DESC,name LIMIT 10"
-    )
-      .bind(userId, from, to, userId, from, to)
-      .all(),
+    ).bind(userId, lowerBound, to, userId, lowerBound, to),
   ]);
-  const weeks = [];
-  for (let w = mondayOfDate(from); w <= to; w = addDays(w, 7)) weeks.push({week_start: w, count: 0});
-  const bySource = {prog: 0, box: 0, daily: 0, libre: 0};
-  for (const x of rows.results) {
-    const week = weeks.find(w => w.week_start === mondayOfDate(x.session_date));
-    if (week) week.count++;
-    bySource[x.box_wod_id ? "box" : x.daily_wod_id ? "daily" : x.wod_name === "__AUTRES__" ? "libre" : "prog"]++;
+  const first = from ?? rows.results[0]?.session_date,
+    days = new Set(),
+    byWeek = new Map(),
+    bySource = {prog: 0, box: 0, daily: 0, libre: 0},
+    weeks = [];
+  let total = 0;
+  for (const {session_date, source, n} of rows.results) {
+    const week = mondayOfDate(session_date);
+    byWeek.set(week, (byWeek.get(week) || 0) + n);
+    bySource[source] += n;
+    days.add(session_date);
+    total += n;
+  }
+  if (first) {
+    for (let w = mondayOfDate(first); w <= to; w = addDays(w, 7))
+      weeks.push({week_start: w, count: byWeek.get(w) || 0});
   }
   return {
-    total: rows.results.length,
-    days: new Set(rows.results.map(x => x.session_date)).size,
+    total,
+    days: days.size,
     weeks,
-    active_weeks: weeks.filter(w => w.count).length,
+    active_weeks: byWeek.size,
     by_source: bySource,
     movements: moves.results.map(x => ({name: x.name, count: x.n})),
   };
 }
-// Semaines d'affilée avec au moins une séance, jusqu'à la semaine en cours (ou la précédente si celle-ci est vide).
-async function activeWeekStreak(e, userId, now) {
-  const dates = await e.DB.prepare(
-      "SELECT DISTINCT session_date FROM training_sessions WHERE user_id=? AND session_date>=? AND session_date<=?"
-    )
-      .bind(userId, addDays(now, -730), now)
-      .all(),
-    weeks = new Set(dates.results.map(x => mondayOfDate(x.session_date)));
-  let week = mondayOfDate(now),
+// La semaine en cours ne coupe la série qu’une fois terminée.
+function activeWeekStreak(weeks) {
+  let i = weeks.length - 1,
     streak = 0;
-  if (!weeks.has(week)) week = addDays(week, -7);
-  while (weeks.has(week)) {
-    streak++;
-    week = addDays(week, -7);
-  }
+  if (!weeks[i]?.count) i--;
+  for (; i >= 0 && weeks[i].count; i--) streak++;
   return streak;
 }
 // Bilan mensuel : mois « AAAA-MM » (jusqu'au mois en cours), premier et dernier jour, mois voisins.
@@ -2541,12 +2538,16 @@ async function api(r, e, p, ctx = null) {
     ]);
     return json({ok: true, comment: out.comment});
   }
-  // Progression (page PR) : 12 dernières semaines, semaine en cours comprise.
+  // Progression : du lundi de la première séance à aujourd’hui.
   if (r.method === "GET" && p === "/api/progress") {
-    const now = localToday(),
-      from = addDays(mondayOfDate(now), -77),
-      stats = await trainingStats(e, u.id, from, now);
-    return json({from, to: now, ...stats, streak_weeks: await activeWeekStreak(e, u.id, now)});
+    const to = localToday(),
+      stats = await trainingStats(e, u.id, null, to);
+    return json({
+      from: stats.weeks[0]?.week_start ?? null,
+      to,
+      ...stats,
+      streak_weeks: activeWeekStreak(stats.weeks),
+    });
   }
   if (r.method === "GET" && p === "/api/fitness-score") {
     const today = localToday(),
