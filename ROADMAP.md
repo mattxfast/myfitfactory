@@ -60,7 +60,6 @@ Prochain numéro libre : **51**
 ## Look and feel
 
 - [ ] **19.** Thèmes de couleur supplémentaires dans « Apparence » : orange, rose, vert citron (maquettes faites le 19/11/2026). *Matt doit choisir.*
-- [ ] **20.** Bordure un peu plus foncée pour les blocs « pas de contenu », sur toutes les pages.
 - [x] **21.** WOD de la box déjà fait : retirer aussi son bouton ＋ (comme pour la programmation). — fait le 19/11/2026
 - [x] **22.** Mouvements cochés d'office par le WOD du jour : reconnaître aussi les variantes de noms (« Wall ball » / « Wall balls », pluriels, abréviations). — fait le 19/11/2026
 - [ ] **23.** Écrans de démarrage et icône : vérifier le rendu sur Android (icône « maskable »).
@@ -76,6 +75,7 @@ Prochain numéro libre : **51**
 
 ## Écartées
 
+- ~~**20.** Bordure un peu plus foncée pour les blocs « pas de contenu », sur toutes les pages.~~ *Matt : ne sera pas fait.*
 - ~~**17.** WOD du jour : proposer d'abord le WOD de la box du jour s'il existe, l'IA en alternative.~~ *Matt : ne sera pas fait.*
 - ~~**24.** Accessibilité : respecter « réduire les animations », renforcer les contrastes.~~ *Matt : non.*
 
