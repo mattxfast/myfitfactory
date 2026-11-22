@@ -321,17 +321,20 @@ async function joinCommonWod() {
 function logCommonWod() {
   if (commonWod?.joined_id) openSession(null, "daily:" + commonWod.joined_id);
 }
-async function openCommonLeaderboard() {
-  const w = commonWod?.wod;
-  if (!w) return;
-  $("#leaderboardtitle").textContent = w.title;
-  $("#leaderboardmeta").textContent = ["WOD commun du " + fmt(w.wod_date), COMMON_SCORE_HINT[w.score_type]]
-    .filter(Boolean)
-    .join(" · ");
+// Classement d’un WOD commun (celui du jour, ou un plus ancien depuis l’historique des séances).
+async function openCommonLeaderboard(id = commonWod?.wod?.id) {
+  if (!id) return;
+  const known = commonWod?.wod?.id === id ? commonWod.wod : null,
+    meta = w => ["WOD commun du " + fmt(w.wod_date), COMMON_SCORE_HINT[w.score_type]].filter(Boolean).join(" · ");
+  $("#leaderboardtitle").textContent = known?.title || "Classement";
+  $("#leaderboardmeta").textContent = known ? meta(known) : "";
   $("#leaderboardbody").innerHTML = `<p class="muted">Chargement…</p>`;
   $("#leaderboarddialog").showModal();
   try {
-    const d = await api("/common-wod/" + w.id + "/leaderboard");
+    const d = await api("/common-wod/" + id + "/leaderboard"),
+      w = d.wod;
+    $("#leaderboardtitle").textContent = w.title;
+    $("#leaderboardmeta").textContent = meta(w);
     $("#leaderboardbody").innerHTML = d.ranking.length
       ? `<ol class="leaderboard-list">${d.ranking
           .map(

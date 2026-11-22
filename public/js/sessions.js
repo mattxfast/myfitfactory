@@ -104,6 +104,7 @@ document.querySelectorAll(".navtab[data-view]").forEach(b => (b.onclick = () => 
 // Origine du WOD d’une séance, affichée dans l’historique : nom de la box, WOD du jour, programmation, ou séance libre
 // (« Autres »).
 function sessionSource(s) {
+  if (s.common_wod_id) return "WOD commun";
   if (s.box_wod_id) return s.box_name || "WOD de la box";
   if (s.wod_name === "Autres" && !s.daily_wod_id) return "Séance libre";
   return "WOD Perso"; // WOD de la programmation ou WOD généré (rubrique « WOD Perso »)
@@ -124,7 +125,7 @@ function renderSessions() {
     ? sessions
         .map(
           s =>
-            `<article class="entry session-entry"><div class="session-history-content"><div class="session-history-heading"><button type="button" class="session-title-line session-open" data-session-open="${s.id}" aria-label="Voir le détail de la séance"><h3>${esc(s.wod_name)}</h3><span class="session-meta"><span class="sessiondate">${fmt(s.session_date)}</span><span class="tracked-tag">${esc(sessionSource(s))}</span></span></button><div class="entryactions">${s.box_wod_id && s.score_type && s.score_type !== "none" ? `<button class="smallbtn" data-leaderboard="${s.box_wod_id}" aria-label="Classement" title="Classement du WOD">${TROPHY_ICON}</button>` : ""}<button class="smallbtn" data-edit-session="${s.id}" aria-label="Modifier" title="Modifier"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.83 2.83 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg></button><button class="smallbtn delete" data-del-session="${s.id}" aria-label="Supprimer" title="Supprimer"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button></div></div></div></article>`
+            `<article class="entry session-entry"><div class="session-history-content"><div class="session-history-heading"><button type="button" class="session-title-line session-open" data-session-open="${s.id}" aria-label="Voir le détail de la séance"><h3>${esc(s.wod_name)}</h3><span class="session-meta"><span class="sessiondate">${fmt(s.session_date)}</span><span class="tracked-tag">${esc(sessionSource(s))}</span></span></button><div class="entryactions">${sessionScoresKind(s) ? `<button class="smallbtn" data-session-scores="${s.id}" aria-label="Scores" title="${sessionScoresKind(s) === "history" ? "Historique des scores" : "Classement du WOD"}">${TROPHY_ICON}</button>` : ""}<button class="smallbtn" data-edit-session="${s.id}" aria-label="Modifier" title="Modifier"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.83 2.83 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg></button><button class="smallbtn delete" data-del-session="${s.id}" aria-label="Supprimer" title="Supprimer"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button></div></div></div></article>`
         )
         .join("")
     : sectionEmpty("Pas de séance enregistrée cette semaine");
@@ -132,8 +133,8 @@ function renderSessions() {
     .querySelectorAll("[data-session-open]")
     .forEach(b => (b.onclick = () => openSessionDetail(b.dataset.sessionOpen)));
   $("#sessionlist")
-    .querySelectorAll("[data-leaderboard]")
-    .forEach(b => (b.onclick = () => openLeaderboard(b.dataset.leaderboard)));
+    .querySelectorAll("[data-session-scores]")
+    .forEach(b => (b.onclick = () => openSessionScores(sessions.find(s => s.id === b.dataset.sessionScores))));
   $("#sessionlist")
     .querySelectorAll("[data-edit-session]")
     .forEach(b => (b.onclick = () => openSession(sessions.find(s => s.id === b.dataset.editSession))));
@@ -148,6 +149,22 @@ function renderSessions() {
           }
         })
     );
+}
+// Accès aux scores depuis l’historique (coupe en bout de ligne) : classement d’un WOD de box ou du WOD commun,
+// suivi d’un WOD de référence (page PR), historique des scores d’un WOD de programme.
+function sessionScoresKind(s) {
+  if (s.box_wod_id) return s.score_type && s.score_type !== "none" ? "box" : null;
+  if (s.common_wod_id) return s.score_type ? "common" : null;
+  if (s.benchmark_id) return s.score_value != null ? "benchmark" : null;
+  const wod = (wodsByProgram[s.program_id] || []).find(w => w.id === s.wod_id);
+  return s.program_score_type || (wod?.score_type && wod.score_type !== "none") ? "history" : null;
+}
+function openSessionScores(s) {
+  const kind = s && sessionScoresKind(s);
+  if (kind === "box") openLeaderboard(s.box_wod_id);
+  else if (kind === "common") openCommonLeaderboard(s.common_wod_id);
+  else if (kind === "benchmark") openBenchmarkHistory(s.benchmark_id);
+  else if (kind === "history") openProgramScoreHistory(s.wod_id, s.wod_name);
 }
 // Détail d’une séance de l’historique, en fenêtre : réalisé, score et mouvements travaillés (pas le contenu prévu :
 // la séance peut être tout autre chose que ce qui était prévu).
