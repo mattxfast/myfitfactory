@@ -68,6 +68,8 @@ after(() => {
 
 let wodId;
 test("WOD commun : une seule génération par jour, réservée à l'administrateur hors tâche planifiée", async () => {
+  assert.equal((await alice.get("/preferences")).data.common_wod, 0, "option désactivée par défaut");
+  for (const who of [alice, bob]) assert.equal((await who.put("/preferences", {common_wod: true})).status, 200);
   assert.equal((await alice.get("/common-wod")).data.wod, null, "pas encore généré");
   assert.equal((await alice.post("/admin/common-wod")).status, 403);
   const res = await admin.post("/admin/common-wod");
@@ -121,8 +123,9 @@ test("WOD commun : « Je le fais », séance avec score et classement", async ()
   assert.equal((await alice.get("/common-wod")).data.participants, 2);
 });
 
-test("WOD commun : notification coupée dans les préférences", async () => {
-  assert.equal((await alice.get("/preferences")).data.common_wod_push, 1, "activée par défaut");
-  await alice.put("/preferences", {common_wod_push: false});
-  assert.equal((await alice.get("/preferences")).data.common_wod_push, 0);
+test("WOD commun : option désactivée, plus de WOD commun proposé", async () => {
+  await alice.put("/preferences", {common_wod: false});
+  assert.equal((await alice.get("/preferences")).data.common_wod, 0);
+  assert.equal((await alice.get("/common-wod")).data.wod, null);
+  assert.ok((await bob.get("/common-wod")).data.wod, "chacun son réglage");
 });

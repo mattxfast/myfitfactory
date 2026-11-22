@@ -636,6 +636,13 @@ async function ensureV2Schema(env) {
         ].map(sql => env.DB.prepare(sql))
       );
     });
+    await runMigration("v42-common-wod-optin", async () => {
+      // WOD commun du jour : option à activer dans Mon compte (désactivée par défaut, y compris pour les comptes
+      // existants) ; elle commande la rubrique de la page Séances et la notification. common_wod_push n'est plus lu.
+      const columns = await env.DB.prepare("PRAGMA table_info(users)").all();
+      if (!columns.results.some(column => column.name === "common_wod_enabled"))
+        await env.DB.prepare("ALTER TABLE users ADD COLUMN common_wod_enabled INTEGER NOT NULL DEFAULT 0").run();
+    });
   })().catch(err => {
     schemaReady = null;
     throw err;
@@ -1072,17 +1079,20 @@ const commonWodOut = x =>
     blocks: x.blocks ? JSON.parse(x.blocks) : null,
     score_type: x.score_type || null,
   };
-// Tâche planifiée (chaque minute) : génération à partir de 5 h, puis notification à partir de 6 h à tous les membres
-// abonnés aux notifications (sauf s'ils l'ont coupée dans Rappels), 5 par passage (plan gratuit), une fois par jour.
+// Tâche planifiée (chaque minute) : génération à partir de 5 h, puis notification à partir de 6 h aux membres qui ont
+// activé le WOD commun dans Mon compte et les notifications, 5 par passage (plan gratuit), une fois par jour.
 async function sendCommonWod(e) {
   const hour = e.TEST_PARIS_HOUR ? Number(e.TEST_PARIS_HOUR) : parisHour(),
     today = e.TEST_PARIS_DATE || localToday();
   if (hour < 5) return {sent: 0};
+  // Personne n'a activé l'option : pas de génération (pas d'appel à l'IA pour rien).
+  if (!(await e.DB.prepare("SELECT 1 FROM users WHERE common_wod_enabled=1 AND is_active=1 LIMIT 1").first()))
+    return {sent: 0};
   const ready = await ensureCommonWod(e, today);
   if (!ready.wod || hour < 6 || hour >= 12) return {sent: 0};
   const users = (
     await e.DB.prepare(
-      "SELECT u.id FROM users u WHERE u.is_active=1 AND u.common_wod_push=1 AND EXISTS(SELECT 1 FROM push_subscriptions p WHERE p.user_id=u.id) AND NOT EXISTS(SELECT 1 FROM common_wod_notices n WHERE n.user_id=u.id AND n.wod_date=?) LIMIT 5"
+      "SELECT u.id FROM users u WHERE u.is_active=1 AND u.common_wod_enabled=1 AND EXISTS(SELECT 1 FROM push_subscriptions p WHERE p.user_id=u.id) AND NOT EXISTS(SELECT 1 FROM common_wod_notices n WHERE n.user_id=u.id AND n.wod_date=?) LIMIT 5"
     )
       .bind(today)
       .all()
@@ -2206,13 +2216,15 @@ async function api(r, e, p, ctx = null) {
   // Préférences du compte : thème (null = thème par défaut de l'administrateur), interface (avancée ou simplifiée) et rappels.
   if (r.method === "GET" && p === "/api/preferences") {
     const st = await userReminders(e, u.id),
-      row = await e.DB.prepare("SELECT theme,box_prompt_dismissed,interface_mode,common_wod_push FROM users WHERE id=?")
+      row = await e.DB.prepare(
+        "SELECT theme,box_prompt_dismissed,interface_mode,common_wod_enabled FROM users WHERE id=?"
+      )
         .bind(u.id)
         .first();
     return json({
       theme: THEMES.includes(row?.theme) ? row.theme : null,
       interface: row?.interface_mode === "simple" ? "simple" : "advanced",
-      common_wod_push: row?.common_wod_push === 0 ? 0 : 1,
+      common_wod: row?.common_wod_enabled ? 1 : 0,
       box_prompt_dismissed: row?.box_prompt_dismissed ? 1 : 0,
       default_theme: st.defaults.theme,
       reminders: {enabled: st.enabled, days: st.days, hour: st.hour},
@@ -2229,9 +2241,9 @@ async function api(r, e, p, ctx = null) {
     }
     if (b.interface !== undefined)
       await e.DB.prepare("UPDATE users SET interface_mode=? WHERE id=?").bind(b.interface, u.id).run();
-    if (b.common_wod_push !== undefined)
-      await e.DB.prepare("UPDATE users SET common_wod_push=? WHERE id=?")
-        .bind(b.common_wod_push ? 1 : 0, u.id)
+    if (b.common_wod !== undefined)
+      await e.DB.prepare("UPDATE users SET common_wod_enabled=? WHERE id=?")
+        .bind(b.common_wod ? 1 : 0, u.id)
         .run();
     if (b.reminders) {
       const error = await saveReminderSettings(e, u.id, b.reminders);
@@ -3560,6 +3572,9 @@ async function api(r, e, p, ctx = null) {
   // WOD commun du jour : le WOD (s'il est prêt), mon WOD du jour qui le reprend (« Je le fais ») et le nombre de
   // participants (séances enregistrées).
   if (p === "/api/common-wod" && r.method === "GET") {
+    // Option désactivée (par défaut) : ni rubrique, ni notification.
+    const optin = await e.DB.prepare("SELECT common_wod_enabled FROM users WHERE id=?").bind(u.id).first();
+    if (!optin?.common_wod_enabled) return json({wod: null, enabled: false});
     const wod = await e.DB.prepare("SELECT * FROM common_wods WHERE wod_date=? AND status='ready'")
       .bind(localToday())
       .first();

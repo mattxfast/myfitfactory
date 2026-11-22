@@ -553,6 +553,13 @@
                 <p class="hint">
                   Simplifiée : la page Séances ne garde que l’historique et les mouvements travaillés, sans programmes.
                 </p>
+                <label class="checkbox-label"
+                  ><input type="checkbox" id="commonwodoptin" /> Recevoir le WOD commun du jour</label
+                >
+                <p class="hint">
+                  Le même WOD pour tous chaque jour, avec un classement : rubrique sur la page Séances et notification
+                  vers 6 h si les notifications sont autorisées.
+                </p>
               </section>
             </div>
           </section>
@@ -583,9 +590,6 @@
                   <div class="choice-chips" id="reminderhours" role="radiogroup" aria-label="Heure du rappel"></div>
                   <button type="button" class="smallbtn" id="remindertest">Envoyer une notification de test</button>
                 </div>
-                <label class="reminder-switch"
-                  ><input type="checkbox" id="commonwodpush" />WOD commun du jour (notification vers 6 h)</label
-                >
                 <div id="reminderstatus" class="error" role="status"></div>
               </section>
             </div>

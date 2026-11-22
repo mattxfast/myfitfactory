@@ -80,6 +80,7 @@ function setPreferences(d) {
   select.value = d.theme || "default";
   cacheTheme(d.theme || d.default_theme);
   $("#interfaceselect").value = simpleInterface() ? "simple" : "advanced";
+  $("#commonwodoptin").checked = !!d.common_wod;
   applyInterface();
   renderReminders();
 }
@@ -91,6 +92,21 @@ function applyInterface() {
   $('.navtab[data-view="programs"]').hidden = simple;
   if (simple && !$("#view-programs").hidden) switchView("sessions");
 }
+// WOD commun du jour : option du compte, désactivée par défaut (rubrique Séances et notification).
+$("#commonwodoptin").onchange = async e => {
+  const on = e.target.checked;
+  try {
+    await api("/preferences", {method: "PUT", body: JSON.stringify({common_wod: on})});
+    if (preferences) preferences.common_wod = on ? 1 : 0;
+    commonWod = null;
+    await loadCommonWod();
+    renderWeek();
+    toast(on ? "WOD commun du jour activé." : "WOD commun du jour désactivé.");
+  } catch (x) {
+    e.target.checked = !on;
+    toast(x.offline ? OFFLINE_MESSAGE : x.message);
+  }
+};
 $("#interfaceselect").onchange = async e => {
   const value = e.target.value === "simple" ? "simple" : "advanced";
   if (preferences) preferences.interface = value;

@@ -95,19 +95,7 @@ function renderReminders() {
   reminderChips("#reminderdays", preferences.choices.days, r.days, v => v + " jours");
   reminderChips("#reminderhours", preferences.choices.hours, r.hour, v => v + " h");
   renderReminderDevice();
-  $("#commonwodpush").checked = preferences.common_wod_push !== 0;
 }
-// WOD commun du jour : notification vers 6 h, envoyée à tous les appareils abonnés sauf si elle est coupée ici.
-$("#commonwodpush").onchange = async e => {
-  const on = e.target.checked;
-  try {
-    await api("/preferences", {method: "PUT", body: JSON.stringify({common_wod_push: on})});
-    preferences.common_wod_push = on ? 1 : 0;
-  } catch (x) {
-    e.target.checked = !on;
-    $("#reminderstatus").textContent = x.message;
-  }
-};
 $("#reminderenabled").onchange = async e => {
   const enabled = e.target.checked;
   if (!(await saveReminders({enabled: enabled ? 1 : 0}))) {
