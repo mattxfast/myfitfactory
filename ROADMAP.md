@@ -9,7 +9,7 @@ dire « fais l'idée 7 ».
 - Nouvelle idée : l'ajouter dans la bonne rubrique avec le **numéro suivant le plus grand existant**.
 - *En italique* : la décision de Matt quand il y en a une.
 
-Prochain numéro libre : **55**
+Prochain numéro libre : **56**
 
 ## Fiabilité et exploitation
 
@@ -57,6 +57,7 @@ Prochain numéro libre : **55**
 - [ ] **43.** Refaire ce WOD : depuis le détail d’une séance dans l’historique, reprendre son contenu et ses charges, consulter le dernier score et enregistrer un nouveau résultat.
 - [ ] **44.** Favoris : mettre de côté un WOD généré pour le retrouver et le faire plus tard. La séance apparaît dans l’historique quand l’utilisateur enregistre son résultat.
 - [x] **54.** WOD commun du jour : une tâche planifiée génère chaque jour un seul WOD par IA, le même pour tous les inscrits (avec une version adaptée pour peu de matériel ou les débutants). Il est proposé par une notification et sur la page Séances ; « Je le fais » l'ajoute aux WOD Perso. Classement entre les participants, comme pour les WOD de box. Une seule génération par jour pour toute l'application. — fait le 22/11/2026 (notification à 6 h à tous les abonnés, coupable dans Rappels ; classement en prénom et initiale ; dans les deux interfaces)
+- [ ] **55.** Programmes de coach : un coach écrit un programme, puis tague des utilisateurs. Chacun reçoit une invitation (pastille rouge sur l'onglet Programmes, comme pour les séances partagées) et doit l'accepter pour que le programme s'applique à lui, comme s'il l'avait choisi parmi les programmes publics à suivre (programme suivi, non modifiable par l'utilisateur). Le programme peut avoir des dates ou non : sans dates, l'utilisateur choisit sa date de début en acceptant. Refus possible.
 
 ## Look and feel
 
