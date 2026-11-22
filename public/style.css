@@ -4371,11 +4371,16 @@ button:disabled {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+/* Contenu d'un WOD en fenêtre (détail, WOD de référence) : bloc gris, comme les blocs du formulaire de séance. */
 .daily-detail-body {
   white-space: pre-line;
   color: var(--ink-soft);
   font-size: 14px;
   line-height: 1.5;
+  padding: 12px;
+  background: var(--content-bg);
+  border: 1px solid var(--content-border);
+  border-radius: 12px;
 }
 .daily-detail-actions {
   display: flex;
