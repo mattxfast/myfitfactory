@@ -91,8 +91,8 @@ function renderNutrition() {
         })
         .join("")
     : sectionEmpty("Pas de repas enregistré ce jour");
-  // 7 derniers jours (jusqu’au jour affiché) : un toucher affiche la journée.
-  const days = Array.from({length: 7}, (_, i) => addDays(day, -i)),
+  // 7 derniers jours (jusqu’au jour affiché) : seuls les jours avec des repas ; un toucher affiche la journée.
+  const days = Array.from({length: 7}, (_, i) => addDays(day, -i)).filter(d => meals.some(m => m.meal_date === d)),
     history = days
       .map(d => {
         const t = sumNutrients(meals.filter(m => m.meal_date === d)),
@@ -101,7 +101,7 @@ function renderNutrition() {
       })
       .join("");
   $("#nutritionboard").innerHTML =
-    `${nav}${nutritionSummary(sumNutrients(dayMeals), dayMeals)}<div class="weekheading"><h2>Repas</h2><button type="button" class="smallbtn weekheading-action" id="addmeal" aria-label="Ajouter un repas" title="Ajouter un repas"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button><span>${dayMeals.length}</span></div><div class="entries">${list}</div><div class="weekheading"><h2>7 derniers jours</h2></div><div class="nutrition-history card">${history}</div>`;
+    `${nav}${nutritionSummary(sumNutrients(dayMeals), dayMeals)}<div class="weekheading"><h2>Repas</h2><button type="button" class="smallbtn weekheading-action" id="addmeal" aria-label="Ajouter un repas" title="Ajouter un repas"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button><span>${dayMeals.length}</span></div><div class="entries">${list}</div><div class="weekheading"><h2>7 derniers jours</h2></div>${history ? `<div class="nutrition-history card">${history}</div>` : sectionEmpty("Aucun repas ces 7 derniers jours")}`;
   $("#prevday").onclick = () => changeNutritionDay(addDays(day, -1));
   $("#nextday").onclick = () => changeNutritionDay(addDays(day, 1));
   $("#nutritiontoday").onclick = () => changeNutritionDay(now);

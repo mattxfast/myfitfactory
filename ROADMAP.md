@@ -9,7 +9,7 @@ dire « fais l'idée 7 ».
 - Nouvelle idée : l'ajouter dans la bonne rubrique avec le **numéro suivant le plus grand existant**.
 - *En italique* : la décision de Matt quand il y en a une.
 
-Prochain numéro libre : **48**
+Prochain numéro libre : **49**
 
 ## Fiabilité et exploitation
 
@@ -67,6 +67,7 @@ Prochain numéro libre : **48**
 - [x] **45.** Couleurs : titres de rubrique en aplat de couleur d'accent (jaune) sur toutes les pages ; blocs de navigation (choix de la semaine ou du jour, en-tête de programme, bandeaux « Mes programmes », « Chrono ») sur fond de carte avec une bordure épaisse (5 px) de la couleur d'accent, pour les 4 thèmes. — fait le 22/11/2026
 - [x] **46.** Formulaire de séance plus court : date sur une ligne, « Réalisé / notes » sur 3 lignes qui s'agrandit à la saisie, « Partenaires » replié comme « Focus mouvement » (nombre affiché). — fait le 22/11/2026
 - [x] **47.** Menu du bas : libellé court sous chaque icône (Séances, Programmes, Mon fitness, Alimentation, Chrono ; idem pour les menus administration et gestionnaire). — fait le 22/11/2026
+- [x] **48.** États vides plus sobres : score de forme sans données (message au lieu du radar vide), « 7 derniers jours » de l'alimentation limité aux jours avec des repas. — fait le 22/11/2026
 
 ## Écartées
 

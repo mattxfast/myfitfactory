@@ -3213,6 +3213,13 @@ button:disabled {
   font-size: 12px;
   color: var(--muted);
 }
+/* Score sans données : message à la place du radar. */
+.fitness-empty {
+  margin: 0 0 10px;
+  font-size: 14px;
+  text-align: center;
+  color: var(--muted-strong);
+}
 /* Lien discret vers l’explication du calcul, et fenêtre d’explication. */
 .fitness-how {
   padding: 0;
