@@ -31,8 +31,10 @@ const dailyCanGenerate = from => {
 // WOD du jour de la semaine : affichés en fin de rubrique « WOD Perso » (après ceux de la programmation), comme des entraînements
 // en plus, rattachés à aucun programme. Même forme que les cartes de la programmation : texte à gauche, boutons à
 // droite ; le titre du WOD en gras, « Hors prog · JJ/MM/AAAA » dessous ; un toucher sur la ligne ouvre le détail.
+// Le WOD commun du jour repris par « Je le fais » reste dans sa propre rubrique (pas en double dans WOD Perso).
+const persoDailyWods = () => dailyWods.filter(w => !w.common_wod_id);
 function dailyWodCards() {
-  return dailyWods
+  return persoDailyWods()
     .map(w => {
       const n = dailyWodDone(w),
         future = w.wod_date > today();

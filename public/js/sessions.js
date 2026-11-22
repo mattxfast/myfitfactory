@@ -280,8 +280,8 @@ function weekProgramSection(p, week, folded, from) {
     // WOD du jour (IA ou WOD de référence) : en fin de liste, comptés dans le compteur de la rubrique (3 WOD faits sur
     // 4 + 1 WOD généré : « 3/5 », puis « 4/5 » une fois ce WOD fait).
     extras = dailyWodCards(),
-    doneCount = done.length + dailyWods.filter(dailyWodDone).length,
-    totalCount = ws.length + dailyWods.length;
+    doneCount = done.length + persoDailyWods().filter(dailyWodDone).length,
+    totalCount = ws.length + persoDailyWods().length;
   return `<section class="session-fold ${folded.has("wods") ? "collapsed" : ""}" data-session-fold="wods"><div class="weekheading"><button class="smallbtn section-collapse" aria-label="Replier les WOD" aria-expanded="${!folded.has("wods")}">${folded.has("wods") ? "＋" : "−"}</button><h2>WOD Perso</h2><span>${doneCount}/${totalCount}</span></div><div class="session-fold-body"><div class="weekwodlist">${
     !p
       ? extras || sectionEmpty("Pas de programmation en cours")
@@ -361,7 +361,9 @@ function renderWeek() {
   }
   $("#weekafter").innerHTML = simple ? weekMovementsSection(week, [], folded) : "";
   // Séances où l’on est tagué : rubrique en tête de page et pastille rouge sur l’onglet Séances.
-  $("#weekboard .weekbar").insertAdjacentHTML("afterend", weekInvitesSection() + weekCommonSection(from));
+  // WOD commun du jour : juste après la carte « Nombre de séances ».
+  $("#weekboard .weekbar").insertAdjacentHTML("afterend", weekInvitesSection());
+  ($("#weekboard .weekstats") || $("#weekboard .weekbar")).insertAdjacentHTML("afterend", weekCommonSection(from));
   bindCommonWod($("#weekboard"));
   $('.navtab[data-view="sessions"]').classList.toggle("has-alert", pendingTags.length > 0);
   bindInvites();
