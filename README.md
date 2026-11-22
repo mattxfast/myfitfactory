@@ -169,6 +169,7 @@ La page n'a pas de titre : chaque famille (LIFT, FORCE, GYM, ENGINE) qui a des m
 - Tâches à valider : tant qu'une demande attend (adhésion à une box gérée pour l'icône maison du gestionnaire, demande de gestionnaire pour la roue crantée de l'administrateur), l'icône est rouge ; elle prend la couleur du thème dans son espace et redevient rouge en sortant tant qu'il reste une demande (`GET /api/boxes` renvoie `pending.members` et `pending.managers`).
 - La roue crantée en haut ouvre l'**espace d'administration**, avec son propre menu du bas : **Utilisateurs** ; **Box** (box, gestionnaires de box) ; **Autres paramétrages** (réglages par défaut, liste des mouvements, activités). La même icône, surlignée, ramène à l'espace utilisateur.
 - Gestion des utilisateurs (activation / désactivation, droits d'administration).
+- **Consommation de l'IA** (Autres paramétrages, en tête) : pour aujourd'hui et pour le mois en cours (heure de Paris), nombre d'appels à OpenAI, tokens envoyés, produits (dont tokens de réflexion) et coût estimé en dollars, par fonctionnalité (WOD de programme, WOD du jour, WOD commun, repas, bilan mensuel) et au total (`GET /api/admin/ai-usage`). Chaque appel enregistre les tokens renvoyés par l'API, y compris quand la réponse est refusée ou illisible (table `ai_usage`, sans contenu ni prompt). Le coût est une estimation d'après les tarifs publics d'OpenAI (`AI_PRICES` dans `src/ai.js`, à mettre à jour si les tarifs changent) ; un modèle absent de la liste est compté sans coût et signalé par un astérisque.
 - Gestion de la « Liste des mouvements » (catalogue commun), de leur catégorie et de leur ordre ; les flèches de tri s'affichent via le bouton ⇅ du titre.
 - Gestion des activités proposées lors de la création d'un WOD ou d'une séance.
 
@@ -248,6 +249,7 @@ Les évolutions applicatives V2 et V3 sont versionnées dans le Worker :
 - V35 ajoute les tables `monthly_reports` (commentaire du coach d'un bilan mensuel) et `monthly_report_notices` (notification du bilan, une par mois).
 - V40 ajoute le WOD commun du jour : tables `common_wods` et `common_wod_notices`, colonnes `users.common_wod_push` et `daily_wods.common_wod_id`.
 - V37 ajoute la table `food_products` (fiches Open Food Facts des produits scannés, gardées 30 jours).
+- V41 ajoute la table `ai_usage` (tokens envoyés, en cache, produits et de réflexion de chaque appel à OpenAI, avec la fonctionnalité, le modèle, l'utilisateur s'il y en a un et le jour de Paris ; index par jour).
 - V36 ajoute la colonne `box_wods.blocks` (blocs Échauffement, Force / Skill, Metcon, Finisher en JSON — « Force / Skill » est devenu « Force », et un bloc « Travail technique » (clé `technique`) s'ajoute avant lui, sans migration ; `content` garde le texte complet, chaque bloc précédé de son titre).
 
 Le Worker consulte `app_migrations` et n'exécute que les versions qui ne sont pas marquées comme terminées. Les migrations applicatives sont additives : elles ne réinitialisent pas les comptes ni les données existantes. Toute nouvelle évolution de schéma doit recevoir une nouvelle version de migration ; ne pas modifier rétroactivement une migration déjà appliquée.

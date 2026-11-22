@@ -3,6 +3,7 @@ import {test, before, after} from "node:test";
 import assert from "node:assert/strict";
 import {createServer} from "node:http";
 import {startWorker, client, ADMIN_EMAIL, today, mondayOf, addDays} from "./helpers.mjs";
+import {aiCost} from "../src/ai.js";
 
 const PASSWORD = "MotDePasse-Test-123";
 const FAKE_WOD = {
@@ -42,8 +43,14 @@ before(async () => {
       res.setHeader("content-type", "application/json");
       res.end(
         JSON.stringify({
-          model: "faux-modele",
+          model: "gpt-5-mini-2025-08-07",
           status: "completed",
+          usage: {
+            input_tokens: 1000,
+            input_tokens_details: {cached_tokens: 200},
+            output_tokens: 500,
+            output_tokens_details: {reasoning_tokens: 300},
+          },
           output: [{type: "message", content: [{type: "output_text", text: JSON.stringify(FAKE_WOD)}]}],
         })
       );
@@ -204,4 +211,39 @@ test("WOD de programme : mouvements à travailler, repris par l'IA et acceptés 
     week.catalogChecks.filter(c => c.session_id === session.data.id).map(c => c.catalog_movement_id),
     [squatId]
   );
+});
+
+test("IA : suivi des tokens et du coût, réservé à l'administrateur", async () => {
+  assert.equal((await alice.get("/admin/ai-usage")).status, 403);
+  const before = (await admin.get("/admin/ai-usage")).data;
+  assert.equal((await alice.post(`/wods/${wodId}/generate`, options())).status, 200);
+  const res = await admin.get("/admin/ai-usage");
+  assert.equal(res.status, 200, JSON.stringify(res.data));
+  const wod = res.data.features.find(f => f.feature === "wod"),
+    prev = before.features.find(f => f.feature === "wod");
+  assert.equal(wod.day.calls, prev.day.calls + 1);
+  assert.equal(wod.month.input_tokens - prev.month.input_tokens, 1000);
+  assert.equal(wod.day.cached_tokens - prev.day.cached_tokens, 200);
+  assert.equal(wod.day.output_tokens - prev.day.output_tokens, 500);
+  assert.equal(wod.day.reasoning_tokens - prev.day.reasoning_tokens, 300);
+  assert.ok(
+    Math.abs(
+      wod.day.cost -
+        prev.day.cost -
+        aiCost("gpt-5-mini-2025-08-07", {input_tokens: 1000, cached_tokens: 200, output_tokens: 500})
+    ) < 1e-9
+  );
+  assert.equal(
+    res.data.day.calls,
+    res.data.features.reduce((n, f) => n + f.day.calls, 0)
+  );
+  assert.deepEqual(
+    res.data.features.map(f => f.feature),
+    ["wod", "wod_du_jour", "wod_commun", "repas", "bilan_mensuel"]
+  );
+  // 800 entrée à 0,25 $ + 200 en cache à 0,025 $ + 500 sortie à 2 $ (par million) ; modèle inconnu : pas de coût
+  assert.ok(
+    Math.abs(aiCost("gpt-5-mini", {input_tokens: 1000, cached_tokens: 200, output_tokens: 500}) - 0.001205) < 1e-12
+  );
+  assert.equal(aiCost("modele-inconnu", {input_tokens: 10}), null);
 });

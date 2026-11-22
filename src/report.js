@@ -17,7 +17,7 @@ const SCHEMA = {
 };
 const LEVELS = {debutant: "débutant", intermediaire: "intermédiaire", avance: "avancé", competiteur: "compétiteur"};
 
-export async function reportCoachComment(env, r, profile) {
+export async function reportCoachComment(env, r, profile, userId) {
   const sources = {
     prog: "WOD de la programmation",
     box: "WOD de la box",
@@ -41,6 +41,7 @@ export async function reportCoachComment(env, r, profile) {
     `Scores saisis sur des WOD de box : ${r.box_scores}`,
   ].join("\n");
   const out = await openAIJson(env, {
+    userId,
     instructions: SYSTEM,
     input,
     name: "bilan_mensuel",

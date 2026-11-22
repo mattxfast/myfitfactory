@@ -1,7 +1,9 @@
 import {vapidKeys, sendPush, isAllowedEndpoint, localEcdhKeys} from "./push.js";
 import {
   AI_DAILY_LIMIT,
+  AI_FEATURES,
   AI_PROMPT_VERSION,
+  aiCost,
   aiProfileInput,
   aiOptionsInput,
   buildPrompt,
@@ -623,6 +625,16 @@ async function ensureV2Schema(env) {
       await env.DB.prepare(
         "CREATE UNIQUE INDEX IF NOT EXISTS daily_wods_common ON daily_wods(common_wod_id,user_id) WHERE common_wod_id IS NOT NULL"
       ).run();
+    });
+    await runMigration("v41-ai-usage", async () => {
+      // Suivi des tokens OpenAI (espace admin) : un enregistrement par appel, toutes fonctionnalités confondues (le
+      // WOD commun n'a pas d'utilisateur) ; gardé si le compte est supprimé, pour le total du mois.
+      await env.DB.batch(
+        [
+          "CREATE TABLE IF NOT EXISTS ai_usage (id TEXT PRIMARY KEY, user_id TEXT REFERENCES users(id) ON DELETE SET NULL, feature TEXT NOT NULL, model TEXT NOT NULL, usage_date TEXT NOT NULL, input_tokens INTEGER NOT NULL DEFAULT 0, cached_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0, reasoning_tokens INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+          "CREATE INDEX IF NOT EXISTS ai_usage_date ON ai_usage(usage_date)",
+        ].map(sql => env.DB.prepare(sql))
+      );
     });
   })().catch(err => {
     schemaReady = null;
@@ -2158,6 +2170,37 @@ async function api(r, e, p, ctx = null) {
       if (out.pending) return json({error: "Génération déjà en cours."}, 409);
       return json({ok: true, wod: commonWodOut(out.wod)});
     }
+    // Consommation de l'IA : tokens et coût estimé du jour et du mois (heure de Paris), par fonctionnalité.
+    if (r.method === "GET" && p === "/api/admin/ai-usage") {
+      const day = localToday(),
+        month = day.slice(0, 7),
+        rows = await e.DB.prepare(
+          "SELECT feature,model,usage_date=? AS today,COUNT(*) AS calls,SUM(input_tokens) AS input_tokens,SUM(cached_tokens) AS cached_tokens,SUM(output_tokens) AS output_tokens,SUM(reasoning_tokens) AS reasoning_tokens FROM ai_usage WHERE usage_date>=? AND usage_date<=? GROUP BY feature,model,usage_date=?"
+        )
+          .bind(day, month + "-01", day, day)
+          .all();
+      const KEYS = ["calls", "input_tokens", "cached_tokens", "output_tokens", "reasoning_tokens"],
+        empty = () => ({...Object.fromEntries(KEYS.map(k => [k, 0])), cost: 0, unpriced: 0}),
+        totals = {day: empty(), month: empty()},
+        features = {};
+      for (const x of rows.results) {
+        const cost = aiCost(x.model, x),
+          f = (features[x.feature] ??= {feature: x.feature, day: empty(), month: empty()});
+        for (const t of x.today ? [totals.day, totals.month, f.day, f.month] : [totals.month, f.month]) {
+          for (const k of KEYS) t[k] += x[k] || 0;
+          if (cost === null) t.unpriced += x.calls;
+          else t.cost += cost;
+        }
+      }
+      return json({
+        date: day,
+        month,
+        ...totals,
+        features: AI_FEATURES.map(feature => features[feature] || {feature, day: empty(), month: empty()}).concat(
+          Object.values(features).filter(f => !AI_FEATURES.includes(f.feature))
+        ),
+      });
+    }
     return json({error: "Route admin inconnue."}, 404);
   }
   // Préférences du compte : thème (null = thème par défaut de l'administrateur), interface (avancée ou simplifiée) et rappels.
@@ -2506,7 +2549,7 @@ async function api(r, e, p, ctx = null) {
       .first();
     if ((used?.n || 0) >= MEAL_DAILY_LIMIT)
       return json({error: "Limite de " + MEAL_DAILY_LIMIT + " analyses par 24 h atteinte. Réessaie demain."}, 429);
-    const out = await analyzeMeal(e, a);
+    const out = await analyzeMeal(e, a, u.id);
     if (out.error) return json({error: out.error}, 502);
     // Journal : aliments et précision saisis, sans la photo.
     await e.DB.prepare("INSERT INTO meal_analyses(id,user_id,request,result,prompt_version,model) VALUES(?,?,?,?,?,?)")
@@ -2738,7 +2781,7 @@ async function api(r, e, p, ctx = null) {
     const report = await monthlyReport(e, u.id, month);
     if (!report.total) return json({error: "Aucune séance ce mois-ci : rien à commenter."}, 400);
     const profile = await e.DB.prepare("SELECT level,goals FROM ai_profiles WHERE user_id=?").bind(u.id).first(),
-      out = await reportCoachComment(e, report, profile);
+      out = await reportCoachComment(e, report, profile, u.id);
     if (out.error) return json({error: out.error}, 502);
     await e.DB.batch([
       e.DB.prepare(
@@ -3354,7 +3397,7 @@ async function api(r, e, p, ctx = null) {
       planned: planned.results.map(x => ({week: frenchDate(x.week_start), name: x.name, content: x.content})),
       sessions: done.results.map(x => ({date: frenchDate(x.session_date), name: x.name, comment: x.comment})),
     });
-    const out = await callOpenAI(e, prompt);
+    const out = await callOpenAI(e, prompt, u.id);
     if (out.error) return json({error: out.error}, 502);
     const content = wodToText(out.wod, 2000, false),
       blocks = JSON.stringify(wodBlocks(out.wod));
@@ -3430,7 +3473,7 @@ async function api(r, e, p, ctx = null) {
       sessions: done.results.map(x => ({date: frenchDate(x.session_date), name: x.name, comment: x.comment})),
       recent: recent.results.map(x => ({date: frenchDate(x.wod_date), title: x.title})),
     });
-    const out = await callOpenAIDaily(e, prompt);
+    const out = await callOpenAIDaily(e, prompt, u.id);
     if (out.error) return json({error: out.error}, 502);
     const blocs = options.blocks
       ? Object.keys(options.blocks)

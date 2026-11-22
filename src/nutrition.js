@@ -150,8 +150,9 @@ const analysisFrom = r => {
   };
 };
 
-export async function analyzeMeal(env, a) {
+export async function analyzeMeal(env, a, userId) {
   const out = await openAIJson(env, {
+    userId,
     instructions: SYSTEM,
     input: buildMealInput(a),
     name: "repas",

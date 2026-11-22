@@ -188,7 +188,64 @@ export const WOD_SCHEMA = {
 
 // Appel de l'API Responses d'OpenAI avec un format JSON imposé (structured outputs). Partagé avec l'analyse des
 // repas (src/nutrition.js) : input est un texte ou une liste de messages (texte et image).
-export async function openAIJson(env, {instructions, input, name, schema, check, refusal}) {
+// Suivi de consommation (espace admin) : tarifs OpenAI en dollars par million de tokens (entrée, entrée en cache,
+// sortie ; la sortie comprend les tokens de réflexion). Estimation à mettre à jour si les tarifs changent ; un modèle
+// absent de la liste est compté sans coût.
+export const AI_PRICES = [
+  [/^gpt-5(\.\d+)?-nano/, 0.05, 0.005, 0.4],
+  [/^gpt-5(\.\d+)?-mini/, 0.25, 0.025, 2],
+  [/^gpt-5/, 1.25, 0.125, 10],
+  [/^gpt-4\.1-nano/, 0.1, 0.025, 0.4],
+  [/^gpt-4\.1-mini/, 0.4, 0.1, 1.6],
+  [/^gpt-4\.1/, 2, 0.5, 8],
+  [/^gpt-4o-mini/, 0.15, 0.075, 0.6],
+  [/^gpt-4o/, 2.5, 1.25, 10],
+  [/^o4-mini/, 1.1, 0.275, 4.4],
+  [/^o3/, 2, 0.5, 8],
+];
+// Fonctionnalités suivies (nom du schéma JSON envoyé à l'API), dans l'ordre d'affichage.
+export const AI_FEATURES = ["wod", "wod_du_jour", "wod_commun", "repas", "bilan_mensuel"];
+// Coût estimé en dollars, ou null si le tarif du modèle est inconnu.
+export function aiCost(model, {input_tokens = 0, cached_tokens = 0, output_tokens = 0}) {
+  const price = AI_PRICES.find(([re]) => re.test(String(model)));
+  if (!price) return null;
+  const [, input, cached, output] = price;
+  return ((input_tokens - cached_tokens) * input + cached_tokens * cached + output_tokens * output) / 1e6;
+}
+// Tokens renvoyés par l'API pour chaque appel (réussi ou non), datés du jour de Paris ; le suivi ne bloque jamais l'appel.
+async function recordUsage(env, feature, userId, model, usage) {
+  if (!usage || !env.DB) return;
+  const n = v => (Number.isFinite(v) && v > 0 ? Math.round(v) : 0),
+    parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Paris",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date()),
+    v = Object.fromEntries(parts.map(p => [p.type, p.value])),
+    day = `${v.year}-${v.month}-${v.day}`;
+  try {
+    await env.DB.prepare(
+      "INSERT INTO ai_usage(id,user_id,feature,model,usage_date,input_tokens,cached_tokens,output_tokens,reasoning_tokens) VALUES(?,?,?,?,?,?,?,?,?)"
+    )
+      .bind(
+        crypto.randomUUID(),
+        userId || null,
+        feature,
+        String(model).slice(0, 100),
+        day,
+        n(usage.input_tokens),
+        n(usage.input_tokens_details?.cached_tokens),
+        n(usage.output_tokens),
+        n(usage.output_tokens_details?.reasoning_tokens)
+      )
+      .run();
+  } catch (err) {
+    console.error("Suivi des tokens", err?.message);
+  }
+}
+
+export async function openAIJson(env, {instructions, input, name, schema, check, refusal, userId = null}) {
   const model = String(env.OPENAI_MODEL || AI_DEFAULT_MODEL),
     body = {
       model,
@@ -212,6 +269,7 @@ export async function openAIJson(env, {instructions, input, name, schema, check,
     return {error: "Le service d'IA ne répond pas. Réessaie dans un instant."};
   }
   const data = await res.json().catch(() => null);
+  await recordUsage(env, name, userId, data?.model || model, data?.usage);
   if (!res.ok) {
     console.error("OpenAI", res.status, JSON.stringify(data?.error || data).slice(0, 500));
     if (res.status === 429) return {error: "Le service d'IA est saturé ou le crédit est épuisé. Réessaie plus tard."};
@@ -229,8 +287,9 @@ export async function openAIJson(env, {instructions, input, name, schema, check,
     return {error: "La réponse de l'IA est incomplète. Réessaie."};
   }
 }
-export async function callOpenAI(env, prompt) {
+export async function callOpenAI(env, prompt, userId) {
   const out = await openAIJson(env, {
+    userId,
     instructions: SYSTEM,
     input: prompt,
     name: "wod",
@@ -350,8 +409,9 @@ export const DAILY_WOD_SCHEMA = {
   },
 };
 
-export async function callOpenAIDaily(env, prompt) {
+export async function callOpenAIDaily(env, prompt, userId) {
   const out = await openAIJson(env, {
+    userId,
     instructions: DAILY_SYSTEM,
     input: prompt,
     name: "wod_du_jour",

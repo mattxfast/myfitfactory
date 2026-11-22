@@ -21,17 +21,43 @@ document.querySelectorAll("#adminnav [data-admin-page]").forEach(
 );
 async function loadAdmin() {
   if (!isAdmin) return;
-  const [a, u, m, b, st] = await Promise.all([
+  const [a, u, m, b, st, ai] = await Promise.all([
     api("/admin/activities"),
     api("/admin/users"),
     api("/admin/movements"),
     api("/admin/boxes"),
     api("/admin/settings"),
+    api("/admin/ai-usage"),
   ]);
   activities = a.activities;
   renderAdminDefaults(st);
+  renderAiUsage(ai);
   renderAdmin(u.users, m.movements);
   renderAdminBoxes(b.boxes, b.managers);
+}
+// Consommation de l’IA : tokens renvoyés par OpenAI et coût estimé, du jour et du mois, par fonctionnalité.
+const AI_FEATURE_NAMES = {
+  wod: "WOD (programme)",
+  wod_du_jour: "WOD du jour",
+  wod_commun: "WOD commun",
+  repas: "Repas",
+  bilan_mensuel: "Bilan mensuel",
+};
+function renderAiUsage(d) {
+  const tokens = n =>
+      n >= 1e6 ? (n / 1e6).toFixed(2).replace(".", ",") + " M" : n >= 1e4 ? Math.round(n / 1e3) + " k" : String(n),
+    cost = t => (t.calls ? "$" + t.cost.toFixed(t.cost < 1 ? 3 : 2).replace(".", ",") + (t.unpriced ? "*" : "") : "—"),
+    cells = t =>
+      `<td>${t.calls}</td><td>${tokens(t.input_tokens)}</td><td>${tokens(t.output_tokens)}<small>dont ${tokens(t.reasoning_tokens)} réfl.</small></td><td>${cost(t)}</td>`,
+    table = (label, key) =>
+      `<table class="meal-table"><thead><tr><th scope="col">${label}</th><th scope="col">Appels</th><th scope="col">Envoyés</th><th scope="col">Produits</th><th scope="col">Coût</th></tr></thead><tbody>${d.features
+        .map(f => `<tr><th scope="row">${esc(AI_FEATURE_NAMES[f.feature] || f.feature)}</th>${cells(f[key])}</tr>`)
+        .join("")}<tr><th scope="row">Total</th>${cells(d[key])}</tr></tbody></table>`,
+    unpriced = d.month.unpriced;
+  $("#aiusage").innerHTML =
+    table("Aujourd’hui", "day") +
+    table("Ce mois-ci", "month") +
+    `<p class="hint">Tokens renvoyés par OpenAI à chaque appel ; les tokens produits comprennent ceux de réflexion. Coût estimé en dollars d’après les tarifs publics${unpriced ? ` (* ${unpriced} appel${unpriced > 1 ? "s" : ""} d’un modèle au tarif inconnu, non compté${unpriced > 1 ? "s" : ""})` : ""}.</p>`;
 }
 // Réglages par défaut des comptes : thème et rappels (chaque utilisateur peut ensuite faire son propre choix).
 function renderAdminDefaults(st) {
