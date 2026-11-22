@@ -319,7 +319,8 @@ function managerWodTitle(w) {
 // voient les membres et qui pré-remplit « Réalisé / notes » de leur séance.
 const BOX_WOD_BLOCKS = [
   ["warmup", "Échauffement"],
-  ["strength", "Force / Skill"],
+  ["technique", "Travail technique"],
+  ["strength", "Force"],
   ["metcon", "Metcon"],
   ["finisher", "Finisher"],
 ];

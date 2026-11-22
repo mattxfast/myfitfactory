@@ -1192,7 +1192,8 @@ const frenchDate = d => d.slice(8, 10) + "/" + d.slice(5, 7) + "/" + d.slice(0, 
 // c'est lui qui est montré aux membres et repris dans « Réalisé / notes ».
 const BOX_WOD_BLOCKS = [
   ["warmup", "Échauffement"],
-  ["strength", "Force / Skill"],
+  ["technique", "Travail technique"],
+  ["strength", "Force"],
   ["metcon", "Metcon"],
   ["finisher", "Finisher"],
 ];
