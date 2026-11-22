@@ -4138,35 +4138,20 @@ button:disabled {
 }
 
 /* Génération de WOD par IA : blocs de la séance, mouvements imposés, profil. */
+/* Fenêtre de génération par IA : blocs de formulaire (les cases portent leur marge du haut). */
 .ai-blocks {
   display: grid;
-  gap: 8px;
-  margin: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-}
-.ai-blocks legend {
-  padding: 0 4px;
-  font-size: 13px;
-  font-weight: 600;
 }
 .ai-movements {
   margin-left: 26px;
 }
 .ai-movements summary,
-.ai-profile summary {
-  cursor: pointer;
-  font-size: 13px;
-  color: var(--muted-strong);
-}
 .ai-movement-list {
   max-height: 220px;
   overflow-y: auto;
 }
 .ai-profile {
   display: grid;
-  gap: 8px;
 }
 
 /* WOD du jour (page Séances) : ✨ du titre juste avant le compteur ; rubrique vide ; fenêtre de génération. */

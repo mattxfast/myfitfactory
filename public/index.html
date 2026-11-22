@@ -748,64 +748,75 @@
           </div>
           <p class="hint" id="aiintro"></p>
           <input type="hidden" name="program_id" /><input type="hidden" name="wod_id" />
-          <label data-ai-mode="program"
-            >WOD par semaine<input name="per_week" type="number" min="1" max="7" value="3" required
-          /></label>
-          <label data-ai-mode="daily" hidden>Pour<select name="wod_date"></select></label>
-          <label
-            >Durée de la séance (min)<input
-              name="duration_minutes"
-              type="number"
-              min="15"
-              max="180"
-              step="5"
-              value="60"
-              required
-          /></label>
-          <fieldset class="ai-blocks">
-            <legend>Blocs de la séance</legend>
+          <section class="form-block">
+            <h3>Séance</h3>
+            <label data-ai-mode="program"
+              >WOD par semaine<input name="per_week" type="number" min="1" max="7" value="3" required
+            /></label>
+            <label data-ai-mode="daily" hidden>Pour<select name="wod_date"></select></label>
+            <label
+              >Durée de la séance (min)<input
+                name="duration_minutes"
+                type="number"
+                min="15"
+                max="180"
+                step="5"
+                value="60"
+                required
+            /></label>
+            <label
+              >Consigne particulière (facultatif)<input
+                name="instructions"
+                maxlength="600"
+                placeholder="Ex. : focus haut du corps, pas de course"
+            /></label>
+            <label class="checkbox-label" data-ai-mode="program wod"
+              ><input type="checkbox" name="replace" /> Remplacer le contenu déjà écrit</label
+            >
+          </section>
+          <section class="form-block ai-blocks">
+            <h3>Blocs de la séance</h3>
             <label class="checkbox-label"><input type="checkbox" name="echauffement" checked /> Échauffement</label>
             <label class="checkbox-label"><input type="checkbox" name="technique" /> Travail technique</label>
             <div class="ai-movements" data-ai-movements="technique" hidden></div>
             <label class="checkbox-label"><input type="checkbox" name="force" /> Force</label>
             <div class="ai-movements" data-ai-movements="force" hidden></div>
             <label class="checkbox-label"><input type="checkbox" name="metcon" checked /> Metcon</label>
-          </fieldset>
-          <label
-            >Consigne particulière (facultatif)<input
-              name="instructions"
-              maxlength="600"
-              placeholder="Ex. : focus haut du corps, pas de course"
-          /></label>
-          <label class="checkbox-label" data-ai-mode="program wod"
-            ><input type="checkbox" name="replace" /> Remplacer le contenu déjà écrit</label
-          >
-          <details class="ai-profile">
-            <summary>Mon profil d’athlète (mémorisé)</summary>
-            <label
-              >Niveau<select name="level">
-                <option value="">Non précisé</option>
-                <option value="debutant">Débutant</option>
-                <option value="intermediaire">Intermédiaire</option>
-                <option value="avance">Avancé</option>
-                <option value="competiteur">Compétiteur</option>
-              </select></label
-            >
-            <label>Objectifs<input name="goals" maxlength="300" placeholder="Ex. : force, premier muscle-up" /></label>
-            <label
-              >Matériel disponible<input
-                name="equipment"
-                maxlength="300"
-                placeholder="Box complète, ou : 2 kettlebells, barre de traction…"
-            /></label>
-            <label
-              >Contraintes<input
-                name="constraints"
-                maxlength="300"
-                placeholder="Ex. : pas de course, éviter le travail au-dessus de la tête"
-            /></label>
-            <p class="hint">Pas de données médicales. Tes records (PR) sont pris en compte automatiquement.</p>
-          </details>
+            <label class="checkbox-label"><input type="checkbox" name="retour_au_calme" /> Finisher</label>
+          </section>
+          <section class="form-block">
+            <details class="ai-profile movement-fold">
+              <summary>
+                <h3>Mon profil d’athlète</h3>
+                <span>mémorisé</span>
+              </summary>
+              <label
+                >Niveau<select name="level">
+                  <option value="">Non précisé</option>
+                  <option value="debutant">Débutant</option>
+                  <option value="intermediaire">Intermédiaire</option>
+                  <option value="avance">Avancé</option>
+                  <option value="competiteur">Compétiteur</option>
+                </select></label
+              >
+              <label
+                >Objectifs<input name="goals" maxlength="300" placeholder="Ex. : force, premier muscle-up"
+              /></label>
+              <label
+                >Matériel disponible<input
+                  name="equipment"
+                  maxlength="300"
+                  placeholder="Box complète, ou : 2 kettlebells, barre de traction…"
+              /></label>
+              <label
+                >Contraintes<input
+                  name="constraints"
+                  maxlength="300"
+                  placeholder="Ex. : pas de course, éviter le travail au-dessus de la tête"
+              /></label>
+              <p class="hint">Pas de données médicales. Tes records (PR) sont pris en compte automatiquement.</p>
+            </details>
+          </section>
           <p class="ai-wait" id="aiprogress" role="status" hidden></p>
           <button class="primary" id="aisubmit">Générer</button>
           <div class="error" id="aierror"></div>

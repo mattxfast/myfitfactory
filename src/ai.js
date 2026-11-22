@@ -17,10 +17,10 @@ const BLOCK_LABELS = {
   technique: "Technique",
   force: "Force",
   metcon: "Metcon",
-  retour_au_calme: "Retour au calme",
+  retour_au_calme: "Finisher",
 };
 // Icône de chaque rubrique dans le texte du WOD, pour la repérer d’un coup d’œil (le texte reste modifiable à la main).
-const BLOCK_ICONS = {echauffement: "🔥", technique: "🎯", force: "🏋️", metcon: "⚡", retour_au_calme: "🧘"};
+const BLOCK_ICONS = {echauffement: "🔥", technique: "🎯", force: "🏋️", metcon: "⚡", retour_au_calme: "💥"};
 // Consignes de rédaction communes : le texte est mis en forme par l’application (rubriques, puces) à partir du JSON.
 const WRITING_RULES = `- Rédaction : dans chaque bloc, "description" tient en une ou deux phrases courtes (intention, consignes d'exécution, repos). Ne répète ni le nom du bloc, ni le format, ni la durée, et ne liste pas les mouvements dans la description : ils vont dans "mouvements", un par ligne.
 - "format" est court : « AMRAP 12 min », « EMOM 10 min », « For Time », « 5 x 3 », « 21-15-9 »… ou null.
@@ -70,7 +70,7 @@ export function aiOptionsInput(b) {
 const SYSTEM = `Tu es un coach CrossFit expérimenté. Tu écris des séances sûres, progressives et adaptées à l'athlète.
 
 Règles :
-- Respecte strictement les blocs demandés : ne génère que les blocs activés, dans l'ordre échauffement, technique, force, metcon, retour au calme.
+- Respecte strictement les blocs demandés : ne génère que les blocs activés, dans l'ordre échauffement, technique, force, metcon, finisher (bloc court en fin de séance, après le metcon : finisher intense ou retour au calme selon la séance).
 - Respecte la durée totale (tolérance ±5 min) en incluant les transitions.
 - Les blocs technique et force comportent de 1 à 5 mouvements. Si des mouvements sont imposés, utilise exactement ceux-là ; sinon choisis-en 1 à 3 selon la durée disponible.
 - Choisis toi-même le format du metcon (AMRAP, EMOM, For Time, intervalles, chipper…) en variant par rapport à la programmation récente.
@@ -96,7 +96,7 @@ function aiBlockLines(o, catalog) {
     "Travail technique : " + yes("technique", imposed(o.technique_movements)),
     "Force : " + yes("force", imposed(o.force_movements)),
     "Metcon : " + yes("metcon", " — format au choix du coach"),
-    "Retour au calme : " + yes("retour_au_calme"),
+    "Finisher : " + yes("retour_au_calme"),
   ];
 }
 
@@ -279,7 +279,7 @@ const DAILY_SYSTEM = `Écris le WOD du jour au format tableau blanc pour un athl
 Règles :
 - Respecte la durée totale (tolérance ±5 min) en incluant les transitions.
 - Si des blocs sont indiqués, génère exactement un bloc par type activé, dans l'ordre indiqué. Utilise les mouvements imposés pour la force et la technique s'ils sont compatibles avec le matériel et les contraintes.
-- Si aucun choix de blocs n'est indiqué, commence par un échauffement court, programme un metcon et ajoute de la force, de la technique ou un retour au calme si la durée le permet.
+- Si aucun choix de blocs n'est indiqué, commence par un échauffement court, programme un metcon et ajoute de la force, de la technique ou un finisher si la durée le permet.
 - Choisis le format du metcon (AMRAP, EMOM, For Time, Tabata, intervalles…) en variant par rapport aux séances récentes.
 - Si la forme du jour est indiquée, adapte le volume et l'intensité : séance plus légère et plus technique si l'athlète est fatigué.
 - Respecte le matériel du profil et toute précision sur le lieu ou le matériel dans la demande. Utilise de préférence les noms de mouvements du catalogue fourni, à l'identique.

@@ -10,10 +10,11 @@ let aiRunning = false,
   aiCancelled = false,
   aiProfileRequest;
 
+// Blocs proposés dans la fenêtre, dans l’ordre de la séance (« retour_au_calme » : le Finisher).
+const AI_FORM_BLOCKS = ["echauffement", "technique", "force", "metcon", "retour_au_calme"];
 function aiBlocks(f) {
   const blocks = {};
-  // Pas de bloc « retour au calme » proposé dans la fenêtre : il n'est jamais demandé à l'IA.
-  for (const k of ["echauffement", "technique", "force", "metcon"]) blocks[k] = f[k].checked;
+  for (const k of AI_FORM_BLOCKS) blocks[k] = f[k].checked;
   return blocks;
 }
 // Liste repliable des mouvements imposés d’un bloc (technique ou force), 5 au plus.
@@ -92,7 +93,7 @@ async function openAiDialog(mode, pid, wodId = null, week = null, origin = mode 
           (weeklyWodContent(wodId, week).trim() ? " (le contenu déjà écrit est remplacé)." : ".");
   }
   if (mode !== "program") for (const kind of ["technique", "force"]) renderAiMovements(kind);
-  ["echauffement", "technique", "force", "metcon"].forEach(k => (f[k].onchange = syncAiForm));
+  AI_FORM_BLOCKS.forEach(k => (f[k].onchange = syncAiForm));
   syncAiForm();
   dialog.showModal();
   // Un chargement du profil terminé après la fermeture ne doit pas modifier la prochaine ouverture.
