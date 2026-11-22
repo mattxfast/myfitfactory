@@ -347,6 +347,10 @@ function weekBoxSection(week, folded) {
       : empty
   }</div></div></section>`;
 }
+// Carte du haut : séances perso faites / prévues, comme le compteur de la rubrique « WOD Perso » (WOD de la
+// programmation et WOD du jour hors prog).
+const persoStat = (doneProgram, totalProgram) =>
+  `<div class="weekstat weekstat-program"><strong>${doneProgram + persoDailyWods().filter(dailyWodDone).length}/${totalProgram + persoDailyWods().length}</strong><span>Nombre de séances perso</span></div>`;
 function renderWeek() {
   const now = today();
   if (!selectedWeekStart) selectedWeekStart = mondayOf(now);
@@ -367,14 +371,14 @@ function renderWeek() {
   } else if (!p || isFallbackProgram(p)) {
     // Semaine sans programme : les séances sont enregistrées « hors programme ».
     $("#weekboard").innerHTML =
-      `<div class="weekbar card">${nav}</div><div class="weekstats card">${dailyGenerateRow(from)}<div class="weekstat weekstat-sessions"><strong>${week.length}</strong><span>Nombre de séances</span></div><button id="addsession" class="primary addsession-compact" aria-label="Ajouter une séance" title="Ajouter une séance">＋</button><label class="competition-toggle" title="Semaine de compétition : coche-la si tu as une compétition cette semaine"><span>Compét.</span><input type="checkbox" id="weekcompetition" aria-label="Semaine de compétition" ${weekCompetition ? "checked" : ""}></label></div>${simple ? "" : weekProgramSection(null, week, folded, from) + weekBoxSection(week, folded) + weekMovementsSection(week, [], folded)}`;
+      `<div class="weekbar card">${nav}</div><div class="weekstats card">${dailyGenerateRow(from)}<div class="weekstat weekstat-sessions"><strong>${week.length}</strong><span>Nombre de séances</span></div>${simple || !persoDailyWods().length ? "" : persoStat(0, 0)}<button id="addsession" class="primary addsession-compact" aria-label="Ajouter une séance" title="Ajouter une séance">＋</button><label class="competition-toggle" title="Semaine de compétition : coche-la si tu as une compétition cette semaine"><span>Compét.</span><input type="checkbox" id="weekcompetition" aria-label="Semaine de compétition" ${weekCompetition ? "checked" : ""}></label></div>${simple ? "" : weekProgramSection(null, week, folded, from) + weekBoxSection(week, folded) + weekMovementsSection(week, [], folded)}`;
   } else {
     const ws = visibleWods(p.id),
       countFor = w => week.filter(x => x.wod_id === w.id).length,
       done = ws.filter(w => countFor(w) > 0);
     const programMovements = movementsByProgram[p.id] || [];
     $("#weekboard").innerHTML =
-      `<div class="weekbar card">${nav}</div><div class="weekstats card">${dailyGenerateRow(from)}<div class="weekstat weekstat-sessions"><strong>${week.length}</strong><span>Nombre de séances</span></div><div class="weekstat weekstat-program"><strong>${done.length}/${ws.length}</strong><span>Nombre de séances de la programmation</span></div><button id="addsession" class="primary addsession-compact" aria-label="Ajouter une séance" title="Ajouter une séance" ${future ? "disabled" : ""}>＋</button><label class="competition-toggle" title="Semaine de compétition : coche-la si tu as une compétition cette semaine"><span>Compét.</span><input type="checkbox" id="weekcompetition" aria-label="Semaine de compétition" ${weekCompetition ? "checked" : ""}></label></div>${weekProgramSection(p, week, folded, from)}${weekBoxSection(week, folded)}${weekMovementsSection(week, programMovements, folded)}`;
+      `<div class="weekbar card">${nav}</div><div class="weekstats card">${dailyGenerateRow(from)}<div class="weekstat weekstat-sessions"><strong>${week.length}</strong><span>Nombre de séances</span></div>${persoStat(done.length, ws.length)}<button id="addsession" class="primary addsession-compact" aria-label="Ajouter une séance" title="Ajouter une séance" ${future ? "disabled" : ""}>＋</button><label class="competition-toggle" title="Semaine de compétition : coche-la si tu as une compétition cette semaine"><span>Compét.</span><input type="checkbox" id="weekcompetition" aria-label="Semaine de compétition" ${weekCompetition ? "checked" : ""}></label></div>${weekProgramSection(p, week, folded, from)}${weekBoxSection(week, folded)}${weekMovementsSection(week, programMovements, folded)}`;
   }
   $("#weekafter").innerHTML = simple ? weekMovementsSection(week, [], folded) : "";
   // Séances où l’on est tagué : rubrique en tête de page et pastille rouge sur l’onglet Séances.
