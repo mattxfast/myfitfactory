@@ -92,6 +92,7 @@
   --nav-block-border-width: 5px;
   --orange: #f5b800; /* accent jaune (boutons replier, courbes PR) */
   --orange-strong: #c99700; /* accent foncé (liserés, survols) */
+  --wod-block-accent: #8a6500; /* titres et barres des blocs du détail d’un WOD (lisible sur le fond des contenus) */
   --chart-mark: #b08400; /* graphiques : accent assez foncé sur fond clair (contraste ≥ 3:1) */
   --orange-soft: #ffe680; /* accent clair */
   --planned-ink: #8a6500; /* compteur d’un WOD planifié */
@@ -168,6 +169,7 @@
   --banner-ink-soft: #3d3208;
   --orange: #ffd60a;
   --orange-strong: #f5c400;
+  --wod-block-accent: #f5c400; /* titres et barres des blocs du détail d’un WOD (lisible sur le fond des contenus) */
   --chart-mark: #ffd60a;
   --orange-soft: #ffe45c;
   --planned-ink: #ffd60a;
@@ -221,6 +223,7 @@
   --banner-ink-soft: #d0d0d0;
   --orange: #d62828;
   --orange-strong: #b51f1f;
+  --wod-block-accent: #b51f1f; /* titres et barres des blocs du détail d’un WOD (lisible sur le fond des contenus) */
   --chart-mark: #d62828;
   --orange-soft: #f2a5a5;
   --planned-ink: #b51f1f;
@@ -275,6 +278,7 @@
   --banner-ink-soft: #ffd2e6;
   --orange: #ff1f8e;
   --orange-strong: #e0007a;
+  --wod-block-accent: #e0007a; /* titres et barres des blocs du détail d’un WOD (lisible sur le fond des contenus) */
   --chart-mark: #ff1f8e;
   --orange-soft: #ff8ac2;
   --planned-ink: #d7ef3c;
@@ -5525,11 +5529,14 @@ button:active:not(:disabled) {
 .wod-detail-blocks {
   display: grid;
   gap: 4px;
-  --block-color: var(--orange-strong);
+  --block-color: var(--wod-block-accent);
 }
-/* Titre de chaque bloc dans la couleur de la barre de séparation. */
+/* Titre de chaque bloc dans la couleur de la barre de séparation, pleine (lisible sur fond clair). */
+.wod-detail-blocks .box-planning-part {
+  border-top-color: var(--block-color);
+}
 .wod-detail-blocks .box-planning-part em {
-  color: color-mix(in srgb, var(--block-color) 70%, transparent);
+  color: var(--block-color);
 }
 .wod-detail-blocks .box-planning-part:first-child {
   padding-top: 0;
