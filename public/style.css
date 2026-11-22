@@ -4352,26 +4352,6 @@ button:disabled {
   align-items: center;
   gap: 6px;
 }
-.daily-empty {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.daily-empty .primary,
-.daily-empty-actions .smallbtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: 0 0 auto;
-}
-/* Rubrique vide : « Générer » (IA) et « WOD de référence » l’un sous l’autre. */
-.daily-empty-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-}
 /* Texte du WOD du jour sous le chrono lancé depuis la page Séances. */
 .timer-wod {
   margin-top: 16px;
