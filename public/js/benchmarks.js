@@ -193,10 +193,8 @@ $("#benchresultform").onsubmit = async e => {
   }
 };
 
-// ----- Rubrique « WOD du jour » : tirage d’un WOD de référence -----
-function benchmarkCandidates(place) {
-  return benchmarks.filter(b => b.places.includes(place)).sort((a, b) => a.name.localeCompare(b.name, "fr"));
-}
+// ----- Bouton 🎲 de la page Séances : tirage d’un WOD de référence parmi toute la liste (sans choix du lieu) -----
+const benchmarkCandidates = () => [...benchmarks].sort((a, b) => a.name.localeCompare(b.name, "fr"));
 function showBenchmarkPreview() {
   const f = $("#benchform").elements,
     b = benchmarkFor(f.benchmark_id.value);
@@ -207,7 +205,7 @@ function showBenchmarkPreview() {
 }
 function drawBenchmark() {
   const f = $("#benchform").elements,
-    list = benchmarkCandidates(f.place.value),
+    list = benchmarkCandidates(),
     others = list.filter(b => b.id !== f.benchmark_id.value),
     pool = others.length ? others : list;
   f.benchmark_id.innerHTML = list
@@ -227,7 +225,6 @@ function openBenchmarkDraw() {
   $("#bencherror").textContent = benchmarks.length
     ? ""
     : "La liste des WOD de référence n’est pas encore sur ce téléphone : reconnecte-toi une fois au réseau.";
-  f.place.onchange = drawBenchmark;
   f.benchmark_id.onchange = showBenchmarkPreview;
   drawBenchmark();
   $("#benchdialog").showModal();
