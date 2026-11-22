@@ -20,7 +20,7 @@ const dailyDayLabel = d =>
   d === today() ? "Aujourd’hui" : d === addDays(today(), 1) ? "Demain" : wodDay(d).replace(/^\w/, c => c.toUpperCase());
 // Texte du WOD sans sa première ligne (le titre, déjà affiché au-dessus).
 const dailyBody = w => String(w?.content || "").replace(/^[^\n]*\n+/, "");
-const dailySessions = id => sessions.filter(s => s.daily_wod_id === id).length;
+const dailyWodDone = w => datedWodDone(w, "daily_wod_id");
 // La génération ne concerne qu’aujourd’hui ou demain : le bouton ✨ n’apparaît que sur la semaine qui les contient.
 const dailyCanGenerate = from => {
   const to = addDays(from, 6);
@@ -30,16 +30,16 @@ const dailyCanGenerate = from => {
 // Rubrique « WOD du jour » de la semaine (toujours affichée, comme les autres rubriques).
 function weekDailySection(from, folded) {
   const list = dailyWods,
-    done = list.filter(w => dailySessions(w.id)).length,
+    done = list.filter(dailyWodDone).length,
     canGenerate = dailyCanGenerate(from);
   const cards = list
     .map(w => {
-      const n = dailySessions(w.id),
+      const n = dailyWodDone(w),
         future = w.wod_date > today();
       // Même forme que les cartes « WOD de la programmation » et « WOD de la box » : texte à gauche, boutons
       // à droite.
       // Une ligne « WOD du JJ/MM/AAAA » (titre de l’IA dessous) ; un toucher sur la ligne ouvre le détail.
-      return `<article class="weekwod card ${n ? "done" : ""}"><div class="weekcount"><button type="button" class="smallbtn" data-daily-log="${w.id}" ${future ? "disabled" : ""} aria-label="${future ? "Prévu pour demain" : "Enregistrer la séance"}" title="${future ? "Prévu pour demain" : "Enregistrer la séance"}"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button>${n ? "" : `<button type="button" class="smallbtn delete" data-daily-del="${w.id}" aria-label="Supprimer ce WOD" title="Supprimer ce WOD"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button>`}</div><div class="weekwod-text" role="button" tabindex="0" data-daily-open="${w.id}" aria-label="Voir le détail du WOD du ${fmt(w.wod_date)}"><b>WOD du ${fmt(w.wod_date)}</b><p>${esc(w.title)}</p></div></article>`;
+      return `<article class="weekwod card ${n ? "done" : ""}"><div class="weekcount">${n ? "" : `<button type="button" class="smallbtn" data-daily-log="${w.id}" ${future ? "disabled" : ""} aria-label="${future ? "Prévu pour demain" : "Enregistrer la séance"}" title="${future ? "Prévu pour demain" : "Enregistrer la séance"}"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button><button type="button" class="smallbtn delete" data-daily-del="${w.id}" aria-label="Supprimer ce WOD" title="Supprimer ce WOD"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button>`}</div><div class="weekwod-text" role="button" tabindex="0" data-daily-open="${w.id}" aria-label="Voir le détail du WOD du ${fmt(w.wod_date)}"><b>WOD du ${fmt(w.wod_date)}</b><p>${esc(w.title)}</p></div></article>`;
     })
     .join("");
   return `<section class="session-fold ${folded.has("daily") ? "collapsed" : ""}" data-session-fold="daily"><div class="weekheading"><button class="smallbtn section-collapse" aria-label="Replier le WOD du jour" aria-expanded="${!folded.has("daily")}">${folded.has("daily") ? "＋" : "−"}</button><h2>WOD du jour</h2>${canGenerate ? `<button type="button" class="smallbtn weekheading-action" data-bench-new aria-label="Tirer un WOD de référence (Fran, Cindy…)" title="WOD de référence au hasard">${DICE_ICON}</button><button type="button" class="smallbtn weekheading-action" id="dailynew" aria-label="Générer mon WOD du jour" title="Générer mon WOD du jour">${AI_ICON}</button>` : ""}<span>${done}/${list.length}</span></div><div class="session-fold-body"><div class="weekwodlist">${
@@ -54,7 +54,7 @@ function openDailyDetail(id) {
   const w = dailyWodsById.get(id),
     dialog = $("#dailydetaildialog");
   if (!w) return;
-  const done = dailySessions(w.id) > 0,
+  const done = dailyWodDone(w),
     future = w.wod_date > today();
   $("#dailydetailtitle").textContent = "WOD du " + fmt(w.wod_date);
   $("#dailydetailmeta").textContent =

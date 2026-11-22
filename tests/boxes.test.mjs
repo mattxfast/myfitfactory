@@ -207,7 +207,7 @@ test("séance sur un WOD de box : score, catégorie et classement entre membres"
   assert.match(logged.wod_name, /^WOD du /);
   assert.equal(logged.box_name, "CrossFit Test");
   assert.equal(logged.score_category_name, "RX");
-  assert.ok(week.boxWods.some(w => w.id === boxWodId));
+  assert.deepEqual(week.boxWods.find(w => w.id === boxWodId).session_ids, [bobSession.data.id]);
   // modification du score
   assert.equal(
     (await bob.put(`/sessions/${bobSession.data.id}`, session({score_value: 360, score_category_id: rx}))).status,

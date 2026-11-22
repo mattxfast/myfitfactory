@@ -1,6 +1,7 @@
 // FitFactory — chargement des données, semaine en cours, historique des séances.
 // Scripts classiques chargés dans l’ordre par index.html (portée globale partagée) ; boot.js démarre l’application en dernier.
 
+let loadedSessionWeek = "";
 async function load() {
   try {
     const from = selectedWeekStart || mondayOf(today()),
@@ -24,6 +25,7 @@ async function load() {
     wodsByProgram = p.wods;
     movementsByProgram = p.movements;
     weeklyWodPrograms = p.weeklyWodPrograms || [];
+    loadedSessionWeek = from;
     sessions = w.sessions;
     movementChecks = w.checks;
     catalogChecks = w.catalogChecks || [];
@@ -55,6 +57,8 @@ async function loadSessions() {
   const from = selectedWeekStart || mondayOf(today()),
     to = addDays(from, 6),
     [w, tg] = await Promise.all([api("/week-data?from=" + from + "&to=" + to), api("/session-tags")]);
+  if (selectedWeekStart && selectedWeekStart !== from) return;
+  loadedSessionWeek = from;
   sessions = w.sessions;
   sessionTags = w.tags || [];
   sharedPartners = w.sharedPartners || [];
@@ -291,6 +295,10 @@ function weekProgramSection(p, week, folded, from) {
 }
 // Rubrique vide : un message au style d’un contenu de rubrique (toutes les rubriques restent affichées).
 const sectionEmpty = text => `<article class="weekwod card section-empty"><span>${esc(text)}</span></article>`;
+// Un WOD daté peut avoir été enregistré dans une autre semaine.
+function datedWodDone(wod, field, week = sessions) {
+  return wod.session_ids ? wod.session_ids.length > 0 : week.some(s => s[field] === wod.id);
+}
 // Rubrique « WOD de la box » de la semaine (membres d’une box) : WOD du gestionnaire, séances, classement.
 function weekBoxSection(week, folded) {
   // Rubrique toujours affichée. Sans box : bulle « Rejoindre une box » (ou demande en attente) ; membre sans WOD cette
@@ -304,12 +312,12 @@ function weekBoxSection(week, folded) {
           )
         : `<button type="button" class="weekwod card section-empty join-box-empty" data-join-box>Rejoindre une box</button>`;
   const severalBoxes = memberBoxIds().length > 1,
-    done = boxWods.filter(w => week.some(x => x.box_wod_id === w.id));
+    done = boxWods.filter(w => datedWodDone(w, "box_wod_id", week));
   return `<section class="weekother session-fold ${folded.has("box") ? "collapsed" : ""}" data-session-fold="box"><div class="weekheading"><button class="smallbtn section-collapse" aria-label="Replier les WOD de la box" aria-expanded="${!folded.has("box")}">${folded.has("box") ? "＋" : "−"}</button><h2>WOD de la box</h2><span>${done.length}/${boxWods.length}</span></div><div class="session-fold-body"><div class="weekwodlist">${
     boxWods.length
       ? boxWods
           .map(w => {
-            const n = week.filter(x => x.box_wod_id === w.id).length;
+            const n = datedWodDone(w, "box_wod_id", week);
             return `<article class="weekwod card ${n ? "done" : ""}"><div class="weekcount">${w.wod_date <= today() && !n ? `<button class="smallbtn" data-log-boxwod="${w.id}" aria-label="Enregistrer une séance" title="Enregistrer une séance"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button>` : ""}${w.score_type !== "none" ? `<button class="smallbtn" data-leaderboard="${w.id}" aria-label="Classement" title="Classement du WOD">${TROPHY_ICON}</button>` : ""}</div><div class="weekwod-text" role="button" tabindex="0" data-boxwod-open="${w.id}" aria-label="Voir le détail du WOD"><b>${esc(managerWodTitle(w))}</b>${severalBoxes ? `<small class="muted box-wod-meta">${esc(w.box_name)}</small>` : ""}</div></article>`;
           })
           .join("")
@@ -530,7 +538,7 @@ async function openProgramScoreHistory(id, name) {
 function openBoxWodDetail(id) {
   const w = boxWods.find(x => x.id === id);
   if (!w) return;
-  const done = sessions.some(s => s.box_wod_id === w.id);
+  const done = datedWodDone(w, "box_wod_id");
   $("#dailydetailtitle").textContent = managerWodTitle(w);
   $("#dailydetailmeta").textContent = [w.box_name, done ? "séance enregistrée" : ""].filter(Boolean).join(" · ");
   $("#dailydetailbody").textContent = w.content || "Pas de contenu écrit pour ce WOD.";

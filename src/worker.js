@@ -1172,6 +1172,7 @@ const dailyWodOut = x => ({
   movement_ids: JSON.parse(x.movement_ids || "[]"),
   benchmark_id: x.benchmark_id || null,
   score_type: x.score_type || null,
+  ...(x.session_ids !== undefined ? {session_ids: x.session_ids?.split(",") || []} : {}),
 });
 // WOD de box : nom facultatif (« WOD du JJ/MM/AAAA » par défaut), date, contenu et type de score.
 const SCORE_TYPES = ["time", "reps", "load", "none"];
@@ -1272,13 +1273,13 @@ const withMovementIds = rows => rows.map(r => ({...r, movement_ids: r.movement_i
 // gestionnaires voient les WOD à venir, dans leur espace).
 async function memberBoxWods(e, userId, from, to) {
   const x = await e.DB.prepare(
-    "SELECT w.id,w.box_id,b.name AS box_name,w.wod_date,w.name,w.content,w.score_type,w.type_id,t.name AS type_name," +
+    "SELECT w.id,w.box_id,b.name AS box_name,w.wod_date,w.name,w.content,w.score_type,w.type_id,t.name AS type_name,(SELECT group_concat(s.id) FROM training_sessions s WHERE s.box_wod_id=w.id AND s.user_id=m.user_id) AS session_ids," +
       WOD_MOVEMENTS +
       " FROM box_wods w JOIN boxes b ON b.id=w.box_id LEFT JOIN box_wod_types t ON t.id=w.type_id JOIN box_members m ON m.box_id=w.box_id AND m.user_id=? AND m.role='member' AND m.status='approved' WHERE w.wod_date>=? AND w.wod_date<=? AND w.wod_date<=? ORDER BY w.wod_date,t.sort_order,w.created_at"
   )
     .bind(userId, from, to, localToday())
     .all();
-  return withMovementIds(x.results);
+  return withMovementIds(x.results).map(w => ({...w, session_ids: w.session_ids?.split(",") || []}));
 }
 // Période de lecture des WOD de box (au plus 93 jours).
 function wodRange(r) {
@@ -3510,7 +3511,7 @@ async function api(r, e, p, ctx = null) {
         .all(),
       daysBetween(from, to) <= 92 ? memberBoxWods(e, u.id, from, to) : [],
       e.DB.prepare(
-        "SELECT id,wod_date,title,content,chrono,movement_ids,benchmark_id,score_type FROM daily_wods WHERE user_id=? AND wod_date>=? AND wod_date<=? ORDER BY wod_date,created_at LIMIT 60"
+        "SELECT w.id,w.wod_date,w.title,w.content,w.chrono,w.movement_ids,w.benchmark_id,w.score_type,(SELECT group_concat(s.id) FROM training_sessions s WHERE s.daily_wod_id=w.id AND s.user_id=w.user_id) AS session_ids FROM daily_wods w WHERE w.user_id=? AND w.wod_date>=? AND w.wod_date<=? ORDER BY w.wod_date,w.created_at LIMIT 60"
       )
         .bind(u.id, from, to)
         .all(),

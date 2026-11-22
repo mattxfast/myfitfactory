@@ -80,6 +80,19 @@ const FFOffline = (() => {
   };
   const programScorePath = /^\/wods\/([\w-]+)\/scores$/;
   const inRange = (range, date) => date >= range.from && date <= range.to;
+  // Les WOD datés restent marqués comme faits même si la séance est enregistrée dans une autre semaine.
+  function patchDatedWodSessions(data, id, body) {
+    for (const [wods, field] of [
+      [data.boxWods, "box_wod_id"],
+      [data.dailyWods, "daily_wod_id"],
+    ]) {
+      for (const w of wods || []) {
+        const ids = w.session_ids ?? (data.sessions || []).filter(s => s[field] === w.id).map(s => s.id);
+        w.session_ids = ids.filter(sessionId => sessionId !== id);
+        if (body[field] === w.id) w.session_ids.push(id);
+      }
+    }
+  }
   function removeSession(data, id) {
     data.sessions = (data.sessions || []).filter(s => s.id !== id);
     data.checks = (data.checks || []).filter(c => c.session_id !== id);
@@ -153,20 +166,25 @@ const FFOffline = (() => {
       range = weekRange(path);
     let m;
     if (range) {
-      if (op.method === "POST" && op.path === "/sessions" && inRange(range, body.session_date)) {
-        removeSession(data, body.client_id);
-        addSession(
-          data,
-          {...body, id: body.client_id, logged_at: op.at, pending: 1, ...hooks.describeSession(body)},
-          body
-        );
-      } else if (op.method === "PUT" && (m = op.path.match(/^\/sessions\/([\w-]+)$/))) {
-        const previous = (data.sessions || []).find(s => s.id === m[1]);
-        removeSession(data, m[1]);
-        if (inRange(range, body.session_date))
-          addSession(data, {...(previous || {}), ...body, id: m[1], pending: 1, ...hooks.describeSession(body)}, body);
-      } else if (op.method === "DELETE" && (m = op.path.match(/^\/sessions\/([\w-]+)$/))) {
-        removeSession(data, m[1]);
+      const edit = op.path.match(/^\/sessions\/([\w-]+)$/),
+        id = op.method === "POST" && op.path === "/sessions" ? body.client_id : edit?.[1];
+      if (id) {
+        patchDatedWodSessions(data, id, body);
+        const previous = (data.sessions || []).find(s => s.id === id);
+        removeSession(data, id);
+        if (op.method !== "DELETE" && inRange(range, body.session_date))
+          addSession(
+            data,
+            {
+              ...(previous || {}),
+              ...body,
+              id,
+              logged_at: op.at,
+              pending: op.synced ? 0 : 1,
+              ...hooks.describeSession(body),
+            },
+            body
+          );
       } else if (op.path === "/weekly-plans" && inRange(range, body.week_start)) {
         data.plans = (data.plans || []).filter(x => !(x.week_start === body.week_start && x.wod_id === body.wod_id));
         if (op.method === "POST")
@@ -284,17 +302,17 @@ const FFOffline = (() => {
     return data;
   }
   const withPending = (path, data) => queue().reduce((d, op) => patch(path, d, op), data);
-  // Conserve aussi l'historique à jour si le réseau repart avant sa prochaine consultation.
-  function cacheSyncedScores(op, result) {
+  // Garde les séances et leurs scores à jour dans les semaines déjà consultées.
+  function cacheSyncedSession(op, result) {
     if (!/^\/sessions(?:\/[\w-]+)?$/.test(op.path)) return;
     const synced = {
       ...op,
       synced: true,
       body: op.method === "POST" ? {...op.body, client_id: result?.id ?? op.body?.client_id} : op.body,
     };
-    for (const key of store.keys(CACHE + "/wods/")) {
+    for (const key of store.keys(CACHE)) {
       const path = key.slice(CACHE.length);
-      if (programScorePath.test(path)) store.set(key, patch(path, store.get(key), synced));
+      if (programScorePath.test(path) || weekRange(path)) store.set(key, patch(path, store.get(key), synced));
     }
   }
 
@@ -334,7 +352,7 @@ const FFOffline = (() => {
     }
     try {
       const result = await send(body);
-      cacheSyncedScores(op, result);
+      cacheSyncedSession(op, result);
       setOffline(false);
       return result;
     } catch (error) {
@@ -353,7 +371,7 @@ const FFOffline = (() => {
         const op = queue()[0];
         try {
           const result = await hooks.send(op.path, op.method, op.body);
-          cacheSyncedScores(op, result);
+          cacheSyncedSession(op, result);
           done++;
           setOffline(false);
         } catch (error) {

@@ -130,6 +130,7 @@ test("WOD du jour : génération, chrono et mouvements reconnus", async () => {
   const data = await weekData(alice);
   assert.equal(data.dailyWods.length, 1);
   assert.equal(data.dailyWods[0].id, dailyId);
+  assert.deepEqual(data.dailyWods[0].session_ids, []);
   assert.equal((await weekData(bob)).dailyWods.length, 0, "chacun ne voit que ses WOD du jour");
 });
 
@@ -153,7 +154,17 @@ test("WOD du jour : séance rattachée, remplacement et suppression bloqués", a
 
   const saved = await alice.post("/sessions", session);
   assert.equal(saved.status, 200, JSON.stringify(saved.data));
-  const s = (await weekData(alice)).sessions.find(x => x.id === saved.data.id);
+  const data = await weekData(alice),
+    s = data.sessions.find(x => x.id === saved.data.id);
+  assert.deepEqual(data.dailyWods.find(w => w.id === dailyId).session_ids, [saved.data.id]);
+  // Un WOD du jour reste fait si la date de la séance est modifiée vers une autre semaine.
+  assert.equal(
+    (await alice.put("/sessions/" + saved.data.id, {...session, session_date: addDays(today(), -7)})).status,
+    200
+  );
+  const otherWeek = await weekData(alice);
+  assert.ok(!otherWeek.sessions.some(x => x.id === saved.data.id));
+  assert.deepEqual(otherWeek.dailyWods.find(w => w.id === dailyId).session_ids, [saved.data.id]);
   assert.equal(s.daily_wod_id, dailyId);
   assert.equal(s.wod_name, "Thrusters et burpees");
   assert.match(s.planned_comment, /Metcon :\nAMRAP 15 min/);
@@ -162,6 +173,7 @@ test("WOD du jour : séance rattachée, remplacement et suppression bloqués", a
   assert.equal((await alice.post("/daily-wods", request({replace_id: dailyId}))).status, 409);
   assert.equal((await alice.del("/daily-wods/" + dailyId)).status, 409);
   assert.equal((await alice.del("/sessions/" + saved.data.id)).status, 200);
+  assert.deepEqual((await weekData(alice)).dailyWods.find(w => w.id === dailyId).session_ids, []);
   const replaced = await alice.post("/daily-wods", request({replace_id: dailyId, wod_date: addDays(today(), 1)}));
   assert.equal(replaced.status, 200);
   assert.equal(replaced.data.wod.id, dailyId, "« Autre WOD » remplace le WOD sans en créer un nouveau");
