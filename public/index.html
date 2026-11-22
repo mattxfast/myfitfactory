@@ -753,7 +753,6 @@
             <label data-ai-mode="program"
               >WOD par semaine<input name="per_week" type="number" min="1" max="7" value="3" required
             /></label>
-            <label data-ai-mode="daily" hidden>Pour<select name="wod_date"></select></label>
             <label
               >Durée de la séance (min)<input
                 name="duration_minutes"
@@ -1320,13 +1319,10 @@
           <button type="button" class="iconbtn" data-close-dialog="newwoddialog">×</button>
         </div>
         <div class="newwod-options">
-          <button type="button" class="newwod-option" data-newwod="ai">
-            <b>✨ Généré par l’IA</b><small>Selon ton profil, tes records et tes séances récentes.</small></button
+          <button type="button" class="newwod-option" data-newwod="manual">
+            <b>✏️ Créer mon WOD</b><small>Écris-le bloc par bloc, ou laisse l’IA pré-remplir les blocs.</small></button
           ><button type="button" class="newwod-option" data-newwod="bench">
-            <b>🎲 WOD de référence</b
-            ><small>Un Girl, un Hero… tiré au hasard, pour te mesurer dans le temps.</small></button
-          ><button type="button" class="newwod-option" data-newwod="manual">
-            <b>✏️ Saisie manuelle</b><small>Tu écris ton propre WOD, bloc par bloc.</small>
+            <b>🎲 WOD de référence</b><small>Un Girl, un Hero… tiré au hasard, pour te mesurer dans le temps.</small>
           </button>
         </div>
       </dialog>
@@ -1337,6 +1333,9 @@
             <button type="button" class="iconbtn" data-close-dialog="manualwoddialog">×</button>
           </div>
           <input type="hidden" name="id" />
+          <div class="manualwod-ai">
+            <button type="button" class="smallbtn" id="manualwodai">✨ Pré-remplir avec l’IA</button>
+          </div>
           <section class="form-block">
             <h3>WOD</h3>
             <label>Nom (facultatif)<input name="name" maxlength="100" placeholder="WOD perso" /></label>

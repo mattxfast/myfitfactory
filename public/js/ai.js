@@ -66,7 +66,7 @@ async function openAiDialog(mode, pid, wodId = null, week = null, origin = mode 
     w = p ? visibleWods(pid).find(x => x.id === wodId) : null;
   $("#aiintro").hidden = mode === "daily";
   if (mode === "daily") {
-    setupDailyAiForm(form, wodId);
+    setupDailyAiForm();
   } else if (mode === "program") {
     $("#aititle").textContent = "Générer le programme";
     $("#aiintro").textContent =
@@ -261,7 +261,7 @@ $("#aiform").onsubmit = async e => {
       equipment: f.equipment.value,
       constraints: f.constraints.value,
     });
-    if (mode === "daily") message = await generateDailyWod(f, request, f.wod_id.value);
+    if (mode === "daily") message = await generateDailyWod(f, request);
     else if (mode === "week") {
       aiProgress("Génération en cours… (jusqu’à une minute)");
       await aiGenerate(f.wod_id.value, form.dataset.week, request);
@@ -280,16 +280,8 @@ $("#aiform").onsubmit = async e => {
     $("#aidialog").close();
     toast(message);
   }
-  if (mode === "daily") {
-    if (message) {
-      try {
-        await loadSessions();
-      } catch (x) {
-        toast("WOD enregistré. Actualisation impossible pour le moment.");
-      }
-    }
-    return;
-  }
+  // Pré-remplissage : on revient au formulaire « Créer mon WOD », rien n’est encore enregistré.
+  if (mode === "daily") return;
   // Recharge aussi après une erreur : des WOD ont pu être créés ou générés avant elle.
   // On reste sur la page d’où la génération a été lancée (Séances ou Programmes).
   if (message !== false) {

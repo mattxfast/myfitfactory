@@ -140,6 +140,30 @@ test("WOD du jour : génération, chrono et mouvements reconnus", async () => {
   assert.equal((await weekData(bob)).dailyWods.length, 0, "chacun ne voit que ses WOD du jour");
 });
 
+test("WOD du jour : brouillon IA pour pré-remplir la saisie, sans rien enregistrer", async () => {
+  const before = (await weekData(alice)).dailyWods.length;
+  const res = await alice.post("/daily-wods", request({draft: true}));
+  assert.equal(res.status, 200, JSON.stringify(res.data));
+  assert.equal(res.data.draft.name, "Thrusters et burpees");
+  assert.deepEqual(Object.keys(res.data.draft.blocks).sort(), ["metcon", "warmup"]);
+  assert.match(res.data.draft.blocks.metcon, /^AMRAP 15 min\n/);
+  assert.match(res.data.draft.blocks.metcon, /🏁 Objectif : 6 tours$/);
+  assert.deepEqual(res.data.draft.movement_ids, [squatId]);
+  assert.equal((await weekData(alice)).dailyWods.length, before, "brouillon non enregistré");
+  // Enregistré ensuite comme WOD saisi à la main, avec les mouvements reconnus (identifiant inconnu écarté).
+  const saved = await alice.post("/daily-wods/manual", {
+    client_id: crypto.randomUUID(),
+    wod_date: today(),
+    name: res.data.draft.name,
+    blocks: res.data.draft.blocks,
+    score_type: "reps",
+    movement_ids: [...res.data.draft.movement_ids, "inconnu"],
+  });
+  assert.equal(saved.status, 200, JSON.stringify(saved.data));
+  assert.deepEqual(saved.data.wod.movement_ids, [squatId]);
+  assert.equal((await alice.del("/daily-wods/" + saved.data.wod.id)).status, 200);
+});
+
 test("WOD du jour : séance rattachée, remplacement et suppression bloqués", async () => {
   // Un autre utilisateur ne peut ni rattacher une séance, ni remplacer, ni supprimer le WOD.
   const session = {

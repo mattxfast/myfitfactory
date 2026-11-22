@@ -49,20 +49,18 @@ const dailyGenerateRow = from =>
     : "";
 // Fenêtre « Nouveau WOD » : trois façons de créer le WOD du jour.
 function openNewWodChooser() {
-  // Interface simplifiée : pas d’IA.
-  $('[data-newwod="ai"]').hidden = simpleInterface();
   $("#newwoddialog").showModal();
 }
 document.querySelectorAll("[data-newwod]").forEach(
   b =>
     (b.onclick = () => {
       $("#newwoddialog").close();
-      if (b.dataset.newwod === "ai") openAiDialog("daily");
-      else if (b.dataset.newwod === "bench") openBenchmarkDraw();
+      if (b.dataset.newwod === "bench") openBenchmarkDraw();
       else openManualWod();
     })
 );
-// Saisie manuelle : mêmes blocs que les WOD de box ; modification possible tant qu’aucune séance n’y est rattachée.
+// Création d’un WOD : mêmes blocs que les WOD de box, écrits à la main ou pré-remplis par l’IA (puis relus et
+// ajustés) ; modification possible tant qu’aucune séance n’y est rattachée.
 const MANUAL_BLOCKS = [
   ["warmup", "Échauffement"],
   ["technique", "Travail technique"],
@@ -84,7 +82,11 @@ function openManualWod(w = null) {
   f.name.value = w?.manual?.name || "";
   for (const [key] of MANUAL_BLOCKS) f["block_" + key].value = w?.manual?.blocks?.[key] || "";
   f.score_type.value = w?.score_type || "none";
-  $("#manualwodtitle").textContent = w ? "Modifier le WOD" : "Saisir un WOD";
+  // Mouvements du catalogue reconnus par l’IA : cochés d’office dans la séance.
+  form.dataset.movements = JSON.stringify(w?.movement_ids || []);
+  // Interface simplifiée : pas d’IA.
+  $(".manualwod-ai").hidden = simpleInterface();
+  $("#manualwodtitle").textContent = w ? "Modifier le WOD" : "Créer mon WOD";
   $("#manualwoderror").textContent = "";
   $("#manualwoddialog").showModal();
 }
@@ -112,6 +114,7 @@ $("#manualwodform").onsubmit = async e => {
       name: f.name.value,
       blocks: Object.fromEntries(MANUAL_BLOCKS.map(([key]) => [key, f["block_" + key].value])),
       score_type: f.score_type.value,
+      movement_ids: JSON.parse(e.target.dataset.movements || "[]"),
     };
   if (!MANUAL_BLOCKS.some(([key]) => body.blocks[key].trim())) {
     $("#manualwoderror").textContent = "Écris au moins un bloc du WOD.";
@@ -194,26 +197,29 @@ function bindDailySection(root) {
   );
 }
 
-// Date et titre du WOD du jour dans la fenêtre de génération commune.
-function setupDailyAiForm(form, replaceId) {
-  const f = form.elements,
-    replaced = dailyWodsById.get(replaceId),
-    days = [today(), addDays(today(), 1)];
-  f.wod_date.innerHTML = days
-    .map(d => `<option value="${d}">${esc(dailyDayLabel(d) + " (" + wodDay(d) + ")")}</option>`)
-    .join("");
-  f.wod_date.value = replaced && days.includes(replaced.wod_date) ? replaced.wod_date : days[0];
-  $("#aititle").textContent = replaced ? "Générer un autre WOD du jour" : "Générer le WOD du jour";
+// Pré-remplissage par l’IA du formulaire « Créer mon WOD » : la fenêtre de génération commune (durée, blocs,
+// consigne, profil) s’ouvre par-dessus ; le résultat remplit le nom (s’il est vide), les blocs et les mouvements.
+$("#manualwodai").onclick = () => {
+  const f = $("#manualwodform").elements;
+  if (MANUAL_BLOCKS.some(([key]) => f["block_" + key].value.trim()) && !confirm("Remplacer les blocs déjà écrits ?"))
+    return;
+  openAiDialog("daily");
+};
+function setupDailyAiForm() {
+  $("#aititle").textContent = "Pré-remplir avec l’IA";
 }
-async function generateDailyWod(f, request, replaceId) {
+async function generateDailyWod(f, request) {
   aiProgress("Génération en cours… (jusqu’à une minute)");
-  const {wod} = await sendApi(
-    "/daily-wods",
-    "POST",
-    {...request, wod_date: f.wod_date.value, ...(replaceId ? {replace_id: replaceId} : {})},
-    AI_TIMEOUT
-  );
-  rememberDailyWods([wod]);
-  selectedWeekStart = mondayOf(wod.wod_date);
-  return "WOD du jour prêt.";
+  const form = $("#manualwodform"),
+    m = form.elements,
+    {draft} = await sendApi(
+      "/daily-wods",
+      "POST",
+      {...request, wod_date: m.wod_date.value || today(), draft: true},
+      AI_TIMEOUT
+    );
+  if (!m.name.value.trim()) m.name.value = draft.name || "";
+  for (const [key] of MANUAL_BLOCKS) m["block_" + key].value = draft.blocks?.[key] || "";
+  form.dataset.movements = JSON.stringify(draft.movement_ids || []);
+  return "Blocs pré-remplis : relis-les et ajuste-les avant d’enregistrer.";
 }

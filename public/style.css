@@ -2124,7 +2124,12 @@ button:disabled {
   border-radius: 12px;
   cursor: pointer;
 }
-.newwod-option[hidden] {
+.manualwod-ai {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+.manualwod-ai[hidden] {
   display: none;
 }
 .newwod-option b {

@@ -1180,6 +1180,19 @@ async function sessionDailyWod(e, userId, b) {
   if (score.error) return {error: score.error, status: 400};
   return {id: row.id, value: score.value, scaled: b.score_scaled ? 1 : 0};
 }
+// Mouvements du catalogue d'un WOD saisi à la main (proposés par l'IA quand elle a pré-rempli les blocs) : seuls
+// les identifiants existants sont gardés, 40 au plus ; JSON pour la colonne movement_ids.
+async function catalogMovementIds(e, input) {
+  const ids = [...new Set((Array.isArray(input) ? input : []).map(String))]
+    .filter(id => /^[\w-]{1,64}$/.test(id))
+    .slice(0, 40);
+  if (!ids.length) return "[]";
+  const x = await e.DB.prepare(`SELECT id FROM movement_catalog WHERE id IN (${ids.map(() => "?").join(",")})`)
+    .bind(...ids)
+    .all();
+  const known = new Set(x.results.map(r => r.id));
+  return JSON.stringify(ids.filter(id => known.has(id)));
+}
 function manualOf(x) {
   try {
     const o = x.options ? JSON.parse(x.options) : null;
@@ -3287,6 +3300,36 @@ async function api(r, e, p, ctx = null) {
           .replace(/\s+/g, " ")
           .trim()
           .slice(0, 120) || "WOD du jour";
+    // Brouillon : l'IA pré-remplit le formulaire de saisie manuelle (rien n'est enregistré, sauf le suivi de la
+    // génération) ; chaque bloc va dans la case correspondante, l'objectif à la fin du Metcon.
+    if (b.draft) {
+      const keys = {
+          echauffement: "warmup",
+          technique: "technique",
+          force: "strength",
+          metcon: "metcon",
+          retour_au_calme: "finisher",
+        },
+        parts = wodBlocks(wod),
+        blocks = {};
+      for (const part of parts) if (keys[part.type]) blocks[keys[part.type]] = part.text;
+      const goal = parts.find(x => x.type === "objectif")?.text;
+      if (goal) blocks.metcon = [blocks.metcon, "🏁 Objectif : " + goal].filter(Boolean).join("\n");
+      await e.DB.prepare(
+        "INSERT INTO ai_generations(id,user_id,wod_id,week_start,options,result,prompt_version,model) VALUES(?,?,NULL,?,?,?,?,?)"
+      )
+        .bind(
+          uid(),
+          u.id,
+          mondayOfDate(date),
+          JSON.stringify(options),
+          JSON.stringify(out.wod),
+          DAILY_PROMPT_VERSION,
+          out.model
+        )
+        .run();
+      return json({ok: true, draft: {name: title, blocks, movement_ids: dailyMovementIds(wod, catalog.results)}});
+    }
     const row = {
       id: replaceId || uid(),
       wod_date: date,
@@ -3338,11 +3381,21 @@ async function api(r, e, p, ctx = null) {
       return json({error: "Identifiant déjà utilisé."}, 409);
     const x = manualDailyInput(b);
     if (x.error) return json({error: x.error}, 400);
-    const row = {id: cid || uid(), chrono: null, movement_ids: "[]", ...x};
+    const row = {id: cid || uid(), chrono: null, movement_ids: await catalogMovementIds(e, b.movement_ids), ...x};
     await e.DB.prepare(
-      "INSERT INTO daily_wods(id,user_id,wod_date,title,content,chrono,movement_ids,options,score_type,blocks) VALUES(?,?,?,?,?,NULL,'[]',?,?,?)"
+      "INSERT INTO daily_wods(id,user_id,wod_date,title,content,chrono,movement_ids,options,score_type,blocks) VALUES(?,?,?,?,?,NULL,?,?,?,?)"
     )
-      .bind(row.id, u.id, row.wod_date, row.title, row.content, row.options, row.score_type, row.blocks)
+      .bind(
+        row.id,
+        u.id,
+        row.wod_date,
+        row.title,
+        row.content,
+        row.movement_ids,
+        row.options,
+        row.score_type,
+        row.blocks
+      )
       .run();
     return json({ok: true, wod: dailyWodOut(row)});
   }
@@ -3449,14 +3502,16 @@ async function api(r, e, p, ctx = null) {
         .first()
     )
       return json({error: "Une séance est enregistrée sur ce WOD : il ne peut plus être modifié."}, 409);
-    const x = manualDailyInput(await r.json(), row.wod_date);
+    const b = await r.json(),
+      x = manualDailyInput(b, row.wod_date);
     if (x.error) return json({error: x.error}, 400);
+    const movementIds = await catalogMovementIds(e, b.movement_ids);
     await e.DB.prepare(
-      "UPDATE daily_wods SET wod_date=?,title=?,content=?,blocks=?,score_type=?,options=? WHERE id=? AND user_id=?"
+      "UPDATE daily_wods SET wod_date=?,title=?,content=?,blocks=?,score_type=?,options=?,movement_ids=? WHERE id=? AND user_id=?"
     )
-      .bind(x.wod_date, x.title, x.content, x.blocks, x.score_type, x.options, m[1], u.id)
+      .bind(x.wod_date, x.title, x.content, x.blocks, x.score_type, x.options, movementIds, m[1], u.id)
       .run();
-    return json({ok: true, wod: dailyWodOut({id: m[1], chrono: null, movement_ids: "[]", ...x})});
+    return json({ok: true, wod: dailyWodOut({id: m[1], chrono: null, movement_ids: movementIds, ...x})});
   }
   if (m && r.method === "DELETE") {
     if (
