@@ -46,6 +46,12 @@ const dailyHeadingActions = from =>
   dailyCanGenerate(from)
     ? `<button type="button" class="smallbtn weekheading-action" data-bench-new aria-label="Tirer un WOD de référence (Fran, Cindy…)" title="WOD de référence au hasard">${DICE_ICON}</button><button type="button" class="smallbtn weekheading-action" data-daily-new aria-label="Générer un WOD en plus avec l’IA" title="Générer un WOD en plus avec l’IA">${AI_ICON}</button>`
     : "";
+// Sans programmation ni WOD en plus : le message de la rubrique vide propose directement de générer un WOD (✨ IA)
+// ou d’en tirer un de référence (🎲), à la place des boutons du titre.
+const dailyEmptyCard = (from, text) =>
+  dailyCanGenerate(from)
+    ? `<article class="weekwod card section-empty daily-empty"><span>${esc(text)}</span><span class="daily-empty-actions"><button type="button" class="primary" data-daily-new>${AI_ICON}<span>Générer</span></button><button type="button" class="smallbtn" data-bench-new>${DICE_ICON}<span>WOD de référence</span></button></span></article>`
+    : sectionEmpty(text);
 // Détail d’un WOD du jour, en fenêtre : texte complet, chrono et séance.
 function openDailyDetail(id) {
   const w = dailyWodsById.get(id),

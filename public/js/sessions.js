@@ -278,9 +278,9 @@ function weekProgramSection(p, week, folded, from) {
     own = p && !p.followed && !p.read_only && !p.is_default,
     // WOD du jour (IA ou WOD de référence) : entraînements en plus, en fin de liste, hors du compteur du programme.
     extras = dailyWodCards();
-  return `<section class="session-fold ${folded.has("wods") ? "collapsed" : ""}" data-session-fold="wods"><div class="weekheading"><button class="smallbtn section-collapse" aria-label="Replier les WOD" aria-expanded="${!folded.has("wods")}">${folded.has("wods") ? "＋" : "−"}</button><h2>WOD de la programmation</h2>${dailyHeadingActions(from)}<span>${done.length}/${ws.length}${dailyWods.length ? " +" + dailyWods.length : ""}</span></div><div class="session-fold-body"><div class="weekwodlist">${
+  return `<section class="session-fold ${folded.has("wods") ? "collapsed" : ""}" data-session-fold="wods"><div class="weekheading"><button class="smallbtn section-collapse" aria-label="Replier les WOD" aria-expanded="${!folded.has("wods")}">${folded.has("wods") ? "＋" : "−"}</button><h2>WOD de la programmation</h2>${p || extras ? dailyHeadingActions(from) : ""}<span>${done.length}/${ws.length}${dailyWods.length ? " +" + dailyWods.length : ""}</span></div><div class="session-fold-body"><div class="weekwodlist">${
     !p
-      ? extras || sectionEmpty("Pas de programmation en cours")
+      ? extras || dailyEmptyCard(from, "Pas de programmation en cours")
       : ws.length
         ? ws
             .map(w => {
