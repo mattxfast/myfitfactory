@@ -57,11 +57,6 @@ const dailyGenerateRow = from =>
 // Fenêtre « Nouveau WOD » : trois façons de créer le WOD du jour.
 // « Généré par l’IA » et « Saisie manuelle » mènent au même formulaire : l’IA le pré-remplit (sa fenêtre de
 // génération s’ouvre par-dessus), on relit et on ajuste avant d’enregistrer.
-function openNewWodChooser() {
-  // Interface simplifiée : pas d’IA.
-  $('[data-newwod="ai"]').hidden = simpleInterface();
-  $("#newwoddialog").showModal();
-}
 document.querySelectorAll("[data-newwod]").forEach(
   b =>
     (b.onclick = () => {
@@ -98,8 +93,6 @@ function openManualWod(w = null) {
   f.score_type.value = w?.score_type || "none";
   // Mouvements du catalogue reconnus par l’IA : cochés d’office dans la séance.
   form.dataset.movements = JSON.stringify(w?.movement_ids || []);
-  // Interface simplifiée : pas d’IA.
-  $(".manualwod-ai").hidden = simpleInterface();
   $("#manualwodtitle").textContent = w ? "Modifier le WOD" : "Créer mon WOD";
   $("#manualwoderror").textContent = "";
   $("#manualwoddialog").showModal();
@@ -188,7 +181,7 @@ function bindDailySection(root) {
   root
     .querySelectorAll("[data-daily-open]")
     .forEach(b => (b.onclick = e => (blurAfterTap(b, e), openDailyDetail(b.dataset.dailyOpen))));
-  root.querySelectorAll("[data-wod-new]").forEach(b => (b.onclick = () => openNewWodChooser()));
+  root.querySelectorAll("[data-wod-new]").forEach(b => (b.onclick = () => $("#newwoddialog").showModal()));
   root
     .querySelectorAll("[data-daily-edit]")
     .forEach(b => (b.onclick = () => openManualWod(dailyWodsById.get(b.dataset.dailyEdit))));

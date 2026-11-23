@@ -2129,10 +2129,6 @@ button:disabled {
   justify-content: flex-end;
   margin-bottom: 12px;
 }
-.manualwod-ai[hidden],
-.newwod-option[hidden] {
-  display: none;
-}
 .newwod-option b {
   font: 700 15px Manrope;
 }
