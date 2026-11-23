@@ -273,13 +273,12 @@ const COMMON_SCORE_HINT = {time: "Pour le temps", reps: "Aux répétitions", loa
 function openCommonWodDetail() {
   const w = currentCommonWod();
   if (!w) return;
-  const actions = $("#dailydetailactions");
+  const actions = $("#dailydetailactions"),
+    saved = !!commonWod.joined_id;
   $("#dailydetailtitle").textContent = "Le WOD du jour";
   $("#dailydetailmeta").textContent = [commonWodTitle(w), COMMON_SCORE_HINT[w.score_type]].filter(Boolean).join(" · ");
   fillWodBody($("#dailydetailbody"), w.blocks, dailyBody(w));
-  actions.innerHTML = commonWod.joined_id
-    ? '<button type="button" class="primary" disabled>WOD enregistré</button>'
-    : '<button type="button" class="primary">Enregistrer le WOD</button>';
+  actions.innerHTML = `<button type="button" class="primary save-common-wod" ${saved ? "disabled" : ""}>${saved ? "WOD enregistré" : "Enregistrer le WOD"}</button>`;
   const button = actions.querySelector("button");
   button.onclick = () => saveCommonWod(button);
   $("#dailydetaildialog").showModal();

@@ -4455,6 +4455,10 @@ button:disabled {
   align-items: center;
   gap: 6px;
 }
+.daily-detail-actions .save-common-wod {
+  width: 100%;
+  justify-content: center;
+}
 /* Texte du WOD du jour sous le chrono lancé depuis la page Séances. */
 .timer-wod {
   margin-top: 16px;
