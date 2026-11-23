@@ -23,58 +23,21 @@ function weeklyWodContent(wodId, weekStart) {
 function renderWodWeeklyProgramming(program, wod) {
   // Programme de coach sans dates : semaines numérotées seulement (chacun choisit sa date de début en l’acceptant).
   const weeks = programWeeks(program),
-    weekDate = week => (program.coach_mode === "free" ? "" : fmt(week)),
     expanded = window.cfExpandedWodProgramming || (window.cfExpandedWodProgramming = new Set()),
-    key = wod.id;
-  return (
-    '<div class="wod-weekly-program ' +
-    (!expanded.has(key) ? "collapsed" : "") +
-    '"><button type="button" class="wod-weekly-toggle" data-toggle-wod-programming="' +
-    wod.id +
-    '" aria-expanded="' +
-    expanded.has(key) +
-    '"><span>Programmation hebdomadaire</span><small>' +
-    weeks.length +
-    " semaines</small><b>" +
-    (expanded.has(key) ? "−" : "＋") +
-    '</b></button><div class="wod-weekly-body">' +
-    weeks
-      .map(
-        (week, index) =>
-          // Ligne 1 : numéro de semaine, date et bouton ; ligne 2 : champ de saisie sur toute la largeur.
-          '<div class="wod-week-row"><div class="wod-week-head"><b>S' +
-          (index + 1) +
-          "</b><small>" +
-          weekDate(week) +
-          '</small><button type="button" class="smallbtn" data-ai-wod-week="' +
-          wod.id +
-          '" data-program="' +
-          program.id +
-          '" data-week="' +
-          week +
-          '" aria-label="Regénérer cette semaine avec l’IA" title="Regénérer cette semaine avec l’IA">' +
-          AI_ICON +
-          '</button><button type="button" class="smallbtn save-wod-week" data-wod="' +
-          wod.id +
-          '" data-week="' +
-          week +
-          '">Enregistrer</button></div><textarea rows="' +
-          // Hauteur adaptée au contenu (un WOD généré par l’IA tient sur plusieurs lignes), 12 lignes au plus.
-          Math.min(12, Math.max(2, weeklyWodContent(wod.id, week).split("\n").length)) +
-          '" maxlength="2000" aria-label="Contenu prévu, semaine ' +
-          (index + 1) +
-          (weekDate(week) ? " du " + weekDate(week) : "") +
-          '" data-wod-week-content="' +
-          wod.id +
-          '" data-week="' +
-          week +
-          '" placeholder="Contenu prévu pour ce WOD…">' +
-          esc(weeklyWodContent(wod.id, week)) +
-          "</textarea></div>"
-      )
-      .join("") +
-    "</div></div>"
-  );
+    open = expanded.has(wod.id);
+  return `<div class="wod-weekly-program ${open ? "" : "collapsed"}"><button type="button" class="wod-weekly-toggle" data-toggle-wod-programming="${wod.id}" aria-expanded="${open}"><span>Programmation hebdomadaire</span><small>${weeksLabel(weeks.length)}</small><b aria-hidden="true">${open ? "−" : "＋"}</b></button><div class="wod-weekly-body">${weeks
+    .map((week, index) => {
+      const number = index + 1,
+        date = program.coach_mode === "free" ? "" : fmt(week),
+        content = weeklyWodContent(wod.id, week),
+        heading = `<b>S${number}</b><small>${date}</small>`;
+      if (program.read_only)
+        return `<div class="wod-week-row"><div class="wod-week-head">${heading}</div><div class="wod-week-content${content ? "" : " muted"}">${esc(content || "Pas de contenu écrit pour cette semaine.")}</div></div>`;
+      // Hauteur adaptée au contenu, 12 lignes au plus.
+      const rows = Math.min(12, Math.max(2, content.split("\n").length));
+      return `<div class="wod-week-row"><div class="wod-week-head">${heading}<button type="button" class="smallbtn" data-ai-wod-week="${wod.id}" data-program="${program.id}" data-week="${week}" aria-label="Regénérer cette semaine avec l’IA" title="Regénérer cette semaine avec l’IA">${AI_ICON}</button><button type="button" class="smallbtn save-wod-week" data-wod="${wod.id}" data-week="${week}">Enregistrer</button></div><textarea rows="${rows}" maxlength="2000" aria-label="Contenu prévu, semaine ${number}${date ? " du " + date : ""}" data-wod-week-content="${wod.id}" data-week="${week}" placeholder="Contenu prévu pour ce WOD…">${esc(content)}</textarea></div>`;
+    })
+    .join("")}</div></div>`;
 }
 // Programmes repliés par défaut : seuls ceux que l’utilisateur a dépliés (pendant la session) sont ouverts.
 function programFolds() {
@@ -84,6 +47,10 @@ function programFolds() {
 // Icône « étincelles » des boutons de génération par IA.
 const AI_ICON =
   '<svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 3.5l1.7 4.3 4.3 1.7-4.3 1.7L11 15.5l-1.7-4.3L5 9.5l4.3-1.7z"/><path d="M18 14l.9 2.1 2.1.9-2.1.9L18 20l-.9-2.1-2.1-.9 2.1-.9z"/></svg>';
+const PROGRAM_EDIT_ICON =
+    '<svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.83 2.83 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>',
+  PROGRAM_DELETE_ICON =
+    '<svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg>';
 // Rubrique vide d'un programme : même message et même style de ligne que dans la page Séances.
 const programEmpty = text => `<div class="movement-row section-empty"><span>${esc(text)}</span></div>`;
 function renderPrograms() {
@@ -104,7 +71,7 @@ function renderPrograms() {
       ? shown
           .map(
             p =>
-              `<article class="program card ${collapsed.has(p.id) ? "collapsed" : ""}"><div class="programhead"><div class="program-title"><button class="smallbtn collapse-program" data-toggle-program="${p.id}" aria-expanded="${!collapsed.has(p.id)}">${collapsed.has(p.id) ? "＋" : "−"}</button><div><h3>${esc(p.name)}${p.coach_mode ? ` <span class="tracked-tag">Coach</span>` : ""}</h3><small>${programSubtitle(p)}</small></div></div><div class="entryactions">${p.coach_mode ? `<button class="smallbtn" data-coach-invite="${p.id}" aria-label="Proposer à des inscrits" title="Proposer à des inscrits"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0"/><path d="M19 8v6"/><path d="M16 11h6"/></svg></button>` : ""}<button class="smallbtn" data-edit-program="${p.id}" aria-label="Modifier" title="Modifier"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.83 2.83 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg></button><button class="smallbtn delete ${p.has_sessions ? "is-disabled" : ""}" data-del-program="${p.id}" aria-label="Supprimer le programme" title="${p.has_sessions ? "Ce programme a déjà une séance réalisée et ne peut pas être supprimé" : "Supprimer le programme"}" ${p.has_sessions ? 'aria-disabled="true"' : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button></div></div><div class="programbody"><div class="program-section program-subsection ${folded.has(p.id + ":wods") ? "collapsed" : ""}"><div class="program-section-heading program-section-toolbar"><button class="smallbtn section-collapse program-section-toggle" data-toggle-program-section="${p.id}:wods" aria-label="Replier les WOD" aria-expanded="${!folded.has(p.id + ":wods")}">${folded.has(p.id + ":wods") ? "＋" : "−"}</button><span>WOD</span>${reorderToggle(p.id + ":wods", visibleWods(p.id).length, "Réorganiser les WOD")}<button type="button" class="smallbtn" data-ai-program="${p.id}" aria-label="Générer le programme avec l’IA" title="Générer le programme avec l’IA">${AI_ICON}</button>${p.published_at ? "" : `<button class="primary addsession-compact addwod" data-add-wod="${p.id}" aria-label="Ajouter un WOD" title="Ajouter un WOD">＋</button>`}</div><div class="program-subsection-body"><div class="wodlist">${
+              `<article class="program card ${collapsed.has(p.id) ? "collapsed" : ""}"><div class="programhead"><div class="program-title"><button class="smallbtn collapse-program" data-toggle-program="${p.id}" aria-expanded="${!collapsed.has(p.id)}">${collapsed.has(p.id) ? "＋" : "−"}</button><div><h3>${esc(p.name)}${p.coach_mode ? ` <span class="tracked-tag">Coach</span>` : ""}</h3><small>${programSubtitle(p)}</small></div></div><div class="entryactions">${p.coach_mode ? `<button class="smallbtn" data-coach-invite="${p.id}" aria-label="Proposer à des inscrits" title="Proposer à des inscrits"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0"/><path d="M19 8v6"/><path d="M16 11h6"/></svg></button>` : ""}<button class="smallbtn" data-edit-program="${p.id}" aria-label="Modifier" title="Modifier">${PROGRAM_EDIT_ICON}</button><button class="smallbtn delete ${p.has_sessions ? "is-disabled" : ""}" data-del-program="${p.id}" aria-label="Supprimer le programme" title="${p.has_sessions ? "Ce programme a déjà une séance réalisée et ne peut pas être supprimé" : "Supprimer le programme"}" ${p.has_sessions ? 'aria-disabled="true"' : ""}>${PROGRAM_DELETE_ICON}</button></div></div><div class="programbody"><div class="program-section program-subsection ${folded.has(p.id + ":wods") ? "collapsed" : ""}"><div class="program-section-heading program-section-toolbar"><button class="smallbtn section-collapse program-section-toggle" data-toggle-program-section="${p.id}:wods" aria-label="Replier les WOD" aria-expanded="${!folded.has(p.id + ":wods")}">${folded.has(p.id + ":wods") ? "＋" : "−"}</button><span>WOD</span>${reorderToggle(p.id + ":wods", visibleWods(p.id).length, "Réorganiser les WOD")}<button type="button" class="smallbtn" data-ai-program="${p.id}" aria-label="Générer le programme avec l’IA" title="Générer le programme avec l’IA">${AI_ICON}</button>${p.published_at ? "" : `<button class="primary addsession-compact addwod" data-add-wod="${p.id}" aria-label="Ajouter un WOD" title="Ajouter un WOD">＋</button>`}</div><div class="program-subsection-body"><div class="wodlist">${
                 visibleWods(p.id)
                   .map(
                     (w, i) =>
@@ -366,18 +333,18 @@ function followedProgramCard(p) {
     folded = window.cfProgramSections || (window.cfProgramSections = new Set()),
     fold = (key, label) =>
       `<button class="smallbtn section-collapse program-section-toggle" data-toggle-program-section="${p.id}:${key}" aria-label="${label}" aria-expanded="${!folded.has(p.id + ":" + key)}">${folded.has(p.id + ":" + key) ? "＋" : "−"}</button>`;
-  return `<article class="program card program-followed ${collapsed.has(p.id) ? "collapsed" : ""}"><div class="programhead"><div class="program-title"><button class="smallbtn collapse-program" data-toggle-program="${p.id}" aria-expanded="${!collapsed.has(p.id)}">${collapsed.has(p.id) ? "＋" : "−"}</button><div><h3>${esc(p.name)} <span class="tracked-tag">${p.coach_mode ? "Coach" : "Suivi"}</span></h3><small>${author ? (p.coach_mode ? "coach : " : "par ") + esc(author) + " · " : ""}mes dates : ${fmt(p.start_monday)} → ${fmt(p.end_monday)}</small></div></div></div><div class="programbody"><div class="program-section program-subsection ${folded.has(p.id + ":wods") ? "collapsed" : ""}"><div class="program-section-heading program-section-toolbar">${fold("wods", "Replier les WOD")}<span>WOD</span></div><div class="program-subsection-body"><div class="wodlist">${
+  return `<article class="program card program-followed ${collapsed.has(p.id) ? "collapsed" : ""}"><div class="programhead"><div class="program-title"><button class="smallbtn collapse-program" data-toggle-program="${p.id}" aria-expanded="${!collapsed.has(p.id)}">${collapsed.has(p.id) ? "＋" : "−"}</button><div><h3>${esc(p.name)} <span class="tracked-tag">${p.coach_mode ? "Coach" : "Suivi"}</span></h3><small>${author ? (p.coach_mode ? "coach : " : "par ") + esc(author) + " · " : ""}mes dates : ${fmt(p.start_monday)} → ${fmt(p.end_monday)}</small></div></div><div class="entryactions">${p.coach_mode === "dated" ? "" : `<button type="button" class="smallbtn" data-follow-dates="${p.id}" aria-label="Modifier mes dates" title="Modifier mes dates">${PROGRAM_EDIT_ICON}</button>`}<button type="button" class="smallbtn delete" data-unfollow-program="${p.id}" aria-label="Arrêter de suivre" title="Arrêter de suivre">${PROGRAM_DELETE_ICON}</button></div></div><div class="programbody"><div class="program-section program-subsection ${folded.has(p.id + ":wods") ? "collapsed" : ""}"><div class="program-section-heading program-section-toolbar">${fold("wods", "Replier les WOD")}<span>WOD</span></div><div class="program-subsection-body"><div class="wodlist">${
     visibleWods(p.id)
       .map(w => {
-        const content = weeklyWodContent(w.id, week) || w.planned_comment;
-        return `<div class="wod-entry"><div class="wodrow"><div class="wod-title"><b>${esc(w.name)}</b></div>${content ? `<p>${esc(content)}</p>` : ""}</div></div>`;
+        const description = w.is_tracked ? w.planned_comment : weeklyWodContent(w.id, week) || w.planned_comment;
+        return `<div class="wod-entry"><div class="wodrow"><div class="wod-title"><b>${esc(w.name)}</b></div>${description ? `<p>${esc(description)}</p>` : ""}${w.is_tracked ? renderWodWeeklyProgramming(p, w) : ""}</div></div>`;
       })
       .join("") || programEmpty("Pas de WOD pour cette programmation")
   }</div></div></div>${
     movements.length
       ? `<div class="movement-editor compact program-section program-subsection ${folded.has(p.id + ":movements") ? "collapsed" : ""}"><div class="program-section-heading program-section-toolbar">${fold("movements", "Replier les mouvements")}<span>Focus mouvement</span></div><div class="program-subsection-body"><div class="program-movement-list">${movements.map(m => `<div class="movement-row"><span>${esc(m.name)}</span></div>`).join("")}</div></div></div>`
       : ""
-  }<div class="program-follow-actions">${p.coach_mode === "dated" ? "" : `<button type="button" class="smallbtn" data-follow-dates="${p.id}">Modifier mes dates</button>`}<button type="button" class="smallbtn" data-unfollow-program="${p.id}">Arrêter de suivre</button></div></div></article>`;
+  }</div></article>`;
 }
 // Recherche de programmes publics et suivi (un seul programme à la fois).
 let programSearchTimer = null;

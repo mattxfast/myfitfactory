@@ -250,9 +250,16 @@ const FFOffline = (() => {
       data.programs = (data.programs || []).map(p => ({...p, followed: 0}));
     } else if (path === "/program-data" && op.path === "/program-follow" && op.method === "PUT") {
       // Changement de dates du programme déjà suivi (un nouveau suivi s'affiche après synchronisation).
-      data.programs = (data.programs || []).map(p =>
-        p.id === body.program_id && p.followed ? {...p, start_monday: body.start, end_monday: body.end} : p
-      );
+      const program = (data.programs || []).find(p => p.id === body.program_id && p.followed);
+      if (program && body.start && body.end) {
+        const shift = (Date.parse(mondayOf(body.start)) - Date.parse(mondayOf(program.start_monday))) / 86400000;
+        if (shift) {
+          const wodIds = new Set((data.wods?.[program.id] || []).map(w => w.id));
+          for (const entry of data.weeklyWodPrograms || [])
+            if (wodIds.has(entry.wod_id)) entry.week_start = addDays(entry.week_start, shift);
+        }
+        Object.assign(program, {start_monday: body.start, end_monday: body.end});
+      }
     } else if (path === "/boxes" && (m = op.path.match(/^\/boxes\/([\w-]+)\/requests$/))) {
       data.memberships = (data.memberships || []).filter(x => !(x.box_id === m[1] && x.role === body.role));
       if (op.method === "POST") data.memberships.push({box_id: m[1], role: body.role, status: "pending"});

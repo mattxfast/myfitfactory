@@ -4160,6 +4160,11 @@ button:disabled {
   resize: vertical;
   font-size: 12px;
 }
+.wod-week-content {
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 
 .checkbox-label {
   display: flex;
@@ -4994,13 +4999,7 @@ button:active:not(:disabled) {
   min-width: 0;
   overflow-wrap: anywhere;
 }
-/* Programmes : programme suivi (lecture seule) et recherche de programmes publics. */
-.program-follow-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: var(--content-item-gap);
-}
+/* Recherche de programmes publics. */
 .program-search-results {
   display: grid;
   gap: 8px;
