@@ -239,6 +239,7 @@ async function generateDailyWod(f, request) {
 }
 
 // ----- WOD aléatoire du jour : le même WOD pour tous (généré chaque nuit), « Je le fais », classement -----
+const canUseCommonWod = () => !simpleInterface() && !!preferences?.common_wod;
 // Chargé à part (la page s’affiche sans l’attendre) ; dernière copie gardée sur le téléphone, comme les autres lectures.
 let commonWodRequest = 0;
 async function loadCommonWod() {
@@ -247,14 +248,14 @@ async function loadCommonWod() {
   if (request !== commonWodRequest) return;
   commonWod = data;
   if ($("#view-sessions").hidden || selectedWeekStart !== loadedSessionWeek || !$("#weekboard .weekbar")) return;
-  const visible = selectedWeekStart === mondayOf(today()) && !!commonWod?.wod;
+  const visible = canUseCommonWod() && selectedWeekStart === mondayOf(today()) && !!commonWod?.wod;
   if (visible !== !!$("#weekboard .common-wod")) renderWeek();
 }
 const COMMON_SCORE_HINT = {time: "Pour le temps", reps: "Aux répétitions", load: "À la charge"};
-// Carte en tête de la page Séances, sur la semaine qui contient aujourd’hui, dans les deux interfaces.
+// Carte en tête de la page Séances, sur la semaine en cours, pour les abonnés en interface avancée.
 function weekCommonSection(from) {
   const w = commonWod?.wod;
-  if (!w || today() < from || today() > addDays(from, 6)) return "";
+  if (!canUseCommonWod() || !w || today() < from || today() > addDays(from, 6)) return "";
   const joined = commonWod.joined_id ? dailyWodsById.get(commonWod.joined_id) : null,
     done = joined && dailyWodDone(joined),
     scoreHint = COMMON_SCORE_HINT[w.score_type];

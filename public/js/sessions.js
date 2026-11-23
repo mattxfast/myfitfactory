@@ -343,16 +343,15 @@ function weekBoxSection(week, folded, simple) {
 function weekSuggestions(simple) {
   const join = !boxMemberships.some(m => m.role === "member"),
     subscribe =
-      preferences && !preferences.common_wod
+      !simple && preferences && !preferences.common_wod
         ? `<button type="button" class="smallbtn" data-week-action="subscribe" ${$("#commonwodoptin").disabled ? "disabled" : ""}><span aria-hidden="true">🎯</span>S’abonner au WOD aléatoire du jour</button>`
         : "";
   return `<section class="card week-empty"><h2>À toi de jouer !</h2><div class="week-empty-actions ${simple ? "" : "week-empty-columns"}">
     <button type="button" class="primary" data-wod-new><span aria-hidden="true">${simple ? "🎲" : "✨"}</span>${simple ? "Créer un WOD" : "Créer ou générer un WOD"}</button>
-    ${simple ? "" : subscribe}
+    ${subscribe}
     <button type="button" class="smallbtn" data-week-action="program"><span aria-hidden="true">🗓️</span>Créer un programme</button>
     <button type="button" class="smallbtn" data-week-action="search"><span aria-hidden="true">🔎</span>Chercher un programme</button>
     ${join ? '<button type="button" class="smallbtn" data-week-action="join"><span aria-hidden="true">🤝</span>Rejoindre une box</button>' : ""}
-    ${simple ? subscribe : ""}
   </div>${simple ? '<p class="muted">Créer ou suivre un programme active l’interface avancée.</p>' : ""}</section>`;
 }
 // Carte du haut : séances perso faites / prévues, comme le compteur de la rubrique « Mes WOD » (WOD de la

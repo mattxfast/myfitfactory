@@ -81,6 +81,7 @@ test("WOD commun : une seule génération par jour, réservée à l'administrate
   assert.equal(calls, 1, "le WOD déjà prêt n'est pas regénéré");
   const d = (await alice.get("/common-wod")).data;
   wodId = d.wod.id;
+  assert.equal((await admin.post(`/common-wod/${wodId}/join`)).status, 403, "inscription réservée aux abonnés");
   assert.equal(d.joined_id, null);
   assert.deepEqual(
     d.wod.blocks.map(b => b.label),
@@ -123,9 +124,13 @@ test("WOD commun : « Je le fais », séance avec score et classement", async ()
   assert.equal((await alice.get("/common-wod")).data.participants, 2);
 });
 
-test("WOD commun : option désactivée, plus de WOD commun proposé", async () => {
+test("WOD commun : désabonnement, accès aux séances déjà enregistrées", async () => {
   await alice.put("/preferences", {common_wod: false});
   assert.equal((await alice.get("/preferences")).data.common_wod, 0);
   assert.equal((await alice.get("/common-wod")).data.wod, null);
+  assert.equal((await alice.post(`/common-wod/${wodId}/join`)).status, 403);
+  const date = today(),
+    history = (await alice.get(`/week-data?from=${date}&to=${date}`)).data.sessions;
+  assert.equal(history.find(s => s.common_wod_id === wodId)?.score_value, 700);
   assert.ok((await bob.get("/common-wod")).data.wod, "chacun son réglage");
 });

@@ -1147,6 +1147,10 @@ async function ensureCommonWod(e, date, force = false) {
     .run();
   return {wod: await find()};
 }
+async function commonWodEnabled(e, userId) {
+  const row = await e.DB.prepare("SELECT common_wod_enabled FROM users WHERE id=?").bind(userId).first();
+  return !!row?.common_wod_enabled;
+}
 const commonWodOut = x =>
   x && {
     id: x.id,
@@ -4053,8 +4057,7 @@ async function api(r, e, p, ctx = null) {
   // participants (séances enregistrées).
   if (p === "/api/common-wod" && r.method === "GET") {
     // Option désactivée (par défaut) : ni rubrique, ni notification.
-    const optin = await e.DB.prepare("SELECT common_wod_enabled FROM users WHERE id=?").bind(u.id).first();
-    if (!optin?.common_wod_enabled) return json({wod: null, enabled: false});
+    if (!(await commonWodEnabled(e, u.id))) return json({wod: null, enabled: false});
     const wod = await e.DB.prepare("SELECT * FROM common_wods WHERE wod_date=? AND status='ready'")
       .bind(localToday())
       .first();
@@ -4072,6 +4075,8 @@ async function api(r, e, p, ctx = null) {
   // « Je le fais » : copie du WOD aléatoire dans mes WOD du jour (une seule fois), pour enregistrer ma séance et mon score.
   m = p.match(/^\/api\/common-wod\/([\w-]+)\/join$/);
   if (m && r.method === "POST") {
+    if (!(await commonWodEnabled(e, u.id)))
+      return json({error: "Abonne-toi au WOD aléatoire du jour pour participer."}, 403);
     const wod = await e.DB.prepare("SELECT * FROM common_wods WHERE id=? AND status='ready'").bind(m[1]).first();
     if (!wod) return json({error: "WOD aléatoire introuvable."}, 404);
     if (wod.wod_date < addDays(localToday(), -1))

@@ -56,6 +56,7 @@ function fillWodOptions(pid, selected = "") {
     f = fields.wod_id,
     date = fields.session_date.value || today(),
     weekSessions = sessionFormWeek.sessions || [],
+    offerCommonWods = canUseCommonWod(),
     done = new Set(weekSessions.map(s => s.wod_id)),
     ws = pid === "none" ? [] : visibleWods(pid).filter(w => w.id === editedSession?.wod_id || !done.has(w.id)),
     list = sessionFormWeek.boxWods.filter(
@@ -64,7 +65,8 @@ function fillWodOptions(pid, selected = "") {
     dailyList = sessionFormWeek.dailyWods.filter(
       w =>
         w.wod_date <= today() &&
-        (w.id === editedSession?.daily_wod_id || !datedWodDone(w, "daily_wod_id", weekSessions))
+        (w.id === editedSession?.daily_wod_id ||
+          ((!w.common_wod_id || offerCommonWods) && !datedWodDone(w, "daily_wod_id", weekSessions)))
     );
   const originalBox = boxWodsById.get(editedSession?.box_wod_id),
     originalDaily = dailyWodsById.get(editedSession?.daily_wod_id);
@@ -418,6 +420,7 @@ function openSession(s = null, presetWodId = "") {
         title: s.wod_name,
         content: s.planned_comment || "",
         benchmark_id: s.benchmark_id,
+        common_wod_id: s.common_wod_id,
         score_type: s.score_type,
         ...dailyWodsById.get(s.daily_wod_id),
       },
