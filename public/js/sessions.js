@@ -384,6 +384,7 @@ function renderWeek() {
     folded = window.cfSessionFolded || (window.cfSessionFolded = new Set());
   const invitations = weekInvitesSection(),
     personal = persoDailyWods().length,
+    emptySimpleWeek = simple && !(week.length || personal),
     programMovements = simple ? [] : movementsByProgram[p?.id] || [],
     canCreateWod = dailyCanGenerate(from),
     offerWod =
@@ -398,7 +399,7 @@ function renderWeek() {
   const stats =
     future && (simple || !p)
       ? '<div class="card empty">Cette semaine est dans le futur. La saisie d’entraînements n’est pas autorisée.</div>'
-      : `<div class="weekstats card">${simple && !week.length ? "" : dailyGenerateRow(from)}<div class="weekstat weekstat-sessions"><strong>${week.length}</strong><span>Nombre de séances</span></div>${personalStats}<button id="addsession" class="primary addsession-compact" aria-label="Ajouter une séance" title="Ajouter une séance" ${future ? "disabled" : ""}>＋</button><label class="competition-toggle" title="Semaine de compétition : coche-la si tu as une compétition cette semaine"><span>Compét.</span><input type="checkbox" id="weekcompetition" aria-label="Semaine de compétition" ${weekCompetition ? "checked" : ""}></label></div>`;
+      : `<div class="weekstats card">${emptySimpleWeek ? "" : dailyGenerateRow(from)}<div class="weekstat weekstat-sessions"><strong>${week.length}</strong><span>Nombre de séances</span></div>${personalStats}<button id="addsession" class="primary addsession-compact" aria-label="Ajouter une séance" title="Ajouter une séance" ${future ? "disabled" : ""}>＋</button><label class="competition-toggle" title="Semaine de compétition : coche-la si tu as une compétition cette semaine"><span>Compét.</span><input type="checkbox" id="weekcompetition" aria-label="Semaine de compétition" ${weekCompetition ? "checked" : ""}></label></div>`;
   const emptyState = offerWod ? weekSuggestions(false, canCreateWod) : "",
     pendingWods = simple ? dailyWodCards(persoDailyWods().filter(w => !dailyWodDone(w))) : "";
   const wodSections = simple
@@ -406,8 +407,11 @@ function renderWeek() {
       `<section class="session-fold"><div class="weekheading"><h2>WOD à faire</h2></div><div class="weekwodlist">${pendingWods}</div></section>`
     : weekProgramSection(p, ws, week, folded) + weekBoxSection(week, folded, offerWod);
   $("#weekboard").innerHTML = `<div class="weekbar card">${nav}</div>${invitations}${stats}${emptyState}${wodSections}`;
-  $("#weekafter").innerHTML =
-    simple && !week.length ? weekSuggestions(true, canCreateWod) : weekMovementsSection(week, programMovements, folded);
+  $("#weekafter").innerHTML = emptySimpleWeek
+    ? weekSuggestions(true, canCreateWod)
+    : !simple || week.length
+      ? weekMovementsSection(week, programMovements, folded)
+      : "";
   $('.navtab[data-view="sessions"]').classList.toggle("has-alert", pendingTags.length > 0);
   bindInvites();
   $("#view-sessions")
