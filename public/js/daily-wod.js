@@ -255,13 +255,13 @@ function weekCommonSection(from) {
     meta = [COMMON_SCORE_HINT[w.score_type], n ? n + " participant" + (n > 1 ? "s" : "") : "Sois le premier !"]
       .filter(Boolean)
       .join(" · ");
-  return `<section class="session-fold common-wod"><div class="weekheading"><h2>WOD aléatoire du jour</h2><span>${n}</span></div><div class="session-fold-body"><div class="weekwodlist"><article class="weekwod card ${done ? "done" : ""}"><div class="weekcount">${
+  return `<section class="session-fold common-wod"><div class="weekheading"><h2>Le WOD du jour</h2><span>${n}</span></div><div class="session-fold-body"><div class="weekwodlist"><article class="weekwod card ${done ? "done" : ""}"><div class="weekcount">${
     commonWod.joined_id
       ? done
         ? ""
         : `<button type="button" class="smallbtn" data-common-log aria-label="Enregistrer la séance" title="Enregistrer la séance"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button>`
       : `<button type="button" class="smallbtn" data-common-join aria-label="Je le fais" title="Je le fais"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button>`
-  }${w.score_type ? `<button type="button" class="smallbtn" data-common-board aria-label="Classement" title="Classement">${TROPHY_ICON}</button>` : ""}</div><div class="weekwod-text" role="button" tabindex="0" data-common-open aria-label="Voir le WOD aléatoire du jour"><b>${esc(w.title)}</b><p>${esc(meta)}</p></div></article></div></div></section>`;
+  }${w.score_type ? `<button type="button" class="smallbtn" data-common-board aria-label="Classement" title="Classement">${TROPHY_ICON}</button>` : ""}</div><div class="weekwod-text" role="button" tabindex="0" data-common-open aria-label="Voir le WOD du jour"><b>${esc(w.title)}</b><p>${esc(meta)}</p></div></article></div></div></section>`;
 }
 function bindCommonWod(root) {
   root.querySelectorAll("[data-common-open]").forEach(t => {
@@ -282,7 +282,7 @@ function openCommonWodDetail() {
   if (!w) return;
   const joined = commonWod.joined_id ? dailyWodsById.get(commonWod.joined_id) : null,
     done = joined && dailyWodDone(joined);
-  $("#dailydetailtitle").textContent = "WOD aléatoire du jour";
+  $("#dailydetailtitle").textContent = "Le WOD du jour";
   $("#dailydetailmeta").textContent = [w.title, COMMON_SCORE_HINT[w.score_type], done ? "séance enregistrée" : ""]
     .filter(Boolean)
     .join(" · ");
