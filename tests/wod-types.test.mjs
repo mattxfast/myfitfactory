@@ -44,7 +44,7 @@ test("types de WOD : WOD de programme typé, séance au type imposé", async () 
   assert.equal((await alice.put(`/wods/${wod.data.id}`, body)).status, 200);
   assert.equal((await wodOf()).type_id, types["Haltéro"]);
   await alice.put(`/wods/${wod.data.id}`, {...body, type_id: ""});
-  assert.equal((await wodOf()).type_id, null);
+  assert.equal((await wodOf()).type_id, types["WOD"], "non précisé : type par défaut");
   await alice.put(`/wods/${wod.data.id}`, {...body, type_id: types["Haltéro"]});
   // La séance prend le type du WOD, même si un autre est envoyé.
   const saved = await alice.post(
@@ -57,7 +57,7 @@ test("types de WOD : WOD de programme typé, séance au type imposé", async () 
   assert.equal(s.wod_type_name, "Haltéro");
 });
 
-test("types de WOD : séance libre, type au choix (ou aucun)", async () => {
+test("types de WOD : séance libre, type au choix (par défaut si non précisé)", async () => {
   assert.equal(
     (await alice.post("/sessions", session({program_id: "none", wod_id: "other", type_id: "inconnu"}))).status,
     400
@@ -67,5 +67,14 @@ test("types de WOD : séance libre, type au choix (ou aucun)", async () => {
   const none = await alice.post("/sessions", session({program_id: "none", wod_id: "other"}));
   const list = await weekSessions();
   assert.equal(list.find(x => x.id === free.data.id).wod_type_name, "Hyrox");
-  assert.equal(list.find(x => x.id === none.data.id).type_id, null);
+  assert.equal(list.find(x => x.id === none.data.id).type_id, types["WOD"], "non précisé : type par défaut");
+  const plain = await alice.post(`/programs/${programId}/wods`, {
+    name: "WOD 2",
+    activity_id: activityId,
+    duration_minutes: 60,
+  });
+  assert.equal(
+    (await alice.get("/program-data")).data.wods[programId].find(w => w.id === plain.data.id).type_id,
+    types["WOD"]
+  );
 });

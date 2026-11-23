@@ -291,10 +291,8 @@ $("#authform").onsubmit = async e => {
   }
 };
 
-// Liste des types de WOD dans un menu, avec « Non précisé » en tête.
+// Liste des types de WOD dans un menu ; non précisé, celui par défaut (le premier de la liste).
 function fillWodTypeSelect(select, selected = "") {
-  select.innerHTML =
-    `<option value="">Non précisé</option>` +
-    wodTypes.map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join("");
-  select.value = wodTypes.some(t => t.id === selected) ? selected : "";
+  select.innerHTML = wodTypes.map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join("");
+  select.value = wodTypes.some(t => t.id === selected) ? selected : wodTypes[0]?.id || "";
 }

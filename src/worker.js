@@ -707,6 +707,19 @@ async function ensureV2Schema(env) {
         "UPDATE box_wods SET wod_type_id=(SELECT wt.id FROM wod_types wt JOIN box_wod_types bt ON lower(bt.name)=lower(wt.name) WHERE bt.id=box_wods.type_id) WHERE wod_type_id IS NULL"
       ).run();
     });
+    await runMigration("v45-default-wod-type", async () => {
+      // Type non précisé = type par défaut (le premier de la liste) : WOD de box, WOD de programme et séances
+      // enregistrés sans type le reçoivent.
+      const first = await env.DB.prepare("SELECT id FROM wod_types ORDER BY sort_order,name LIMIT 1").first();
+      if (!first) return;
+      await env.DB.batch(
+        [
+          "UPDATE box_wods SET wod_type_id=? WHERE wod_type_id IS NULL",
+          "UPDATE program_wods SET type_id=? WHERE type_id IS NULL AND name<>'__AUTRES__'",
+          "UPDATE training_sessions SET type_id=? WHERE type_id IS NULL",
+        ].map(sql => env.DB.prepare(sql).bind(first.id))
+      );
+    });
   })().catch(err => {
     schemaReady = null;
     throw err;
@@ -1375,9 +1388,16 @@ async function sessionTypeId(e, b, boxWod, programWod) {
   if (fixed) return {id: fixed};
   return await wodTypeOf(e, b.type_id);
 }
-// Type de WOD (liste commune gérée par l'administrateur) : celui envoyé s'il existe, null s'il est vide.
+// Type de WOD (liste commune gérée par l'administrateur) : celui envoyé s'il existe ; non précisé, celui par défaut
+// (le premier de la liste).
 async function wodTypeOf(e, raw) {
-  if (raw === undefined || raw === null || raw === "") return {id: null, name: null};
+  if (raw === undefined || raw === null || raw === "")
+    return (
+      (await e.DB.prepare("SELECT id,name FROM wod_types ORDER BY sort_order,name LIMIT 1").first()) || {
+        id: null,
+        name: null,
+      }
+    );
   const t = await e.DB.prepare("SELECT id,name FROM wod_types WHERE id=?").bind(String(raw)).first();
   return t || {error: "Type de WOD invalide."};
 }
@@ -1590,12 +1610,9 @@ async function boxWodInput(e, boxId, b) {
     type = String(b.score_type || "");
   if (!validDate(date)) return {error: "Date du WOD invalide."};
   if (!SCORE_TYPES.includes(type)) return {error: "Type de score invalide."};
-  // Type choisi dans la liste commune (administrateur), sinon le premier de la liste.
-  const chosen = await wodTypeOf(e, b.type_id);
-  if (chosen.error) return {error: chosen.error};
-  const wodType = chosen.id
-    ? chosen
-    : await e.DB.prepare("SELECT id,name FROM wod_types ORDER BY sort_order,name LIMIT 1").first();
+  // Type choisi dans la liste commune (administrateur), sinon celui par défaut (le premier de la liste).
+  const wodType = await wodTypeOf(e, b.type_id);
+  if (wodType.error) return {error: wodType.error};
   return {
     date,
     type,
@@ -4299,7 +4316,7 @@ async function api(r, e, p, ctx = null) {
     if (!name) return json({error: "Nom requis."}, 400);
     if (!activity || !Number.isInteger(duration) || duration < 1 || duration > 600)
       return json({error: "Sport ou durée invalide."}, 400);
-    // Type de WOD : changé seulement s'il est envoyé (vide = aucun type).
+    // Type de WOD : changé seulement s'il est envoyé (vide = type par défaut).
     const wodType = await wodTypeOf(e, b.type_id);
     if (wodType.error) return json({error: wodType.error}, 400);
     try {
