@@ -355,8 +355,8 @@ function weekSuggestions(simple, canCreateWod) {
       !simple && preferences && !preferences.common_wod
         ? `<button type="button" class="smallbtn" data-week-action="subscribe" ${$("#commonwodoptin").disabled ? "disabled" : ""}><span aria-hidden="true">🎯</span>S’abonner au WOD aléatoire du jour</button>`
         : "";
-  return `<section class="card week-empty"><h2>À toi de jouer !</h2><div class="week-empty-actions ${simple ? "" : "week-empty-columns"}">
-    ${canCreateWod ? `<button type="button" class="primary" data-wod-new><span aria-hidden="true">${simple ? "🎲" : "✨"}</span>Choisir un WOD</button>` : ""}
+  return `<section class="card week-empty"><h2>À toi de jouer !</h2><div class="week-empty-actions">
+    ${canCreateWod ? '<button type="button" class="primary" data-wod-new><span aria-hidden="true">🎲</span>Choisir un WOD</button>' : ""}
     ${subscribe}
     <button type="button" class="smallbtn" data-week-action="program"><span aria-hidden="true">🗓️</span>Créer un programme</button>
     <button type="button" class="smallbtn" data-week-action="search"><span aria-hidden="true">🔎</span>Chercher un programme</button>
@@ -395,7 +395,7 @@ function renderWeek() {
   const stats =
     future && (simple || !p)
       ? '<div class="card empty">Cette semaine est dans le futur. La saisie d’entraînements n’est pas autorisée.</div>'
-      : `<div class="weekstats card">${offerWod || (simple && !week.length) ? "" : dailyGenerateRow(from)}<div class="weekstat weekstat-sessions"><strong>${week.length}</strong><span>Nombre de séances</span></div>${personalStats}<button id="addsession" class="primary addsession-compact" aria-label="Ajouter une séance" title="Ajouter une séance" ${future ? "disabled" : ""}>＋</button><label class="competition-toggle" title="Semaine de compétition : coche-la si tu as une compétition cette semaine"><span>Compét.</span><input type="checkbox" id="weekcompetition" aria-label="Semaine de compétition" ${weekCompetition ? "checked" : ""}></label></div>`;
+      : `<div class="weekstats card">${simple && !week.length ? "" : dailyGenerateRow(from)}<div class="weekstat weekstat-sessions"><strong>${week.length}</strong><span>Nombre de séances</span></div>${personalStats}<button id="addsession" class="primary addsession-compact" aria-label="Ajouter une séance" title="Ajouter une séance" ${future ? "disabled" : ""}>＋</button><label class="competition-toggle" title="Semaine de compétition : coche-la si tu as une compétition cette semaine"><span>Compét.</span><input type="checkbox" id="weekcompetition" aria-label="Semaine de compétition" ${weekCompetition ? "checked" : ""}></label></div>`;
   const emptyState = offerWod ? weekSuggestions(false, canCreateWod) : "",
     pendingWods = simple ? dailyWodCards(persoDailyWods().filter(w => !dailyWodDone(w))) : "";
   const wodSections = simple
