@@ -240,12 +240,12 @@ async function generateDailyWod(f, request) {
 
 // ----- WOD aléatoire du jour : le même WOD pour tous (généré chaque nuit), « Je le fais », classement -----
 // Chargé à part (la page s’affiche sans l’attendre) ; dernière copie gardée sur le téléphone, comme les autres lectures.
+let commonWodRequest = 0;
 async function loadCommonWod() {
-  try {
-    commonWod = await api("/common-wod");
-  } catch {
-    commonWod = null;
-  }
+  const request = ++commonWodRequest,
+    data = await api("/common-wod").catch(() => null);
+  if (request !== commonWodRequest) return;
+  commonWod = data;
   if ($("#view-sessions").hidden || selectedWeekStart !== loadedSessionWeek || !$("#weekboard .weekbar")) return;
   const visible = selectedWeekStart === mondayOf(today()) && !!commonWod?.wod;
   if (visible !== !!$("#weekboard .common-wod")) renderWeek();

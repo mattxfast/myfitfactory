@@ -103,20 +103,37 @@ function applyInterface() {
   if (hidden && !$("#view-programs").hidden) switchView("sessions");
 }
 // WOD aléatoire du jour : option du compte, désactivée par défaut (rubrique Séances et notification).
-$("#commonwodoptin").onchange = async e => {
-  const on = e.target.checked;
+async function setCommonWodOptIn(on) {
+  const option = $("#commonwodoptin");
+  if (option.disabled) return;
+  const setDisabled = value => {
+    option.disabled = value;
+    const subscribe = $('[data-week-action="subscribe"]');
+    if (subscribe) subscribe.disabled = value;
+  };
+  setDisabled(true);
   try {
-    await api("/preferences", {method: "PUT", body: JSON.stringify({common_wod: on})});
+    const result = await api("/preferences", {method: "PUT", body: JSON.stringify({common_wod: on})});
     if (preferences) preferences.common_wod = on ? 1 : 0;
+    option.checked = on;
     commonWod = null;
     await loadCommonWod();
     renderWeek();
-    toast(on ? "WOD aléatoire du jour activé." : "WOD aléatoire du jour désactivé.");
+    toast(
+      result.queued
+        ? "Préférence enregistrée hors ligne, en attente de synchronisation."
+        : on
+          ? "WOD aléatoire du jour activé."
+          : "WOD aléatoire du jour désactivé."
+    );
   } catch (x) {
-    e.target.checked = !on;
+    option.checked = !!preferences?.common_wod;
     toast(x.offline ? OFFLINE_MESSAGE : x.message);
+  } finally {
+    setDisabled(false);
   }
-};
+}
+$("#commonwodoptin").onchange = e => setCommonWodOptIn(e.currentTarget.checked);
 $("#interfaceselect").onchange = async e => {
   const value = e.target.value === "simple" ? "simple" : "advanced";
   if (preferences) preferences.interface = value;
