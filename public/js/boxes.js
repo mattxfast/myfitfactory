@@ -149,7 +149,7 @@ function openJoinBox(welcome = false) {
   $("#joinboxform").reset();
   f.first_name.value = user?.first_name || "";
   f.last_name.value = user?.last_name || "";
-  $("#joinboxtitle").textContent = welcome ? "Bienvenue !" : "Rejoindre une box";
+  $("#joinboxtitle").textContent = welcome ? "Choisis ta box!" : "Rejoindre une box";
   $("#joinboxintro").textContent = welcome
     ? "Tu t’entraînes dans une box ? Rejoins-la pour enregistrer ses WOD et voir les classements. Ta demande sera validée par un gestionnaire de la box."
     : "Ta demande sera validée par un gestionnaire de la box.";

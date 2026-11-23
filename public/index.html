@@ -1103,20 +1103,22 @@
           ><button type="button" class="primary" id="choice-plan">Planifier</button>
         </div>
       </dialog>
-      <dialog id="joinboxdialog" class="modal">
+      <dialog id="joinboxdialog" class="modal" aria-labelledby="joinboxtitle">
         <form id="joinboxform">
           <div class="sectionhead">
             <h2 id="joinboxtitle">Rejoindre une box</h2>
             <button type="button" class="iconbtn" id="closejoinbox">×</button>
           </div>
-          <p class="hint" id="joinboxintro"></p>
-          <div class="two">
-            <label>Prénom<input name="first_name" maxlength="80" autocomplete="given-name" /></label
-            ><label>Nom<input name="last_name" maxlength="80" autocomplete="family-name" /></label>
+          <div class="form-block">
+            <p class="hint" id="joinboxintro"></p>
+            <div class="two">
+              <label>Prénom<input name="first_name" maxlength="80" autocomplete="given-name" /></label
+              ><label>Nom<input name="last_name" maxlength="80" autocomplete="family-name" /></label>
+            </div>
+            <label>Rechercher une box<input name="q" type="search" maxlength="60" placeholder="Nom ou ville" /></label>
+            <div id="joinboxlist" class="program-search-results"></div>
+            <div class="error" id="joinboxerror"></div>
           </div>
-          <label>Rechercher une box<input name="q" type="search" maxlength="60" placeholder="Nom ou ville" /></label>
-          <div id="joinboxlist" class="program-search-results"></div>
-          <div class="error" id="joinboxerror"></div>
           <div class="join-box-later" id="joinboxlater">
             <button type="button" class="smallbtn" id="joinboxskip">Plus tard</button
             ><button type="button" class="smallbtn" id="joinboxnone">Je ne suis dans aucune box</button>
