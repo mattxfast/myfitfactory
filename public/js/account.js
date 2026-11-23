@@ -86,17 +86,24 @@ function setPreferences(d) {
   select.value = d.theme || "default";
   cacheDefaultTheme(d.default_theme);
   cacheTheme(d.theme || defaultTheme);
-  $("#interfaceselect").value = simpleInterface() ? "simple" : "advanced";
   $("#commonwodoptin").checked = !!d.common_wod;
   applyInterface();
   renderReminders();
   renderCoachCard();
 }
-// Interface simplifiée : pas d’onglet Programmes ; la page Séances ne garde que l’historique et les mouvements
-// travaillés (sessions.js). Le formulaire de séance propose toujours tous les WOD.
-const simpleInterface = () => preferences?.interface === "simple";
+function requiresAdvancedInterface() {
+  const date = today();
+  return programs.some(p => isTrainingProgram(p) && p.end_monday >= date);
+}
+const simpleInterface = () => preferences?.interface === "simple" && !requiresAdvancedInterface();
 function applyInterface() {
-  const simple = simpleInterface();
+  const locked = requiresAdvancedInterface(),
+    simple = !locked && preferences?.interface === "simple",
+    select = $("#interfaceselect");
+  select.value = simple ? "simple" : "advanced";
+  select.disabled = locked;
+  select.setAttribute("aria-describedby", locked ? "interfacelock" : "interfacehint");
+  $("#interfacelock").hidden = !locked;
   // Un programme de coach proposé reste visible (pastille rouge) même en interface simplifiée.
   const hidden = simple && !coachInvites.length;
   $('.navtab[data-view="programs"]').hidden = hidden;
@@ -135,15 +142,20 @@ async function setCommonWodOptIn(on) {
 }
 $("#commonwodoptin").onchange = e => setCommonWodOptIn(e.currentTarget.checked);
 $("#interfaceselect").onchange = async e => {
-  const value = e.target.value === "simple" ? "simple" : "advanced";
-  if (preferences) preferences.interface = value;
-  applyInterface();
-  renderWeek();
+  if (requiresAdvancedInterface()) return applyInterface();
+  const select = e.currentTarget,
+    value = select.value === "simple" ? "simple" : "advanced";
+  select.disabled = true;
   try {
     await api("/preferences", {method: "PUT", body: JSON.stringify({interface: value})});
+    if (preferences) preferences.interface = value;
+    renderWeek();
     toast(value === "simple" ? "Interface simplifiée activée." : "Interface avancée activée.");
   } catch (x) {
+    if (x.status === 409) await load();
     toast(x.offline ? OFFLINE_MESSAGE : x.message);
+  } finally {
+    applyInterface();
   }
 };
 $("#themeselect").onchange = async e => {

@@ -1249,6 +1249,20 @@ async function followedOverlap(e, userId, start, end) {
     .bind(userId, start, end)
     .first();
 }
+async function hasTrainingProgram(e, userId) {
+  const date = localToday();
+  return !!(await e.DB.prepare(
+    `SELECT 1 FROM programs p WHERE p.user_id=? AND p.is_default=0 AND p.coach_mode IS NULL
+      AND p.end_monday>=? AND NOT(p.start_monday='1970-01-01' AND p.end_monday='2100-12-31')
+     UNION ALL
+     SELECT 1 FROM program_follows f JOIN programs p ON p.id=f.program_id
+      WHERE f.user_id=? AND p.user_id<>? AND p.is_default=0 AND COALESCE(f.end_monday,p.end_monday)>=?
+      AND NOT(COALESCE(f.start_monday,p.start_monday)='1970-01-01' AND COALESCE(f.end_monday,p.end_monday)='2100-12-31')
+     LIMIT 1`
+  )
+    .bind(userId, date, userId, userId, date)
+    .first());
+}
 // Programmes de coach : un coach écrit un programme (nombre de semaines obligatoire, dates facultatives) et tague des
 // utilisateurs, qui l'acceptent (il devient leur programme suivi) ou le refusent. Sans dates, la semaine 1 est rangée
 // au lundi COACH_FREE_START et chacun choisit sa date de début en acceptant.
@@ -2474,9 +2488,10 @@ async function api(r, e, p, ctx = null) {
       )
         .bind(u.id)
         .first();
+    const simple = row?.interface_mode === "simple" && !(await hasTrainingProgram(e, u.id));
     return json({
       theme: THEMES.includes(row?.theme) ? row.theme : null,
-      interface: row?.interface_mode === "simple" ? "simple" : "advanced",
+      interface: simple ? "simple" : "advanced",
       common_wod: row?.common_wod_enabled ? 1 : 0,
       box_prompt_dismissed: row?.box_prompt_dismissed ? 1 : 0,
       coach: u.coach_status === "approved" || u.coach_status === "pending" ? u.coach_status : null,
@@ -2489,6 +2504,8 @@ async function api(r, e, p, ctx = null) {
     const b = await r.json();
     if (b.interface !== undefined && !INTERFACES.includes(b.interface))
       return json({error: "Interface invalide."}, 400);
+    if (b.interface === "simple" && (await hasTrainingProgram(e, u.id)))
+      return json({error: "L’interface avancée est requise tant qu’un programme est en cours ou planifié."}, 409);
     if (b.theme !== undefined) {
       if (b.theme !== null && !THEMES.includes(b.theme)) return json({error: "Thème invalide."}, 400);
       await e.DB.prepare("UPDATE users SET theme=? WHERE id=?").bind(b.theme, u.id).run();

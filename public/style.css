@@ -3813,8 +3813,8 @@ button:disabled {
 #view-sessions #sessiontoolbar {
   margin: var(--section-content-gap) 0;
 }
-/* Interface simplifiée : mouvements travaillés sous l'historique, au même écart que les autres rubriques. */
-#view-sessions #weekafter > .session-fold {
+/* Interface simplifiée : propositions ou mouvements travaillés sous l’historique. */
+#view-sessions #weekafter > * {
   margin-top: var(--section-content-gap);
 }
 #view-sessions #sessionlist {

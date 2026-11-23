@@ -249,7 +249,7 @@
             </div>
             <div id="sessionlist" class="entries"></div>
           </div>
-          <!-- Interface simplifiée : mouvements travaillés sous l’historique. -->
+          <!-- Interface simplifiée : propositions ou mouvements travaillés sous l’historique. -->
           <div id="weekafter"></div>
         </section>
         <section id="view-programs" hidden>
@@ -574,12 +574,15 @@
                   </select></label
                 >
                 <label class="theme-select"
-                  >Interface<select id="interfaceselect">
+                  >Interface<select id="interfaceselect" aria-describedby="interfacehint">
                     <option value="advanced">Avancée</option>
                     <option value="simple">Simplifiée</option>
                   </select></label
                 >
-                <p class="hint">Simplifiée : historique, mouvements travaillés et WOD de ta box sur demande.</p>
+                <p class="hint" id="interfacehint">L’interface simplifiée est centrée sur ton historique de séances.</p>
+                <p class="hint" id="interfacelock" hidden>
+                  L’interface avancée est requise tant qu’un programme est en cours ou planifié.
+                </p>
                 <label class="checkbox-label"
                   ><input type="checkbox" id="commonwodoptin" /> Recevoir le WOD aléatoire du jour</label
                 >
