@@ -1411,9 +1411,9 @@
           <div class="error" id="bencherror"></div>
         </form>
       </dialog>
-      <dialog id="newwoddialog" class="modal">
+      <dialog id="newwoddialog" class="modal" aria-labelledby="newwodtitle">
         <div class="sectionhead">
-          <h2>Nouveau WOD</h2>
+          <h2 id="newwodtitle">Choisir un WOD</h2>
           <button type="button" class="iconbtn" data-close-dialog="newwoddialog">×</button>
         </div>
         <div class="newwod-options">
@@ -1426,7 +1426,9 @@
             <b>🎲 WOD de référence</b
             ><small>Un Girl, un Hero… tiré au hasard, pour te mesurer dans le temps.</small></button
           ><button type="button" class="newwod-option" data-newwod="manual">
-            <b>✏️ Saisie manuelle</b><small>Tu écris ton propre WOD, bloc par bloc.</small>
+            <b>✏️ Saisie manuelle</b><small>Tu écris ton propre WOD, bloc par bloc.</small></button
+          ><button type="button" class="newwod-option" data-newwod="common" hidden>
+            <b>🎯 WOD du jour</b><small></small>
           </button>
         </div>
       </dialog>

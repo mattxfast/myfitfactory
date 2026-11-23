@@ -46,21 +46,20 @@ function dailyWodCards(wods = persoDailyWods()) {
     })
     .join("");
 }
-// À gauche de la carte « Nombre de séances » : un seul bouton « Nouveau WOD » (généré par l’IA, WOD de référence
-// ou saisie manuelle, au choix dans une fenêtre), dans les deux interfaces, seulement sur la semaine qui contient
-// aujourd’hui ou demain.
+// À gauche de « Nombre de séances » : accès au choix d’un WOD sur la semaine qui contient aujourd’hui ou demain.
 const dailyGenerateRow = from =>
   dailyCanGenerate(from)
-    ? `<div class="weekstats-generate"><button type="button" class="smallbtn" data-wod-new aria-label="Nouveau WOD (IA, référence ou saisie manuelle)" title="Nouveau WOD"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M12 12v6"/><path d="M9 15h6"/></svg></button></div>`
+    ? `<div class="weekstats-generate"><button type="button" class="smallbtn" data-wod-new aria-label="Choisir un WOD" title="Choisir un WOD"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M12 12v6"/><path d="M9 15h6"/></svg></button></div>`
     : "";
-// Fenêtre « Nouveau WOD » : trois façons de créer le WOD du jour.
+// Fenêtre « Choisir un WOD » : création d’un WOD personnel ou accès au WOD du jour.
 // « Généré par l’IA » et « Saisie manuelle » mènent au même formulaire : l’IA le pré-remplit (sa fenêtre de
 // génération s’ouvre par-dessus), on relit et on ajuste avant d’enregistrer.
 document.querySelectorAll("[data-newwod]").forEach(
   b =>
     (b.onclick = () => {
       $("#newwoddialog").close();
-      if (b.dataset.newwod === "bench") openBenchmarkDraw();
+      if (b.dataset.newwod === "common") openCommonWodDetail();
+      else if (b.dataset.newwod === "bench") openBenchmarkDraw();
       else {
         openManualWod();
         if (b.dataset.newwod === "ai") openAiDialog("daily");
@@ -180,7 +179,13 @@ function bindDailySection(root) {
   root
     .querySelectorAll("[data-daily-open]")
     .forEach(b => (b.onclick = e => (blurAfterTap(b, e), openDailyDetail(b.dataset.dailyOpen))));
-  root.querySelectorAll("[data-wod-new]").forEach(b => (b.onclick = () => $("#newwoddialog").showModal()));
+  root.querySelectorAll("[data-wod-new]").forEach(
+    b =>
+      (b.onclick = () => {
+        updateCommonWodChoice();
+        $("#newwoddialog").showModal();
+      })
+  );
   root
     .querySelectorAll("[data-daily-edit]")
     .forEach(b => (b.onclick = () => openManualWod(dailyWodsById.get(b.dataset.dailyEdit))));
@@ -232,10 +237,20 @@ async function generateDailyWod(f, request) {
 
 // ----- WOD aléatoire du jour : le même WOD pour tous (généré chaque nuit), « Je le fais », classement -----
 const canUseCommonWod = () => !!preferences?.common_wod;
+function currentCommonWod() {
+  const wod = commonWod?.wod;
+  return canUseCommonWod() && wod?.wod_date === today() ? wod : null;
+}
 function commonWodTitle(wod) {
   return wod.title
     .replace(/^WOD commun(?: du)?\b/i, "WOD du")
     .replace(/^WOD du(?=\s*(?:[:–—-]|$))/, "WOD du " + fmt(wod.wod_date));
+}
+function updateCommonWodChoice() {
+  const button = $('[data-newwod="common"]'),
+    wod = currentCommonWod();
+  button.hidden = !wod;
+  if (wod) button.querySelector("small").textContent = commonWodTitle(wod);
 }
 // Chargé à part (la page s’affiche sans l’attendre) ; dernière copie gardée sur le téléphone, comme les autres lectures.
 let commonWodRequest = 0;
@@ -244,16 +259,17 @@ async function loadCommonWod() {
     data = await api("/common-wod").catch(() => null);
   if (request !== commonWodRequest) return;
   commonWod = data;
+  if ($("#newwoddialog").open) updateCommonWodChoice();
   refreshSessionCommonWod();
   if ($("#view-sessions").hidden || selectedWeekStart !== loadedSessionWeek || !$("#weekboard .weekbar")) return;
-  const visible = canUseCommonWod() && selectedWeekStart === mondayOf(today()) && !!commonWod?.wod;
+  const visible = selectedWeekStart === mondayOf(today()) && !!currentCommonWod();
   if (visible !== !!$("#weekboard .common-wod")) renderWeek();
 }
 const COMMON_SCORE_HINT = {time: "Pour le temps", reps: "Aux répétitions", load: "À la charge"};
 // Carte en tête de la page Séances, sur la semaine en cours, pour les abonnés.
 function weekCommonSection(from) {
-  const w = commonWod?.wod;
-  if (!canUseCommonWod() || !w || today() < from || today() > addDays(from, 6)) return "";
+  const w = currentCommonWod();
+  if (!w || mondayOf(w.wod_date) !== from) return "";
   const joined = commonWod.joined_id ? dailyWodsById.get(commonWod.joined_id) : null,
     done = joined && dailyWodDone(joined),
     scoreHint = COMMON_SCORE_HINT[w.score_type];
@@ -280,7 +296,7 @@ function bindCommonWod(root) {
   root.querySelectorAll("[data-common-board]").forEach(b => (b.onclick = () => openCommonLeaderboard()));
 }
 function openCommonWodDetail() {
-  const w = commonWod?.wod;
+  const w = currentCommonWod();
   if (!w) return;
   const joined = commonWod.joined_id ? dailyWodsById.get(commonWod.joined_id) : null,
     done = joined && dailyWodDone(joined);
@@ -320,8 +336,11 @@ async function attachCommonWod(id) {
   return wod;
 }
 async function joinCommonWod() {
+  const wod = currentCommonWod();
+  if (!wod) return;
   try {
-    await attachCommonWod(commonWod.wod.id);
+    await attachCommonWod(wod.id);
+    selectedWeekStart = mondayOf(wod.wod_date);
     await loadSessions();
     toast("C’est parti ! Enregistre ta séance et ton score une fois le WOD fait.");
   } catch (e) {

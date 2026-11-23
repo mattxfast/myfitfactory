@@ -44,8 +44,8 @@ function selectedBoxWod() {
 }
 // WOD aléatoire disponible pour une nouvelle séance datée d’aujourd’hui.
 function commonWodForSession(date) {
-  const wod = commonWod?.wod;
-  return !editedSession && canUseCommonWod() && date === today() && wod?.wod_date === date ? wod : null;
+  const wod = currentCommonWod();
+  return !editedSession && wod?.wod_date === date ? wod : null;
 }
 // WOD du jour choisi dans la liste, avec sa copie personnelle ou son aperçu avant participation.
 function selectedDailyWod() {

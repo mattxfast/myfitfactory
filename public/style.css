@@ -2108,12 +2108,12 @@ button:disabled {
   min-width: var(--list-button-size);
   padding: 0;
 }
-/* Fenêtre « Nouveau WOD » : trois choix (IA, WOD de référence, saisie manuelle) en blocs gris. */
+/* Fenêtre « Choisir un WOD » : options en blocs gris. */
 .newwod-options {
   display: grid;
   gap: 12px;
 }
-.newwod-option {
+.newwod-option:not([hidden]) {
   display: grid;
   gap: 4px;
   padding: 14px;
