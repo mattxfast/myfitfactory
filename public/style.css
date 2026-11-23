@@ -3750,8 +3750,41 @@ button:disabled {
 }
 #view-sessions .week-empty {
   display: grid;
-  justify-items: center;
+  padding: clamp(14px, 3vw, 24px);
   gap: var(--section-content-gap);
+  background: linear-gradient(135deg, var(--accent-soft), var(--surface) 72%);
+}
+.week-empty-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr));
+  gap: var(--content-item-gap);
+}
+.week-empty-actions > button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--list-row-height);
+  padding: 8px 10px;
+  text-align: left;
+  line-height: 1.25;
+}
+.week-empty-actions > button > span {
+  font-size: 18px;
+}
+.week-empty > p {
+  margin: 0;
+  font-size: 12px;
+}
+.week-box-preview {
+  margin-top: var(--section-content-gap);
+  padding: 12px;
+}
+.week-box-preview > summary {
+  font-weight: 700;
+  cursor: pointer;
+}
+.week-box-preview[open] > summary {
+  margin-bottom: var(--section-content-gap);
 }
 #view-sessions .session-fold {
   margin: 0 0 var(--section-content-gap);

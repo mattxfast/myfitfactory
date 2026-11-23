@@ -409,6 +409,23 @@ function openFollowDialog(program, current = null) {
   $("#followerror").textContent = "";
   $("#followdialog").showModal();
 }
+async function showSavedProgram(message, isNew) {
+  if (isNew && simpleInterface()) {
+    try {
+      await api("/preferences", {method: "PUT", body: JSON.stringify({interface: "advanced"})});
+      preferences.interface = "advanced";
+      $("#interfaceselect").value = "advanced";
+      applyInterface();
+    } catch {
+      await load();
+      toast(message + " L’interface avancée n’a pas pu être activée.");
+      return;
+    }
+  }
+  await load();
+  switchView("programs");
+  toast(message);
+}
 $("#followform").onsubmit = async e => {
   e.preventDefault();
   const f = e.target.elements,
@@ -424,19 +441,18 @@ $("#followform").onsubmit = async e => {
       body: JSON.stringify({program_id: f.program_id.value, start, end}),
     });
     $("#followdialog").close();
-    await load();
-    switchView("programs");
-    toast(editing ? "Dates du programme modifiées." : "Programme suivi.");
+    await showSavedProgram(editing ? "Dates du programme modifiées." : "Programme suivi.", !editing);
   } catch (x) {
     $("#followerror").textContent = x.message;
   }
 };
-$("#findprogram").onclick = () => {
+function openProgramSearch() {
   $("#programsearchform").reset();
   $("#programsearchresults").innerHTML = "";
   $("#programsearchdialog").showModal();
   searchPrograms();
-};
+}
+$("#findprogram").onclick = openProgramSearch;
 $("#programsearchform").onsubmit = e => {
   e.preventDefault();
   searchPrograms();
@@ -599,9 +615,7 @@ $("#programform").onsubmit = async e => {
     if (!id && saved?.id) programFolds().delete(saved.id);
     $("#programdialog").close();
     e.target.reset();
-    await load();
-    switchView("programs");
-    toast(id ? "Programme modifié." : "Programme créé.");
+    await showSavedProgram(id ? "Programme modifié." : "Programme créé.", !id);
   } catch (x) {
     $("#programerror").textContent = x.message;
   }
