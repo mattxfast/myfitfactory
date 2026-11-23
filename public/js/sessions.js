@@ -106,7 +106,7 @@ document.querySelectorAll(".navtab[data-view]").forEach(b => (b.onclick = () => 
 // Origine du WOD d’une séance, affichée dans l’historique : nom de la box, WOD du jour, programmation, ou séance libre
 // (« Autres »).
 function sessionSource(s) {
-  if (s.common_wod_id) return "WOD commun";
+  if (s.common_wod_id) return "WOD aléatoire";
   if (s.box_wod_id) return s.box_name || "WOD de la box";
   if (s.wod_name === "Autres" && !s.daily_wod_id) return "Séance libre";
   return "Mes WOD"; // WOD de la programmation ou WOD généré (rubrique « Mes WOD »)
@@ -152,7 +152,7 @@ function renderSessions() {
         })
     );
 }
-// Accès aux scores depuis l’historique (coupe en bout de ligne) : classement d’un WOD de box ou du WOD commun,
+// Accès aux scores depuis l’historique (coupe en bout de ligne) : classement d’un WOD de box ou du WOD aléatoire,
 // suivi d’un WOD de référence (page PR), historique des scores d’un WOD de programme.
 function sessionScoresKind(s) {
   if (s.box_wod_id) return s.score_type && s.score_type !== "none" ? "box" : null;
@@ -385,7 +385,7 @@ function renderWeek() {
   }
   $("#weekafter").innerHTML = simple ? weekMovementsSection(week, [], folded) : "";
   // Séances où l’on est tagué : rubrique en tête de page et pastille rouge sur l’onglet Séances.
-  // WOD commun du jour : juste après la carte « Nombre de séances ».
+  // WOD aléatoire du jour : juste après la carte « Nombre de séances ».
   $("#weekboard .weekbar").insertAdjacentHTML("afterend", weekInvitesSection());
   ($("#weekboard .weekstats") || $("#weekboard .weekbar")).insertAdjacentHTML("afterend", weekCommonSection(from));
   bindCommonWod($("#weekboard"));

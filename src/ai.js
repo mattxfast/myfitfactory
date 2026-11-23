@@ -621,7 +621,7 @@ export async function callOpenAICommon(env, prompt) {
     name: "wod_commun",
     schema: COMMON_WOD_SCHEMA,
     check: wod => Array.isArray(wod?.blocs) && wod.blocs.length > 0 && COMMON_SCORE_TYPES.includes(wod.score_type),
-    refusal: "L'IA a refusé de générer le WOD commun.",
+    refusal: "L'IA a refusé de générer le WOD aléatoire.",
   });
   return out.error ? out : {wod: out.result, model: out.model};
 }

@@ -39,7 +39,7 @@ async function loadAdmin() {
 const AI_FEATURE_NAMES = {
   wod: "WOD (programme)",
   wod_du_jour: "WOD du jour",
-  wod_commun: "WOD commun",
+  wod_commun: "WOD aléatoire",
   repas: "Repas",
   bilan_mensuel: "Bilan mensuel",
 };

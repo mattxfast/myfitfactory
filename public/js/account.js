@@ -95,7 +95,7 @@ function applyInterface() {
   $('.navtab[data-view="programs"]').hidden = hidden;
   if (hidden && !$("#view-programs").hidden) switchView("sessions");
 }
-// WOD commun du jour : option du compte, désactivée par défaut (rubrique Séances et notification).
+// WOD aléatoire du jour : option du compte, désactivée par défaut (rubrique Séances et notification).
 $("#commonwodoptin").onchange = async e => {
   const on = e.target.checked;
   try {
@@ -104,7 +104,7 @@ $("#commonwodoptin").onchange = async e => {
     commonWod = null;
     await loadCommonWod();
     renderWeek();
-    toast(on ? "WOD commun du jour activé." : "WOD commun du jour désactivé.");
+    toast(on ? "WOD aléatoire du jour activé." : "WOD aléatoire du jour désactivé.");
   } catch (x) {
     e.target.checked = !on;
     toast(x.offline ? OFFLINE_MESSAGE : x.message);

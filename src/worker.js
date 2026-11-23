@@ -606,8 +606,8 @@ async function ensureV2Schema(env) {
       }
     });
     await runMigration("v40-common-wods", async () => {
-      // WOD commun du jour (un seul par jour pour toute l'application), notifications envoyées, réglage de la
-      // notification, et lien entre le WOD du jour d'un membre (« Je le fais ») et le WOD commun.
+      // WOD aléatoire du jour (un seul par jour pour toute l'application), notifications envoyées, réglage de la
+      // notification, et lien entre le WOD du jour d'un membre (« Je le fais ») et le WOD aléatoire.
       await env.DB.batch(
         [
           "CREATE TABLE IF NOT EXISTS common_wods (id TEXT PRIMARY KEY, wod_date TEXT NOT NULL UNIQUE, status TEXT NOT NULL DEFAULT 'pending', title TEXT, content TEXT, blocks TEXT, score_type TEXT, movement_ids TEXT NOT NULL DEFAULT '[]', model TEXT, attempt_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
@@ -628,7 +628,7 @@ async function ensureV2Schema(env) {
     });
     await runMigration("v41-ai-usage", async () => {
       // Suivi des tokens OpenAI (espace admin) : un enregistrement par appel, toutes fonctionnalités confondues (le
-      // WOD commun n'a pas d'utilisateur) ; gardé si le compte est supprimé, pour le total du mois.
+      // WOD aléatoire n'a pas d'utilisateur) ; gardé si le compte est supprimé, pour le total du mois.
       await env.DB.batch(
         [
           "CREATE TABLE IF NOT EXISTS ai_usage (id TEXT PRIMARY KEY, user_id TEXT REFERENCES users(id) ON DELETE SET NULL, feature TEXT NOT NULL, model TEXT NOT NULL, usage_date TEXT NOT NULL, input_tokens INTEGER NOT NULL DEFAULT 0, cached_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0, reasoning_tokens INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
@@ -637,7 +637,7 @@ async function ensureV2Schema(env) {
       );
     });
     await runMigration("v42-common-wod-optin", async () => {
-      // WOD commun du jour : option à activer dans Mon compte (désactivée par défaut, y compris pour les comptes
+      // WOD aléatoire du jour : option à activer dans Mon compte (désactivée par défaut, y compris pour les comptes
       // existants) ; elle commande la rubrique de la page Séances et la notification. common_wod_push n'est plus lu.
       const columns = await env.DB.prepare("PRAGMA table_info(users)").all();
       if (!columns.results.some(column => column.name === "common_wod_enabled"))
@@ -1037,7 +1037,7 @@ async function monthlyReport(e, userId, month) {
     comment: saved?.comment || "",
   };
 }
-// WOD commun du jour : une seule génération par jour pour toute l'application, à partir de 5 h (heure de Paris), par
+// WOD aléatoire du jour : une seule génération par jour pour toute l'application, à partir de 5 h (heure de Paris), par
 // la tâche planifiée (ou par l'administrateur). La ligne est réservée (« pending ») avant l'appel à l'IA ; nouvel
 // essai 15 minutes après un échec.
 async function ensureCommonWod(e, date, force = false) {
@@ -1081,7 +1081,7 @@ async function ensureCommonWod(e, date, force = false) {
       String(out.wod.titre || "")
         .replace(/\s+/g, " ")
         .trim()
-        .slice(0, 120) || "WOD commun",
+        .slice(0, 120) || "WOD aléatoire",
     values = [
       title,
       (title + "\n\n" + wodToText(out.wod, 2000, false)).slice(0, 4000),
@@ -1107,7 +1107,7 @@ const commonWodOut = x =>
     score_type: x.score_type || null,
   };
 // Tâche planifiée (chaque minute) : génération à partir de 5 h, puis notification à partir de 6 h aux membres qui ont
-// activé le WOD commun dans Mon compte et les notifications, 5 par passage (plan gratuit), une fois par jour.
+// activé le WOD aléatoire dans Mon compte et les notifications, 5 par passage (plan gratuit), une fois par jour.
 async function sendCommonWod(e) {
   const hour = e.TEST_PARIS_HOUR ? Number(e.TEST_PARIS_HOUR) : parisHour(),
     today = e.TEST_PARIS_DATE || localToday();
@@ -1134,7 +1134,7 @@ async function sendCommonWod(e) {
     sent += (
       await pushToUser(e, userId, {
         title: "myFitFactory",
-        body: `WOD commun du jour : « ${ready.wod.title} ». Tu le fais avec les autres ?`,
+        body: `WOD aléatoire du jour : « ${ready.wod.title} ». Tu le fais avec les autres ?`,
         tag: "common-wod",
         url: "/",
       })
@@ -2280,7 +2280,7 @@ async function api(r, e, p, ctx = null) {
           .run();
       return json({ok: true});
     }
-    // WOD commun du jour généré tout de suite (sans attendre la tâche planifiée), ou regénéré avec regenerate.
+    // WOD aléatoire du jour généré tout de suite (sans attendre la tâche planifiée), ou regénéré avec regenerate.
     if (r.method === "POST" && p === "/api/admin/common-wod") {
       const b = await r.json().catch(() => ({})),
         date = localToday();
@@ -3916,7 +3916,7 @@ async function api(r, e, p, ctx = null) {
   // WOD de référence (benchmarks) : liste (gardée sur le téléphone pour le tirage hors ligne), WOD du jour tiré de
   // la liste (sans IA), résultats suivis dans la page PR.
   if (p === "/api/benchmarks" && r.method === "GET") return json({benchmarks: BENCHMARKS.map(benchmarkOut)});
-  // WOD commun du jour : le WOD (s'il est prêt), mon WOD du jour qui le reprend (« Je le fais ») et le nombre de
+  // WOD aléatoire du jour : le WOD (s'il est prêt), mon WOD du jour qui le reprend (« Je le fais ») et le nombre de
   // participants (séances enregistrées).
   if (p === "/api/common-wod" && r.method === "GET") {
     // Option désactivée (par défaut) : ni rubrique, ni notification.
@@ -3936,13 +3936,13 @@ async function api(r, e, p, ctx = null) {
     ]);
     return json({wod: commonWodOut(wod), joined_id: mine?.id || null, participants: count?.n || 0});
   }
-  // « Je le fais » : copie du WOD commun dans mes WOD du jour (une seule fois), pour enregistrer ma séance et mon score.
+  // « Je le fais » : copie du WOD aléatoire dans mes WOD du jour (une seule fois), pour enregistrer ma séance et mon score.
   m = p.match(/^\/api\/common-wod\/([\w-]+)\/join$/);
   if (m && r.method === "POST") {
     const wod = await e.DB.prepare("SELECT * FROM common_wods WHERE id=? AND status='ready'").bind(m[1]).first();
-    if (!wod) return json({error: "WOD commun introuvable."}, 404);
+    if (!wod) return json({error: "WOD aléatoire introuvable."}, 404);
     if (wod.wod_date < addDays(localToday(), -1))
-      return json({error: "Ce WOD commun est passé : il ne peut plus être ajouté."}, 400);
+      return json({error: "Ce WOD aléatoire est passé : il ne peut plus être ajouté."}, 400);
     await e.DB.prepare(
       "INSERT OR IGNORE INTO daily_wods(id,user_id,wod_date,title,content,chrono,movement_ids,options,score_type,blocks,common_wod_id) VALUES(?,?,?,?,?,NULL,?,'{}',?,?,?)"
     )
@@ -3953,11 +3953,11 @@ async function api(r, e, p, ctx = null) {
       .first();
     return json({ok: true, wod: dailyWodOut(row)});
   }
-  // Classement du WOD commun : meilleur score de chaque participant, prénom et initiale du nom seulement.
+  // Classement du WOD aléatoire : meilleur score de chaque participant, prénom et initiale du nom seulement.
   m = p.match(/^\/api\/common-wod\/([\w-]+)\/leaderboard$/);
   if (m && r.method === "GET") {
     const wod = await e.DB.prepare("SELECT * FROM common_wods WHERE id=? AND status='ready'").bind(m[1]).first();
-    if (!wod) return json({error: "WOD commun introuvable."}, 404);
+    if (!wod) return json({error: "WOD aléatoire introuvable."}, 404);
     const rows = (
       await e.DB.prepare(
         "SELECT s.user_id,s.score_value,u.first_name,u.last_name FROM training_sessions s JOIN daily_wods d ON d.id=s.daily_wod_id AND d.user_id=s.user_id JOIN users u ON u.id=s.user_id WHERE d.common_wod_id=? AND s.score_value IS NOT NULL"
