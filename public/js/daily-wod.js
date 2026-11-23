@@ -231,7 +231,12 @@ async function generateDailyWod(f, request) {
 }
 
 // ----- WOD aléatoire du jour : le même WOD pour tous (généré chaque nuit), « Je le fais », classement -----
-const canUseCommonWod = () => !simpleInterface() && !!preferences?.common_wod;
+const canUseCommonWod = () => !!preferences?.common_wod;
+function commonWodTitle(wod) {
+  return wod.title
+    .replace(/^WOD commun(?: du)?\b/i, "WOD du")
+    .replace(/^WOD du(?=\s*(?:[:–—-]|$))/, "WOD du " + fmt(wod.wod_date));
+}
 // Chargé à part (la page s’affiche sans l’attendre) ; dernière copie gardée sur le téléphone, comme les autres lectures.
 let commonWodRequest = 0;
 async function loadCommonWod() {
@@ -239,12 +244,13 @@ async function loadCommonWod() {
     data = await api("/common-wod").catch(() => null);
   if (request !== commonWodRequest) return;
   commonWod = data;
+  refreshSessionCommonWod();
   if ($("#view-sessions").hidden || selectedWeekStart !== loadedSessionWeek || !$("#weekboard .weekbar")) return;
   const visible = canUseCommonWod() && selectedWeekStart === mondayOf(today()) && !!commonWod?.wod;
   if (visible !== !!$("#weekboard .common-wod")) renderWeek();
 }
 const COMMON_SCORE_HINT = {time: "Pour le temps", reps: "Aux répétitions", load: "À la charge"};
-// Carte en tête de la page Séances, sur la semaine en cours, pour les abonnés en interface avancée.
+// Carte en tête de la page Séances, sur la semaine en cours, pour les abonnés.
 function weekCommonSection(from) {
   const w = commonWod?.wod;
   if (!canUseCommonWod() || !w || today() < from || today() > addDays(from, 6)) return "";
@@ -257,7 +263,7 @@ function weekCommonSection(from) {
         ? ""
         : `<button type="button" class="smallbtn" data-common-log aria-label="Enregistrer la séance" title="Enregistrer la séance"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button>`
       : `<button type="button" class="smallbtn" data-common-join aria-label="Je le fais" title="Je le fais"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button>`
-  }${w.score_type ? `<button type="button" class="smallbtn" data-common-board aria-label="Classement" title="Classement">${TROPHY_ICON}</button>` : ""}</div><div class="weekwod-text" role="button" tabindex="0" data-common-open aria-label="Voir le WOD du jour"><b>${esc(w.title)}</b>${scoreHint ? `<p>${esc(scoreHint)}</p>` : ""}</div></article></div></div></section>`;
+  }${w.score_type ? `<button type="button" class="smallbtn" data-common-board aria-label="Classement" title="Classement">${TROPHY_ICON}</button>` : ""}</div><div class="weekwod-text" role="button" tabindex="0" data-common-open aria-label="Voir le WOD du jour"><b>${esc(commonWodTitle(w))}</b>${scoreHint ? `<p>${esc(scoreHint)}</p>` : ""}</div></article></div></div></section>`;
 }
 function bindCommonWod(root) {
   root.querySelectorAll("[data-common-open]").forEach(t => {
@@ -279,7 +285,11 @@ function openCommonWodDetail() {
   const joined = commonWod.joined_id ? dailyWodsById.get(commonWod.joined_id) : null,
     done = joined && dailyWodDone(joined);
   $("#dailydetailtitle").textContent = "Le WOD du jour";
-  $("#dailydetailmeta").textContent = [w.title, COMMON_SCORE_HINT[w.score_type], done ? "séance enregistrée" : ""]
+  $("#dailydetailmeta").textContent = [
+    commonWodTitle(w),
+    COMMON_SCORE_HINT[w.score_type],
+    done ? "séance enregistrée" : "",
+  ]
     .filter(Boolean)
     .join(" · ");
   fillWodBody($("#dailydetailbody"), w.blocks, dailyBody(w));
@@ -302,12 +312,16 @@ function openCommonWodDetail() {
     });
   $("#dailydetaildialog").showModal();
 }
-// « Je le fais » : le WOD rejoint mes WOD du jour (rubrique Mes WOD), prêt pour enregistrer la séance et le score.
+// La copie personnelle est créée une seule fois, depuis la carte ou à l’enregistrement de la séance.
+async function attachCommonWod(id) {
+  const {wod} = await sendApi("/common-wod/" + id + "/join", "POST", {});
+  rememberDailyWods([wod]);
+  if (commonWod?.wod?.id === id) commonWod.joined_id = wod.id;
+  return wod;
+}
 async function joinCommonWod() {
   try {
-    const d = await sendApi("/common-wod/" + commonWod.wod.id + "/join", "POST", {});
-    rememberDailyWods([d.wod]);
-    commonWod = {...commonWod, joined_id: d.wod.id};
+    await attachCommonWod(commonWod.wod.id);
     await loadSessions();
     toast("C’est parti ! Enregistre ta séance et ton score une fois le WOD fait.");
   } catch (e) {

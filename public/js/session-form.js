@@ -42,9 +42,19 @@ function selectedBoxWod() {
   const v = $("#sessionform").elements.wod_id.value || "";
   return v.startsWith("box:") ? boxWodsById.get(v.slice(4)) || null : null;
 }
-// WOD du jour choisi dans la liste (valeur « daily:<id> »), sinon null.
+// WOD aléatoire disponible pour une nouvelle séance datée d’aujourd’hui.
+function commonWodForSession(date) {
+  const wod = commonWod?.wod;
+  return !editedSession && canUseCommonWod() && date === today() && wod?.wod_date === date ? wod : null;
+}
+// WOD du jour choisi dans la liste, avec sa copie personnelle ou son aperçu avant participation.
 function selectedDailyWod() {
-  const v = $("#sessionform").elements.wod_id.value || "";
+  const fields = $("#sessionform").elements,
+    v = fields.wod_id.value || "";
+  if (v.startsWith("common:")) {
+    const wod = commonWodForSession(fields.session_date.value);
+    return wod?.id === v.slice(7) ? {...wod, common_wod_id: wod.id} : null;
+  }
   return v.startsWith("daily:") ? dailyWodsById.get(v.slice(6)) || null : null;
 }
 function selectedProgramWod() {
@@ -82,16 +92,26 @@ function fillWodOptions(pid, selected = "") {
       .join("");
   const dailyOptions = dailyList
     .sort((a, b) => a.wod_date.localeCompare(b.wod_date))
-    .map(w => `<option value="daily:${w.id}">${esc(wodDay(w.wod_date) + " · " + w.title)}</option>`)
+    .map(
+      w =>
+        `<option value="daily:${w.id}">${esc(wodDay(w.wod_date) + " · " + (w.common_wod_id ? commonWodTitle(w) : w.title))}</option>`
+    )
     .join("");
   // WOD du jour : à la suite des WOD de la programmation, dans le même groupe « Mes WOD » (comme la rubrique de la
   // page Séances).
-  const planned = programOptions + dailyOptions;
+  const planned = programOptions + dailyOptions,
+    common = commonWodForSession(date),
+    commonOption =
+      common && !sessionFormWeek.dailyWods.some(w => w.common_wod_id === common.id)
+        ? `<optgroup label="WOD du jour"><option value="common:${esc(common.id)}">${esc(commonWodTitle(common))}</option></optgroup>`
+        : "";
   f.innerHTML =
     (boxOptions
       ? (planned ? `<optgroup label="Mes WOD">${planned}</optgroup>` : "") +
         `<optgroup label="WOD de la box">${boxOptions}</optgroup>`
-      : planned) + `<option value="other">Autres</option>`;
+      : planned) +
+    `<option value="other">Autres</option>` +
+    commonOption;
   if (!selected && pid === "none") {
     // Parmi les WOD disponibles, privilégie celui du jour, puis celui de la box à la date de la séance.
     const daily = dailyList.find(w => w.wod_date === date),
@@ -102,6 +122,13 @@ function fillWodOptions(pid, selected = "") {
   if (f.selectedIndex < 0) f.selectedIndex = 0;
   f.disabled = sessionFormWeek.sessions === null;
   syncSessionWod();
+}
+function refreshSessionCommonWod() {
+  if (!$("#sessiondialog").open || $("#savesession").disabled || editedSession || !sessionFormWeek?.sessions) return;
+  const fields = $("#sessionform").elements;
+  if (fields.session_date.value !== today()) return;
+  fillWodOptions(fields.program_id.value, fields.wod_id.value);
+  applyPlannedSessionNote();
 }
 // Mouvements (catalogue pour un WOD de box ou « hors programme ») et score selon le WOD choisi.
 function syncSessionWod(session = null) {
@@ -229,7 +256,8 @@ $("#sessionform").elements.session_date.onchange = e => {
   if (mondayOf(e.target.value || today()) !== sessionFormWeek.week) {
     loadSessionFormWeek(e.target.value, refill);
     refill();
-  } else applyPlannedSessionNote();
+  } else if (!editedSession && canUseCommonWod()) refill();
+  else applyPlannedSessionNote();
 };
 // Score d’un WOD de box : catégorie de la box et valeur selon le type (temps, répétitions, charge).
 // WOD de référence choisi comme WOD du jour : son score (temps ou tours) est suivi dans la page PR.
@@ -586,15 +614,15 @@ function addSessionFromWeek() {
 $("#closesession").onclick = () => $("#sessiondialog").close();
 async function saveSession(event) {
   if (event) event.preventDefault();
-  const form = $("#sessionform");
-  if (form.elements.wod_id.disabled || !form.reportValidity()) return;
+  const form = $("#sessionform"),
+    button = $("#savesession");
+  if (button.disabled || form.elements.wod_id.disabled || !form.reportValidity()) return;
   const f = new FormData(form),
     id = f.get("session_id");
   if (f.get("session_date") > today()) {
     $("#sessionerror").textContent = "Impossible d’enregistrer une séance à une date future.";
     return;
   }
-  const button = $("#savesession");
   button.disabled = true;
   $("#sessionerror").textContent = "";
   const body = {
@@ -612,9 +640,10 @@ async function saveSession(event) {
   };
   const boxWod = selectedBoxWod(),
     dailyWod = selectedDailyWod(),
+    joinFromForm = body.wod_id.startsWith("common:"),
     score = readSessionScore();
-  if (score.error) {
-    $("#sessionerror").textContent = score.error;
+  if (score.error || (joinFromForm && !dailyWod)) {
+    $("#sessionerror").textContent = score.error || "Le WOD du jour n’est plus disponible.";
     button.disabled = false;
     return;
   }
@@ -632,6 +661,7 @@ async function saveSession(event) {
   // WOD de box ou du jour : la séance est rattachée au programme technique « Hors programme ».
   if (boxWod || dailyWod) Object.assign(body, {program_id: "none", wod_id: "other"});
   try {
+    if (joinFromForm) body.daily_wod_id = (await attachCommonWod(dailyWod.id)).id;
     await api(id ? "/sessions/" + id : "/sessions", {method: id ? "PUT" : "POST", body: JSON.stringify(body)});
     if (!boxWod && !dailyWod)
       await api("/weekly-plans", {

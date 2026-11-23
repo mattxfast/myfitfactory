@@ -1159,6 +1159,7 @@ const commonWodOut = x =>
     content: x.content,
     blocks: x.blocks ? JSON.parse(x.blocks) : null,
     score_type: x.score_type || null,
+    movement_ids: JSON.parse(x.movement_ids || "[]"),
   };
 // Tâche planifiée (chaque minute) : génération à partir de 5 h, puis notification à partir de 6 h aux membres qui ont
 // activé le WOD aléatoire dans Mon compte et les notifications, 5 par passage (plan gratuit), une fois par jour.

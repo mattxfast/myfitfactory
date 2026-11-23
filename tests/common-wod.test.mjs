@@ -94,7 +94,9 @@ test("WOD commun : « Je le fais », séance avec score et classement", async ()
   assert.equal(joined.status, 200, JSON.stringify(joined.data));
   assert.equal(joined.data.wod.common_wod_id, wodId);
   assert.equal((await alice.post(`/common-wod/${wodId}/join`)).data.wod.id, joined.data.wod.id, "une seule copie");
-  assert.equal((await alice.get("/common-wod")).data.joined_id, joined.data.wod.id);
+  const current = (await alice.get("/common-wod")).data;
+  assert.equal(current.joined_id, joined.data.wod.id);
+  assert.deepEqual(current.wod.movement_ids, joined.data.wod.movement_ids);
   const bobWod = (await bob.post(`/common-wod/${wodId}/join`)).data.wod;
   const session = (who, dailyId, score) =>
     who.post("/sessions", {
