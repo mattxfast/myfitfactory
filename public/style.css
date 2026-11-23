@@ -2108,7 +2108,7 @@ button:disabled {
   min-width: var(--list-button-size);
   padding: 0;
 }
-/* Fenêtre « Choisir un WOD » : options en blocs gris. */
+/* Fenêtre « Choisir un WOD ». */
 .newwod-options {
   display: grid;
   gap: 12px;
@@ -2135,6 +2135,13 @@ button:disabled {
 .newwod-option small {
   font-size: 13px;
   color: var(--muted);
+}
+.newwod-option[data-newwod="common"]:not([hidden]) {
+  background: var(--accent-soft);
+  border-color: var(--focus-ring-strong);
+}
+.newwod-option[data-newwod="common"] small {
+  color: var(--accent-soft-ink);
 }
 .competition-toggle {
   display: flex;

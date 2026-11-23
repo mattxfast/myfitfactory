@@ -356,7 +356,7 @@ function weekSuggestions(simple, canCreateWod) {
         ? `<button type="button" class="smallbtn" data-week-action="subscribe" ${$("#commonwodoptin").disabled ? "disabled" : ""}><span aria-hidden="true">🎯</span>S’abonner au WOD aléatoire du jour</button>`
         : "";
   return `<section class="card week-empty"><h2>À toi de jouer !</h2><div class="week-empty-actions ${simple ? "" : "week-empty-columns"}">
-    ${canCreateWod ? `<button type="button" class="primary" data-wod-new><span aria-hidden="true">${simple ? "🎲" : "✨"}</span>${simple ? "Créer un WOD" : "Créer ou générer un WOD"}</button>` : ""}
+    ${canCreateWod ? `<button type="button" class="primary" data-wod-new><span aria-hidden="true">${simple ? "🎲" : "✨"}</span>Choisir un WOD</button>` : ""}
     ${subscribe}
     <button type="button" class="smallbtn" data-week-action="program"><span aria-hidden="true">🗓️</span>Créer un programme</button>
     <button type="button" class="smallbtn" data-week-action="search"><span aria-hidden="true">🔎</span>Chercher un programme</button>
@@ -380,14 +380,13 @@ function renderWeek() {
     week = sessions.filter(x => x.session_date >= from && x.session_date <= to),
     folded = window.cfSessionFolded || (window.cfSessionFolded = new Set());
   const invitations = weekInvitesSection(),
-    common = weekCommonSection(from),
     personal = persoDailyWods().length,
     programMovements = simple ? [] : movementsByProgram[p?.id] || [],
     canCreateWod = dailyCanGenerate(from),
     offerWod =
       !simple &&
       canCreateWod &&
-      !(week.length || personal || common || programMovements.length || invitations || ws.length || boxWods.length);
+      !(week.length || personal || programMovements.length || invitations || ws.length || boxWods.length);
   const nav = `<div class="weeknav"><button class="smallbtn" id="prevweek" aria-label="Semaine précédente" title="Semaine précédente">‹</button><div class="weekdate-label"><button type="button" class="week-current" id="thisweek" title="Revenir à la semaine en cours">Semaine du</button><input id="weekdate" type="date" value="${dateInput}" max="${now}" aria-label="Semaine du"></div><button class="smallbtn" id="nextweek" aria-label="Semaine suivante" title="Semaine suivante">›</button></div>`;
   const personalStats =
     !simple && (ws.length || personal)
@@ -403,11 +402,9 @@ function renderWeek() {
     ? pendingWods &&
       `<section class="session-fold"><div class="weekheading"><h2>WOD à faire</h2></div><div class="weekwodlist">${pendingWods}</div></section>`
     : weekProgramSection(p, ws, week, folded) + weekBoxSection(week, folded, offerWod);
-  $("#weekboard").innerHTML =
-    `<div class="weekbar card">${nav}</div>${invitations}${stats}${common}${emptyState}${wodSections}`;
+  $("#weekboard").innerHTML = `<div class="weekbar card">${nav}</div>${invitations}${stats}${emptyState}${wodSections}`;
   $("#weekafter").innerHTML =
     simple && !week.length ? weekSuggestions(true, canCreateWod) : weekMovementsSection(week, programMovements, folded);
-  bindCommonWod($("#weekboard"));
   $('.navtab[data-view="sessions"]').classList.toggle("has-alert", pendingTags.length > 0);
   bindInvites();
   $("#view-sessions")

@@ -130,7 +130,7 @@ async function setCommonWodOptIn(on) {
       result.queued
         ? "Préférence enregistrée hors ligne, en attente de synchronisation."
         : on
-          ? "WOD aléatoire du jour activé."
+          ? "Abonnement activé. Retrouve ton WOD du jour dans « Choisir un WOD »."
           : "WOD aléatoire du jour désactivé."
     );
   } catch (x) {

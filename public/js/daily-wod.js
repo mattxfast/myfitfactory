@@ -35,7 +35,7 @@ function dailyDefaultDate() {
 
 // WOD personnels de la semaine : en fin de « Mes WOD » en mode avancé et dans « WOD à faire » en mode simplifié.
 // Un toucher sur la ligne ouvre le détail.
-// Le WOD aléatoire du jour repris par « Je le fais » reste dans sa propre rubrique (pas en double dans Mes WOD).
+// La copie créée par « Je le fais » est accessible depuis le détail du WOD du jour et le formulaire de séance.
 const persoDailyWods = () => dailyWods.filter(w => !w.common_wod_id);
 function dailyWodCards(wods = persoDailyWods()) {
   return wods
@@ -261,44 +261,15 @@ async function loadCommonWod() {
   commonWod = data;
   if ($("#newwoddialog").open) updateCommonWodChoice();
   refreshSessionCommonWod();
-  if ($("#view-sessions").hidden || selectedWeekStart !== loadedSessionWeek || !$("#weekboard .weekbar")) return;
-  const visible = selectedWeekStart === mondayOf(today()) && !!currentCommonWod();
-  if (visible !== !!$("#weekboard .common-wod")) renderWeek();
 }
 const COMMON_SCORE_HINT = {time: "Pour le temps", reps: "Aux répétitions", load: "À la charge"};
-// Carte en tête de la page Séances, sur la semaine en cours, pour les abonnés.
-function weekCommonSection(from) {
-  const w = currentCommonWod();
-  if (!w || mondayOf(w.wod_date) !== from) return "";
-  const joined = commonWod.joined_id ? dailyWodsById.get(commonWod.joined_id) : null,
-    done = joined && dailyWodDone(joined),
-    scoreHint = COMMON_SCORE_HINT[w.score_type];
-  return `<section class="session-fold common-wod"><div class="weekheading"><h2>Le WOD du jour</h2></div><div class="session-fold-body"><div class="weekwodlist"><article class="weekwod card ${done ? "done" : ""}"><div class="weekcount">${
-    commonWod.joined_id
-      ? done
-        ? ""
-        : `<button type="button" class="smallbtn" data-common-log aria-label="Enregistrer la séance" title="Enregistrer la séance"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button>`
-      : `<button type="button" class="smallbtn" data-common-join aria-label="Je le fais" title="Je le fais"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button>`
-  }${w.score_type ? `<button type="button" class="smallbtn" data-common-board aria-label="Classement" title="Classement">${TROPHY_ICON}</button>` : ""}</div><div class="weekwod-text" role="button" tabindex="0" data-common-open aria-label="Voir le WOD du jour"><b>${esc(commonWodTitle(w))}</b>${scoreHint ? `<p>${esc(scoreHint)}</p>` : ""}</div></article></div></div></section>`;
-}
-function bindCommonWod(root) {
-  root.querySelectorAll("[data-common-open]").forEach(t => {
-    t.onclick = e => (blurAfterTap(t, e), openCommonWodDetail());
-    t.onkeydown = e => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        t.click();
-      }
-    };
-  });
-  root.querySelectorAll("[data-common-join]").forEach(b => (b.onclick = () => joinCommonWod()));
-  root.querySelectorAll("[data-common-log]").forEach(b => (b.onclick = () => logCommonWod()));
-  root.querySelectorAll("[data-common-board]").forEach(b => (b.onclick = () => openCommonLeaderboard()));
-}
 function openCommonWodDetail() {
   const w = currentCommonWod();
   if (!w) return;
-  const joined = commonWod.joined_id ? dailyWodsById.get(commonWod.joined_id) : null,
+  const dialog = $("#dailydetaildialog"),
+    actions = $("#dailydetailactions"),
+    joinedId = commonWod.joined_id,
+    joined = dailyWodsById.get(joinedId),
     done = joined && dailyWodDone(joined);
   $("#dailydetailtitle").textContent = "Le WOD du jour";
   $("#dailydetailmeta").textContent = [
@@ -309,49 +280,54 @@ function openCommonWodDetail() {
     .filter(Boolean)
     .join(" · ");
   fillWodBody($("#dailydetailbody"), w.blocks, dailyBody(w));
-  $("#dailydetailactions").innerHTML =
-    (commonWod.joined_id
+  actions.innerHTML =
+    (joinedId
       ? done
         ? ""
         : `<button type="button" class="primary" data-common-log><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg><span>Enregistrer la séance</span></button>`
       : `<button type="button" class="primary" data-common-join>Je le fais</button>`) +
     (w.score_type ? `<button type="button" class="smallbtn" data-common-board>Classement</button>` : "");
-  bindCommonWod($("#dailydetailactions"));
-  $("#dailydetailactions")
-    .querySelectorAll("button")
-    .forEach(b => {
-      const run = b.onclick;
-      b.onclick = () => {
-        $("#dailydetaildialog").close();
-        run?.();
-      };
-    });
-  $("#dailydetaildialog").showModal();
+  const join = actions.querySelector("[data-common-join]"),
+    log = actions.querySelector("[data-common-log]"),
+    board = actions.querySelector("[data-common-board]");
+  if (join) join.onclick = () => joinCommonWod(join);
+  if (log)
+    log.onclick = () => {
+      dialog.close();
+      openSession(null, "daily:" + joinedId);
+    };
+  if (board)
+    board.onclick = () => {
+      dialog.close();
+      openCommonLeaderboard(w.id);
+    };
+  if (!dialog.open) dialog.showModal();
 }
-// La copie personnelle est créée une seule fois, depuis la carte ou à l’enregistrement de la séance.
+// La copie personnelle est créée une seule fois, depuis le détail ou à l’enregistrement de la séance.
 async function attachCommonWod(id) {
   const {wod} = await sendApi("/common-wod/" + id + "/join", "POST", {});
   rememberDailyWods([wod]);
   if (commonWod?.wod?.id === id) commonWod.joined_id = wod.id;
   return wod;
 }
-async function joinCommonWod() {
+async function joinCommonWod(button) {
   const wod = currentCommonWod();
   if (!wod) return;
+  button.disabled = true;
   try {
     await attachCommonWod(wod.id);
     selectedWeekStart = mondayOf(wod.wod_date);
     await loadSessions();
+    if (button.closest("dialog")?.open) openCommonWodDetail();
     toast("C’est parti ! Enregistre ta séance et ton score une fois le WOD fait.");
   } catch (e) {
     toast(e.offline ? OFFLINE_MESSAGE : e.message);
+  } finally {
+    button.disabled = false;
   }
 }
-function logCommonWod() {
-  if (commonWod?.joined_id) openSession(null, "daily:" + commonWod.joined_id);
-}
 // Classement d’un WOD aléatoire (celui du jour, ou un plus ancien depuis l’historique des séances).
-async function openCommonLeaderboard(id = commonWod?.wod?.id) {
+async function openCommonLeaderboard(id) {
   if (!id) return;
   const known = commonWod?.wod?.id === id ? commonWod.wod : null,
     meta = w => ["WOD aléatoire du " + fmt(w.wod_date), COMMON_SCORE_HINT[w.score_type]].filter(Boolean).join(" · ");
