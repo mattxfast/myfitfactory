@@ -18,6 +18,9 @@ async function load() {
       api("/coach-invites"),
     ]);
     loadCommonWod();
+    try {
+      wodTypes = (await api("/wod-types")).types || [];
+    } catch {}
     coachInvites = ci.invites || [];
     sessionTags = w.tags || [];
     sharedPartners = w.sharedPartners || [];
@@ -199,6 +202,7 @@ function openSessionDetail(id) {
   $("#sessiondetailmeta").textContent = [
     fmt(s.session_date),
     sessionSource(s),
+    s.wod_type_name,
     s.program_name && !s.box_name && !s.daily_wod_id ? s.program_name : "",
   ]
     .filter(Boolean)

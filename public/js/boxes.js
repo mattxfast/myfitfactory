@@ -546,23 +546,13 @@ function renderManagedBox() {
       "Box",
       "",
       `<form id="boxinfoform" class="profile-card"><label>Nom de la box<input name="name" maxlength="80" required value="${esc(d.box.name)}"></label><label>Ville<input name="city" maxlength="80" value="${esc(d.box.city || "")}"></label><button class="primary">Enregistrer</button></form>`
-    ) +
-    boxListGroup("wod-types", d.types || []) +
-    boxListGroup("categories", d.categories);
+    ) + boxListGroup("categories", d.categories);
   $("#boxmanager").innerHTML =
     boxPage === "members" ? membersPage() : boxPage === "info" ? infoPage() : boxWodsGroup(d);
   bindManagedBox();
 }
 // Listes paramétrables de la box (types de WOD, catégories de score) : ajout, renommage, ordre (⇅), suppression.
 const BOX_LIST_UI = {
-  "wod-types": {
-    key: "types",
-    title: "Types de WOD",
-    ask: "Nom du nouveau type de WOD :",
-    added: "Type de WOD ajouté.",
-    renamed: "Type de WOD renommé.",
-    deleted: "Type de WOD supprimé.",
-  },
   categories: {
     key: "categories",
     title: "Catégories",
@@ -581,7 +571,7 @@ function boxListGroup(kind, items) {
     items
       .map(
         (c, i) =>
-          `<div class="admin-row"><span>${esc(c.name)}${kind === "wod-types" && i === 0 ? ` <span class="tracked-tag">Par défaut</span>` : ""}</span><span class="admin-row-actions">${reorder ? `<button class="smallbtn admin-reorder" data-list-move="${kind}" data-id="${c.id}" data-direction="-1" aria-label="Monter" title="Monter" ${i === 0 ? "disabled" : ""}>${BOX_ICONS.up}</button><button class="smallbtn admin-reorder" data-list-move="${kind}" data-id="${c.id}" data-direction="1" aria-label="Descendre" title="Descendre" ${i === items.length - 1 ? "disabled" : ""}>${BOX_ICONS.down}</button>` : ""}<button class="smallbtn" data-list-edit="${kind}" data-id="${c.id}" aria-label="Renommer" title="Renommer">${BOX_ICONS.edit}</button><button class="smallbtn delete" data-list-del="${kind}" data-id="${c.id}" aria-label="Supprimer" title="Supprimer">${BOX_ICONS.del}</button></span></div>`
+          `<div class="admin-row"><span>${esc(c.name)}</span><span class="admin-row-actions">${reorder ? `<button class="smallbtn admin-reorder" data-list-move="${kind}" data-id="${c.id}" data-direction="-1" aria-label="Monter" title="Monter" ${i === 0 ? "disabled" : ""}>${BOX_ICONS.up}</button><button class="smallbtn admin-reorder" data-list-move="${kind}" data-id="${c.id}" data-direction="1" aria-label="Descendre" title="Descendre" ${i === items.length - 1 ? "disabled" : ""}>${BOX_ICONS.down}</button>` : ""}<button class="smallbtn" data-list-edit="${kind}" data-id="${c.id}" aria-label="Renommer" title="Renommer">${BOX_ICONS.edit}</button><button class="smallbtn delete" data-list-del="${kind}" data-id="${c.id}" aria-label="Supprimer" title="Supprimer">${BOX_ICONS.del}</button></span></div>`
       )
       .join("") || boxEmpty("Pas d’élément dans cette liste")
   );

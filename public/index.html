@@ -362,12 +362,19 @@
           </section>
           <section class="admin-group" data-admin-group data-admin-page="settings">
             <div class="admin-group-title" role="button" tabindex="0" aria-expanded="true">
-              <span class="admin-collapse-indicator">−</span><span>Activités</span
-              ><button type="button" class="admin-add" data-admin-add="activityform" aria-label="Ajouter une activité">
+              <span class="admin-collapse-indicator">−</span><span>Sports</span
+              ><button type="button" class="admin-add" data-admin-add="activityform" aria-label="Ajouter un sport">
                 ＋
               </button>
             </div>
             <div class="admin-group-body"><div id="activitylist" class="admin-data-list"></div></div>
+          </section>
+          <section class="admin-group" data-admin-group data-admin-page="settings">
+            <div class="admin-group-title" role="button" tabindex="0" aria-expanded="true">
+              <span class="admin-collapse-indicator">−</span><span>Types de WOD</span
+              ><button type="button" class="admin-add" id="addwodtype" aria-label="Ajouter un type de WOD">＋</button>
+            </div>
+            <div class="admin-group-body"><div id="wodtypelist" class="admin-data-list"></div></div>
           </section>
           <section class="admin-group" data-admin-group data-admin-page="users">
             <div class="admin-group-title" role="button" tabindex="0" aria-expanded="true">
@@ -463,13 +470,13 @@
         <dialog id="activitydialog" class="modal">
           <form id="activityform">
             <div class="sectionhead">
-              <h2 id="activitydialogtitle">Ajouter une activité</h2>
+              <h2 id="activitydialogtitle">Ajouter un sport</h2>
               <button type="button" class="iconbtn" data-close-dialog="activitydialog">×</button>
             </div>
             <input type="hidden" name="id" /><label>Nom<input name="name" maxlength="80" required /></label
             ><label
               >Durée par défaut (min)<input name="duration_minutes" type="number" min="1" max="600" required /></label
-            ><label class="admin-default"><input type="checkbox" name="is_default" /> Activité par défaut</label
+            ><label class="admin-default"><input type="checkbox" name="is_default" /> Sport par défaut</label
             ><button class="primary">Enregistrer</button>
           </form>
         </dialog>
@@ -774,6 +781,7 @@
           <section class="form-block">
             <h3>WOD</h3>
             <label>Nom du WOD<input name="name" placeholder="WOD 1 — Force" required maxlength="100" /></label
+            ><label>Type de WOD<select name="type_id"></select></label
             ><label
               >Thématique / Structure<textarea
                 name="planned_comment"
@@ -812,7 +820,7 @@
           </section>
           <!-- Activité et durée masquées pour l’instant : renseignées par défaut (activité par défaut, sa durée). -->
           <div class="two" hidden>
-            <label>Activité<select name="activity_id" required></select></label
+            <label>Sport<select name="activity_id" required></select></label
             ><label
               >Durée par défaut (min)<input name="duration_minutes" type="number" min="1" max="600" required
             /></label>
@@ -1019,9 +1027,10 @@
           <section class="form-block">
             <h3>WOD effectué</h3>
             <label>WOD<select name="wod_id" required></select></label>
+            <label>Type de WOD<select name="type_id"></select></label>
             <label class="inline-field">Date<input name="session_date" type="date" required /></label>
             <div class="session-time-row">
-              <label hidden>Activité<select name="activity_id"></select></label
+              <label hidden>Sport<select name="activity_id"></select></label
               ><label hidden>Heure<input name="start_time" type="time" required /></label
               ><label hidden
                 >Durée (min)<input name="duration_minutes" type="number" min="1" max="600" required

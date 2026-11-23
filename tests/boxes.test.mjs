@@ -450,11 +450,16 @@ test("tâches à valider : adhésions pour le gestionnaire, demandes de gestionn
   assert.equal((await alice.get("/boxes")).data.pending.members, before);
 });
 
-test("types de WOD : liste par box pré-remplie, WOD par défaut, paramétrable par le gestionnaire", async () => {
-  let types = (await alice.get(`/manage/boxes/${boxId}`)).data.types;
+test("types de WOD : liste commune gérée par l'administrateur, choisie par le gestionnaire", async () => {
+  let types = (await alice.get("/wod-types")).data.types;
   assert.deepEqual(
     types.map(t => t.name),
     ["WOD", "Haltéro", "Gym", "FBB", "Hyrox", "Endurance"]
+  );
+  assert.deepEqual(
+    (await alice.get(`/manage/boxes/${boxId}`)).data.types.map(t => t.name),
+    types.map(t => t.name),
+    "le gestionnaire choisit dans la liste commune"
   );
   const day = today(),
     halt = types.find(t => t.name === "Haltéro").id;
@@ -471,25 +476,25 @@ test("types de WOD : liste par box pré-remplie, WOD par défaut, paramétrable 
     (await bob.get(`/box-wods?from=${day}&to=${day}`)).data.wods.find(w => w.id === lift.data.id).type_name,
     "Haltéro"
   );
-  // un type d'une autre box est refusé
   assert.equal(
     (await alice.post(`/manage/boxes/${boxId}/wods`, {wod_date: day, score_type: "none", type_id: "inconnu"})).status,
     400
   );
-  // ajout, renommage, ordre ; suppression refusée si utilisé ; réservé au gestionnaire
-  assert.equal((await bob.post(`/manage/boxes/${boxId}/wod-types`, {name: "Pirate"})).status, 404);
-  const added = await alice.post(`/manage/boxes/${boxId}/wod-types`, {name: "Mobilité"});
-  assert.equal(added.status, 200);
-  assert.equal((await alice.post(`/manage/boxes/${boxId}/wod-types`, {name: "Gym"})).status, 409);
-  assert.equal((await alice.put(`/manage/wod-types/${added.data.id}`, {name: "Mobilité & souplesse"})).status, 200);
-  types = (await alice.get(`/manage/boxes/${boxId}`)).data.types;
-  assert.equal(
-    (await alice.put(`/manage/boxes/${boxId}/wod-types/order`, {ids: types.map(t => t.id).reverse()})).status,
-    200
-  );
-  assert.equal((await alice.get(`/manage/boxes/${boxId}`)).data.types[0].name, "Mobilité & souplesse");
-  assert.equal((await alice.del(`/manage/wod-types/${halt}`)).status, 409);
-  assert.equal((await alice.del(`/manage/wod-types/${added.data.id}`)).status, 200);
+  // la liste n'est plus paramétrable par le gestionnaire : réservée à l'administrateur
+  assert.equal((await alice.post(`/manage/boxes/${boxId}/wod-types`, {name: "Pirate"})).status, 404);
+  assert.equal((await alice.post("/admin/wod-types", {name: "Pirate"})).status, 403);
+  assert.equal((await admin.post("/admin/wod-types", {name: "Mobilité"})).status, 200);
+  assert.equal((await admin.post("/admin/wod-types", {name: "gym"})).status, 409, "nom déjà pris (sans casse)");
+  types = (await admin.get("/admin/wod-types")).data.types;
+  const mob = types.find(t => t.name === "Mobilité");
+  assert.equal((await admin.put(`/admin/wod-types/${mob.id}`, {name: "Mobilité & souplesse"})).status, 200);
+  assert.equal((await admin.put("/admin/wod-types/order", {id: mob.id, direction: -1})).status, 200);
+  assert.deepEqual((await alice.get("/wod-types")).data.types.map(t => t.name).slice(-2), [
+    "Mobilité & souplesse",
+    "Endurance",
+  ]);
+  assert.equal((await admin.del(`/admin/wod-types/${halt}`)).status, 409, "utilisé par un WOD");
+  assert.equal((await admin.del(`/admin/wod-types/${mob.id}`)).status, 200);
   await alice.del(`/manage/wods/${plain.data.id}`);
   await alice.del(`/manage/wods/${lift.data.id}`);
 });

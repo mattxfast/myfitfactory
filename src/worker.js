@@ -670,6 +670,43 @@ async function ensureV2Schema(env) {
         ].map(sql => env.DB.prepare(sql))
       );
     });
+    await runMigration("v44-global-wod-types", async () => {
+      // Types de WOD : une seule liste pour toute l'application, gérée par l'administrateur (avant : une liste par
+      // box). Reprise des noms déjà utilisés par les box (dans leur ordre), puis des types par défaut ; les WOD de box
+      // gardent leur type (par son nom). Les WOD de programme et les séances reçoivent aussi un type (facultatif).
+      await env.DB.prepare(
+        "CREATE TABLE IF NOT EXISTS wod_types (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE, sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+      ).run();
+      const used = (
+          await env.DB.prepare(
+            "SELECT name,MIN(sort_order) AS o FROM box_wod_types GROUP BY lower(name) ORDER BY o,name"
+          ).all()
+        ).results.map(x => x.name),
+        names = [...used];
+      for (const name of DEFAULT_WOD_TYPES)
+        if (!names.some(n => n.toLowerCase() === name.toLowerCase())) names.push(name);
+      await env.DB.batch(
+        names.map((name, i) =>
+          env.DB.prepare("INSERT OR IGNORE INTO wod_types(id,name,sort_order) VALUES(?,?,?)").bind(
+            crypto.randomUUID(),
+            name,
+            i
+          )
+        )
+      );
+      for (const [table, column] of [
+        ["box_wods", "wod_type_id"],
+        ["program_wods", "type_id"],
+        ["training_sessions", "type_id"],
+      ]) {
+        const columns = await env.DB.prepare(`PRAGMA table_info(${table})`).all();
+        if (!columns.results.some(c => c.name === column))
+          await env.DB.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} TEXT`).run();
+      }
+      await env.DB.prepare(
+        "UPDATE box_wods SET wod_type_id=(SELECT wt.id FROM wod_types wt JOIN box_wod_types bt ON lower(bt.name)=lower(wt.name) WHERE bt.id=box_wods.type_id) WHERE wod_type_id IS NULL"
+      ).run();
+    });
   })().catch(err => {
     schemaReady = null;
     throw err;
@@ -1331,6 +1368,19 @@ const BOX_LISTS = {
 };
 // Types de WOD par défaut d'une box ; le premier (« WOD ») est proposé par défaut à la saisie.
 const DEFAULT_WOD_TYPES = ["WOD", "Haltéro", "Gym", "FBB", "Hyrox", "Endurance"];
+// Type de WOD d'une séance : celui du WOD quand il en a un (WOD de box, WOD de programme), non modifiable ; sinon
+// (séance libre, « Autres », WOD du jour) celui choisi dans le formulaire.
+async function sessionTypeId(e, b, boxWod, programWod) {
+  const fixed = boxWod ? boxWod.wod_type_id : programWod?.name !== "__AUTRES__" ? programWod?.type_id : null;
+  if (fixed) return {id: fixed};
+  return await wodTypeOf(e, b.type_id);
+}
+// Type de WOD (liste commune gérée par l'administrateur) : celui envoyé s'il existe, null s'il est vide.
+async function wodTypeOf(e, raw) {
+  if (raw === undefined || raw === null || raw === "") return {id: null, name: null};
+  const t = await e.DB.prepare("SELECT id,name FROM wod_types WHERE id=?").bind(String(raw)).first();
+  return t || {error: "Type de WOD invalide."};
+}
 const defaultWodTypeStatements = (e, boxId) =>
   DEFAULT_WOD_TYPES.map((name, i) =>
     e.DB.prepare("INSERT OR IGNORE INTO box_wod_types(id,box_id,name,sort_order) VALUES(?,?,?,?)").bind(
@@ -1346,7 +1396,7 @@ const boxRole = (e, userId, boxId, role) =>
     .first();
 // Séances : WOD du programme, « Autres » ou WOD d'une box (avec score et catégorie).
 const SESSION_SELECT =
-  "SELECT s.*,a.name AS activity_name,COALESCE(bw.name,dw.title,CASE WHEN w.name='__AUTRES__' THEN 'Autres' ELSE w.name END) AS wod_name,COALESCE(bw.content,dw.content,w.planned_comment) AS planned_comment,p.name AS program_name,bw.box_id,bw.wod_date AS box_wod_date,COALESCE(bw.score_type,dw.score_type,s.program_score_type) AS score_type,dw.benchmark_id,dw.common_wod_id,bx.name AS box_name,bc.name AS score_category_name,dw.wod_date AS daily_wod_date,su.first_name AS shared_from_first_name,su.last_name AS shared_from_last_name FROM training_sessions s JOIN program_wods w ON w.id=s.wod_id JOIN programs p ON p.id=s.program_id LEFT JOIN activities a ON a.id=s.activity_id LEFT JOIN box_wods bw ON bw.id=s.box_wod_id LEFT JOIN boxes bx ON bx.id=bw.box_id LEFT JOIN box_categories bc ON bc.id=s.score_category_id LEFT JOIN daily_wods dw ON dw.id=s.daily_wod_id AND dw.user_id=s.user_id LEFT JOIN users su ON su.id=s.shared_from_user_id WHERE s.user_id=?";
+  "SELECT s.*,a.name AS activity_name,COALESCE(bw.name,dw.title,CASE WHEN w.name='__AUTRES__' THEN 'Autres' ELSE w.name END) AS wod_name,COALESCE(bw.content,dw.content,w.planned_comment) AS planned_comment,p.name AS program_name,bw.box_id,bw.wod_date AS box_wod_date,COALESCE(bw.score_type,dw.score_type,s.program_score_type) AS score_type,dw.benchmark_id,dw.common_wod_id,bx.name AS box_name,bc.name AS score_category_name,dw.wod_date AS daily_wod_date,wt.name AS wod_type_name,su.first_name AS shared_from_first_name,su.last_name AS shared_from_last_name FROM training_sessions s JOIN program_wods w ON w.id=s.wod_id JOIN programs p ON p.id=s.program_id LEFT JOIN activities a ON a.id=s.activity_id LEFT JOIN box_wods bw ON bw.id=s.box_wod_id LEFT JOIN boxes bx ON bx.id=bw.box_id LEFT JOIN box_categories bc ON bc.id=s.score_category_id LEFT JOIN daily_wods dw ON dw.id=s.daily_wod_id AND dw.user_id=s.user_id LEFT JOIN users su ON su.id=s.shared_from_user_id LEFT JOIN wod_types wt ON wt.id=s.type_id WHERE s.user_id=?";
 // Partenaires tagués sur une séance (10 au plus, sans l'auteur) ; null si la requête n'en parle pas (inchangés).
 function sessionTagIds(b, userId) {
   if (!Array.isArray(b.tagged_user_ids)) return null;
@@ -1373,7 +1423,7 @@ async function sessionBoxWod(e, userId, b, sessionId = null) {
         .bind(sessionId, userId, id)
         .first()),
     wod = await e.DB.prepare(
-      "SELECT w.id,w.box_id,w.score_type FROM box_wods w WHERE w.id=? AND (? OR (w.wod_date<=? AND EXISTS(SELECT 1 FROM box_members m WHERE m.box_id=w.box_id AND m.user_id=? AND m.role='member' AND m.status='approved')))"
+      "SELECT w.id,w.box_id,w.score_type,w.wod_type_id FROM box_wods w WHERE w.id=? AND (? OR (w.wod_date<=? AND EXISTS(SELECT 1 FROM box_members m WHERE m.box_id=w.box_id AND m.user_id=? AND m.role='member' AND m.status='approved')))"
     )
       .bind(id, kept ? 1 : 0, localToday(), userId)
       .first();
@@ -1540,15 +1590,12 @@ async function boxWodInput(e, boxId, b) {
     type = String(b.score_type || "");
   if (!validDate(date)) return {error: "Date du WOD invalide."};
   if (!SCORE_TYPES.includes(type)) return {error: "Type de score invalide."};
-  const wodType =
-    (b.type_id &&
-      (await e.DB.prepare("SELECT id,name FROM box_wod_types WHERE id=? AND box_id=?")
-        .bind(String(b.type_id), boxId)
-        .first())) ||
-    (await e.DB.prepare("SELECT id,name FROM box_wod_types WHERE box_id=? ORDER BY sort_order,name LIMIT 1")
-      .bind(boxId)
-      .first());
-  if (b.type_id && wodType?.id !== String(b.type_id)) return {error: "Type de WOD invalide."};
+  // Type choisi dans la liste commune (administrateur), sinon le premier de la liste.
+  const chosen = await wodTypeOf(e, b.type_id);
+  if (chosen.error) return {error: chosen.error};
+  const wodType = chosen.id
+    ? chosen
+    : await e.DB.prepare("SELECT id,name FROM wod_types ORDER BY sort_order,name LIMIT 1").first();
   return {
     date,
     type,
@@ -1603,9 +1650,9 @@ const withMovementIds = rows => rows.map(r => ({...r, movement_ids: r.movement_i
 // gestionnaires voient les WOD à venir, dans leur espace).
 async function memberBoxWods(e, userId, from, to) {
   const x = await e.DB.prepare(
-    "SELECT w.id,w.box_id,b.name AS box_name,w.wod_date,w.name,w.content,w.blocks,w.score_type,w.type_id,t.name AS type_name,(SELECT group_concat(s.id) FROM training_sessions s WHERE s.box_wod_id=w.id AND s.user_id=m.user_id) AS session_ids," +
+    "SELECT w.id,w.box_id,b.name AS box_name,w.wod_date,w.name,w.content,w.blocks,w.score_type,w.wod_type_id AS type_id,t.name AS type_name,(SELECT group_concat(s.id) FROM training_sessions s WHERE s.box_wod_id=w.id AND s.user_id=m.user_id) AS session_ids," +
       WOD_MOVEMENTS +
-      " FROM box_wods w JOIN boxes b ON b.id=w.box_id LEFT JOIN box_wod_types t ON t.id=w.type_id JOIN box_members m ON m.box_id=w.box_id AND m.user_id=? AND m.role='member' AND m.status='approved' WHERE w.wod_date>=? AND w.wod_date<=? AND w.wod_date<=? ORDER BY w.wod_date,t.sort_order,w.created_at"
+      " FROM box_wods w JOIN boxes b ON b.id=w.box_id LEFT JOIN wod_types t ON t.id=w.wod_type_id JOIN box_members m ON m.box_id=w.box_id AND m.user_id=? AND m.role='member' AND m.status='approved' WHERE w.wod_date>=? AND w.wod_date<=? AND w.wod_date<=? ORDER BY w.wod_date,t.sort_order,w.created_at"
   )
     .bind(userId, from, to, localToday())
     .all();
@@ -1931,6 +1978,9 @@ async function api(r, e, p, ctx = null) {
     ).all();
     return json({movements: x.results});
   }
+  // Liste commune des types de WOD (choix dans les formulaires de WOD et de séance).
+  if (r.method === "GET" && p === "/api/wod-types")
+    return json({types: (await e.DB.prepare("SELECT id,name FROM wod_types ORDER BY sort_order,name").all()).results});
   if (p.startsWith("/api/admin/")) {
     if (!admin) return json({error: "Accès administrateur requis."}, 403);
     // Les activités appartiennent au compte administrateur principal (ADMIN_EMAIL), quel que soit l'admin connecté.
@@ -2078,6 +2128,74 @@ async function api(r, e, p, ctx = null) {
           .run();
       return json({ok: true});
     }
+    // Types de WOD (liste commune : WOD de box, WOD de programme, séances) : ajout, renommage, ordre, suppression
+    // (refusée si un WOD ou une séance l'utilise).
+    if (r.method === "GET" && p === "/api/admin/wod-types")
+      return json({
+        types: (
+          await e.DB.prepare(
+            "SELECT t.id,t.name,t.sort_order,(SELECT COUNT(*) FROM box_wods w WHERE w.wod_type_id=t.id)+(SELECT COUNT(*) FROM program_wods w WHERE w.type_id=t.id)+(SELECT COUNT(*) FROM training_sessions s WHERE s.type_id=t.id) AS uses FROM wod_types t ORDER BY t.sort_order,t.name"
+          ).all()
+        ).results,
+      });
+    if (r.method === "POST" && p === "/api/admin/wod-types") {
+      const name = String((await r.json()).name || "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 40);
+      if (!name) return json({error: "Nom du type de WOD requis."}, 400);
+      try {
+        await e.DB.prepare(
+          "INSERT INTO wod_types(id,name,sort_order) VALUES(?,?,COALESCE((SELECT MAX(sort_order)+1 FROM wod_types),0))"
+        )
+          .bind(uid(), name)
+          .run();
+      } catch {
+        return json({error: "Ce type de WOD existe déjà."}, 409);
+      }
+      return json({ok: true});
+    }
+    if (r.method === "PUT" && p === "/api/admin/wod-types/order") {
+      const b = await r.json(),
+        d = Number(b.direction),
+        rows = (await e.DB.prepare("SELECT id FROM wod_types ORDER BY sort_order,name").all()).results,
+        i = rows.findIndex(x => x.id === String(b.id || "")),
+        j = i + d;
+      if (![-1, 1].includes(d) || i < 0 || j < 0 || j >= rows.length)
+        return json({error: "Déplacement impossible."}, 400);
+      [rows[i], rows[j]] = [rows[j], rows[i]];
+      await e.DB.batch(rows.map((x, n) => e.DB.prepare("UPDATE wod_types SET sort_order=? WHERE id=?").bind(n, x.id)));
+      return json({ok: true});
+    }
+    if ((m = p.match(/^\/api\/admin\/wod-types\/([\w-]+)$/)) && (r.method === "PUT" || r.method === "DELETE")) {
+      if (!(await e.DB.prepare("SELECT 1 FROM wod_types WHERE id=?").bind(m[1]).first()))
+        return json({error: "Type de WOD introuvable."}, 404);
+      if (r.method === "PUT") {
+        const name = String((await r.json()).name || "")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 40);
+        if (!name) return json({error: "Nom du type de WOD requis."}, 400);
+        try {
+          await e.DB.prepare("UPDATE wod_types SET name=? WHERE id=?").bind(name, m[1]).run();
+        } catch {
+          return json({error: "Ce type de WOD existe déjà."}, 409);
+        }
+        return json({ok: true});
+      }
+      if (
+        await e.DB.prepare(
+          "SELECT 1 FROM box_wods WHERE wod_type_id=? UNION ALL SELECT 1 FROM program_wods WHERE type_id=? UNION ALL SELECT 1 FROM training_sessions WHERE type_id=? LIMIT 1"
+        )
+          .bind(m[1], m[1], m[1])
+          .first()
+      )
+        return json({error: "Des WOD ou des séances utilisent ce type : il ne peut plus être supprimé."}, 409);
+      if ((await e.DB.prepare("SELECT COUNT(*) AS n FROM wod_types").first()).n <= 1)
+        return json({error: "Il faut garder au moins un type de WOD."}, 400);
+      await e.DB.prepare("DELETE FROM wod_types WHERE id=?").bind(m[1]).run();
+      return json({ok: true});
+    }
     if (r.method === "PUT" && p === "/api/admin/activities/order") {
       const b = await r.json(),
         id = String(b.id || ""),
@@ -2103,7 +2221,7 @@ async function api(r, e, p, ctx = null) {
       const activity = await e.DB.prepare("SELECT id,is_default FROM activities WHERE id=? AND user_id=?")
         .bind(m[1], ownerId)
         .first();
-      if (!activity) return json({error: "Activité introuvable."}, 404);
+      if (!activity) return json({error: "Sport introuvable."}, 404);
       const used =
         (await e.DB.prepare("SELECT id FROM program_wods WHERE activity_id=? LIMIT 1").bind(m[1]).first()) ||
         (await e.DB.prepare("SELECT id FROM training_sessions WHERE activity_id=? LIMIT 1").bind(m[1]).first());
@@ -2120,7 +2238,7 @@ async function api(r, e, p, ctx = null) {
         return json({ok: true, action: "deactivated"});
       }
       const result = await e.DB.prepare("DELETE FROM activities WHERE id=? AND user_id=?").bind(m[1], ownerId).run();
-      if (!result.meta?.changes) return json({error: "Activité introuvable."}, 404);
+      if (!result.meta?.changes) return json({error: "Sport introuvable."}, 404);
       return json({ok: true, action: "deleted"});
     }
     if (r.method === "GET" && p === "/api/admin/activities") {
@@ -2149,7 +2267,7 @@ async function api(r, e, p, ctx = null) {
     if (r.method === "PUT" && (m = p.match(/^\/api\/admin\/activities\/([\w-]+)$/))) {
       const b = await r.json(),
         a = await e.DB.prepare("SELECT id FROM activities WHERE id=? AND user_id=?").bind(m[1], ownerId).first();
-      if (!a) return json({error: "Activité introuvable."}, 404);
+      if (!a) return json({error: "Sport introuvable."}, 404);
       if (b.is_active === false && a.is_default)
         return json({error: "Définis une autre activité par défaut avant de désactiver celle-ci."}, 400);
       if (b.is_default) await e.DB.prepare("UPDATE activities SET is_default=0 WHERE user_id=?").bind(ownerId).run();
@@ -2227,7 +2345,6 @@ async function api(r, e, p, ctx = null) {
           ...DEFAULT_BOX_CATEGORIES.map((c, i) =>
             e.DB.prepare("INSERT INTO box_categories(id,box_id,name,sort_order) VALUES(?,?,?,?)").bind(uid(), id, c, i)
           ),
-          ...defaultWodTypeStatements(e, id),
         ]);
       } catch {
         return json({error: "Une box porte déjà ce nom."}, 409);
@@ -2421,7 +2538,7 @@ async function api(r, e, p, ctx = null) {
   // Classement d'un WOD de box : meilleur score de chaque membre actuel de la box, par catégorie.
   if (r.method === "GET" && (m = p.match(/^\/api\/box-wods\/([\w-]+)\/leaderboard$/))) {
     const wod = await e.DB.prepare(
-      "SELECT w.id,w.box_id,b.name AS box_name,w.wod_date,w.name,w.content,w.score_type,t.name AS type_name FROM box_wods w JOIN boxes b ON b.id=w.box_id LEFT JOIN box_wod_types t ON t.id=w.type_id WHERE w.id=? AND w.wod_date<=? AND EXISTS(SELECT 1 FROM box_members m WHERE m.box_id=w.box_id AND m.user_id=? AND m.role='member' AND m.status='approved')"
+      "SELECT w.id,w.box_id,b.name AS box_name,w.wod_date,w.name,w.content,w.score_type,t.name AS type_name FROM box_wods w JOIN boxes b ON b.id=w.box_id LEFT JOIN wod_types t ON t.id=w.wod_type_id WHERE w.id=? AND w.wod_date<=? AND EXISTS(SELECT 1 FROM box_members m WHERE m.box_id=w.box_id AND m.user_id=? AND m.role='member' AND m.status='approved')"
     )
       .bind(m[1], localToday(), u.id)
       .first();
@@ -2469,9 +2586,7 @@ async function api(r, e, p, ctx = null) {
         e.DB.prepare("SELECT id,name,sort_order FROM box_categories WHERE box_id=? ORDER BY sort_order,name")
           .bind(m[1])
           .all(),
-        e.DB.prepare("SELECT id,name,sort_order FROM box_wod_types WHERE box_id=? ORDER BY sort_order,name")
-          .bind(m[1])
-          .all(),
+        e.DB.prepare("SELECT id,name,sort_order FROM wod_types ORDER BY sort_order,name").all(),
       ]);
       return json({box, members: members.results, categories: categories.results, types: types.results});
     }
@@ -2518,9 +2633,9 @@ async function api(r, e, p, ctx = null) {
         const range = wodRange(r);
         if (!range) return json({error: "Période invalide."}, 400);
         const x = await e.DB.prepare(
-          "SELECT w.id,w.box_id,w.wod_date,w.name,w.content,w.blocks,w.score_type,w.type_id,t.name AS type_name," +
+          "SELECT w.id,w.box_id,w.wod_date,w.name,w.content,w.blocks,w.score_type,w.wod_type_id AS type_id,t.name AS type_name," +
             WOD_MOVEMENTS +
-            " FROM box_wods w LEFT JOIN box_wod_types t ON t.id=w.type_id WHERE w.box_id=? AND w.wod_date>=? AND w.wod_date<=? ORDER BY w.wod_date,t.sort_order,w.created_at"
+            " FROM box_wods w LEFT JOIN wod_types t ON t.id=w.wod_type_id WHERE w.box_id=? AND w.wod_date>=? AND w.wod_date<=? ORDER BY w.wod_date,t.sort_order,w.created_at"
         )
           .bind(m[1], range.from, range.to)
           .all();
@@ -2533,7 +2648,7 @@ async function api(r, e, p, ctx = null) {
       if (input.error) return json({error: input.error}, 400);
       await e.DB.batch([
         e.DB.prepare(
-          "INSERT INTO box_wods(id,box_id,wod_date,name,content,blocks,score_type,type_id,created_by) VALUES(?,?,?,?,?,?,?,?,?)"
+          "INSERT INTO box_wods(id,box_id,wod_date,name,content,blocks,score_type,wod_type_id,created_by) VALUES(?,?,?,?,?,?,?,?,?)"
         ).bind(id, m[1], input.date, input.name, input.content, input.blocks, input.type, input.typeId, u.id),
         ...(await boxWodMovementStatements(e, id, b.catalog_movement_ids)),
       ]);
@@ -2556,7 +2671,7 @@ async function api(r, e, p, ctx = null) {
       if (input.error) return json({error: input.error}, 400);
       await e.DB.batch([
         e.DB.prepare(
-          "UPDATE box_wods SET wod_date=?,name=?,content=?,blocks=?,score_type=?,type_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?"
+          "UPDATE box_wods SET wod_date=?,name=?,content=?,blocks=?,score_type=?,wod_type_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?"
         ).bind(input.date, input.name, input.content, input.blocks, input.type, input.typeId, m[1]),
         ...(b.catalog_movement_ids === undefined
           ? []
@@ -2565,7 +2680,7 @@ async function api(r, e, p, ctx = null) {
       return json({ok: true});
     }
     // Listes paramétrables de la box : catégories de score et types de WOD (ajout, ordre, renommage, suppression).
-    if (r.method === "POST" && (m = p.match(/^\/api\/manage\/boxes\/([\w-]+)\/(categories|wod-types)$/))) {
+    if (r.method === "POST" && (m = p.match(/^\/api\/manage\/boxes\/([\w-]+)\/(categories)$/))) {
       if (!(await managed(m[1]))) return deny();
       const list = BOX_LISTS[m[2]],
         b = await r.json(),
@@ -2593,7 +2708,7 @@ async function api(r, e, p, ctx = null) {
       }
       return json({ok: true, id});
     }
-    if (r.method === "PUT" && (m = p.match(/^\/api\/manage\/boxes\/([\w-]+)\/(categories|wod-types)\/order$/))) {
+    if (r.method === "PUT" && (m = p.match(/^\/api\/manage\/boxes\/([\w-]+)\/(categories)\/order$/))) {
       if (!(await managed(m[1]))) return deny();
       const list = BOX_LISTS[m[2]],
         b = await r.json(),
@@ -2617,10 +2732,7 @@ async function api(r, e, p, ctx = null) {
       );
       return json({ok: true});
     }
-    if (
-      (m = p.match(/^\/api\/manage\/(categories|wod-types)\/([\w-]+)$/)) &&
-      (r.method === "PUT" || r.method === "DELETE")
-    ) {
+    if ((m = p.match(/^\/api\/manage\/(categories)\/([\w-]+)$/)) && (r.method === "PUT" || r.method === "DELETE")) {
       const list = BOX_LISTS[m[1]],
         item = await e.DB.prepare("SELECT id,box_id FROM " + list.table + " WHERE id=?")
           .bind(m[2])
@@ -3645,8 +3757,10 @@ async function api(r, e, p, ctx = null) {
       scoreType = b.score_type ?? "none";
     if (!PROGRAM_SCORE_TYPES.includes(scoreType)) return json({error: "Type de score invalide."}, 400);
     if (!activity || !Number.isInteger(duration) || duration < 1 || duration > 600)
-      return json({error: "Activité ou durée invalide."}, 400);
+      return json({error: "Sport ou durée invalide."}, 400);
     if (!name) return json({error: "Nom du WOD requis."}, 400);
+    const wodType = await wodTypeOf(e, b.type_id);
+    if (wodType.error) return json({error: wodType.error}, 400);
     const pid = m[1],
       ok = await e.DB.prepare("SELECT id FROM programs WHERE id=? AND user_id=?").bind(pid, u.id).first();
     if (!ok) return json({error: "Programme introuvable."}, 404);
@@ -3655,9 +3769,9 @@ async function api(r, e, p, ctx = null) {
     const id = uid();
     try {
       await e.DB.prepare(
-        "INSERT INTO program_wods(id,program_id,user_id,name,planned_comment,activity_id,duration_minutes,is_tracked,score_type,sort_order) VALUES(?,?,?,?,?,?,?,?,?,COALESCE((SELECT MAX(sort_order)+1 FROM program_wods WHERE program_id=?),0))"
+        "INSERT INTO program_wods(id,program_id,user_id,name,planned_comment,activity_id,duration_minutes,is_tracked,score_type,type_id,sort_order) VALUES(?,?,?,?,?,?,?,?,?,?,COALESCE((SELECT MAX(sort_order)+1 FROM program_wods WHERE program_id=?),0))"
       )
-        .bind(id, pid, u.id, name, comment, b.activity_id, duration, b.is_tracked ? 1 : 0, scoreType, pid)
+        .bind(id, pid, u.id, name, comment, b.activity_id, duration, b.is_tracked ? 1 : 0, scoreType, wodType.id, pid)
         .run();
     } catch {
       return json({error: "Un WOD porte déjà ce nom dans ce programme."}, 409);
@@ -4184,11 +4298,14 @@ async function api(r, e, p, ctx = null) {
       return json({error: "Type de score invalide."}, 400);
     if (!name) return json({error: "Nom requis."}, 400);
     if (!activity || !Number.isInteger(duration) || duration < 1 || duration > 600)
-      return json({error: "Activité ou durée invalide."}, 400);
+      return json({error: "Sport ou durée invalide."}, 400);
+    // Type de WOD : changé seulement s'il est envoyé (vide = aucun type).
+    const wodType = await wodTypeOf(e, b.type_id);
+    if (wodType.error) return json({error: wodType.error}, 400);
     try {
       const result = await e.DB.prepare(
         // Programme de coach publié : un WOD suivi le reste (son contenu semaine par semaine est déjà proposé).
-        "UPDATE program_wods SET name=?,planned_comment=?,activity_id=?,duration_minutes=?,is_tracked=CASE WHEN program_id IN (SELECT id FROM programs WHERE coach_mode IS NOT NULL AND published_at IS NOT NULL) THEN is_tracked ELSE ? END,score_type=COALESCE(?,score_type) WHERE id=? AND user_id=?"
+        "UPDATE program_wods SET name=?,planned_comment=?,activity_id=?,duration_minutes=?,is_tracked=CASE WHEN program_id IN (SELECT id FROM programs WHERE coach_mode IS NOT NULL AND published_at IS NOT NULL) THEN is_tracked ELSE ? END,score_type=COALESCE(?,score_type),type_id=CASE WHEN ? THEN ? ELSE type_id END WHERE id=? AND user_id=?"
       )
         .bind(
           name,
@@ -4197,6 +4314,8 @@ async function api(r, e, p, ctx = null) {
           duration,
           b.is_tracked ? 1 : 0,
           b.score_type ?? null,
+          b.type_id !== undefined ? 1 : 0,
+          wodType.id,
           m[1],
           u.id
         )
@@ -4395,7 +4514,7 @@ async function api(r, e, p, ctx = null) {
         .first(),
       duration = Number(b.duration_minutes);
     if (!act || !Number.isInteger(duration) || duration < 1 || duration > 600)
-      return json({error: "Activité ou durée invalide."}, 400);
+      return json({error: "Sport ou durée invalide."}, 400);
     if (!validDate(date)) return json({error: "Date invalide."}, 400);
     if (date > localToday()) return json({error: "Impossible d’enregistrer une séance à une date future."}, 400);
     const row = await e.DB.prepare(
@@ -4427,12 +4546,16 @@ async function api(r, e, p, ctx = null) {
       }
       wid = w.id;
     }
-    const w = await e.DB.prepare("SELECT id,program_id,name,score_type FROM program_wods WHERE id=? AND program_id=?")
+    const w = await e.DB.prepare(
+      "SELECT id,program_id,name,score_type,type_id FROM program_wods WHERE id=? AND program_id=?"
+    )
       .bind(wid, pid)
       .first();
     if (!w || w.program_id !== pid) return json({error: "WOD ou programme invalide."}, 400);
     const score = sessionProgramScore(w, b);
     if (score.error) return json({error: score.error}, 400);
+    const sessionType = await sessionTypeId(e, b, box.wod, w);
+    if (sessionType.error) return json({error: sessionType.error}, 400);
     const id = cid || uid(),
       checks = await movementCheckStatements(
         e,
@@ -4446,7 +4569,7 @@ async function api(r, e, p, ctx = null) {
       );
     await e.DB.batch([
       e.DB.prepare(
-        "INSERT INTO training_sessions(id,program_id,wod_id,user_id,session_date,actual_comment,activity_id,duration_minutes,started_at,logged_at,box_wod_id,score_value,score_category_id,daily_wod_id,score_scaled,program_score_type) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        "INSERT INTO training_sessions(id,program_id,wod_id,user_id,session_date,actual_comment,activity_id,duration_minutes,started_at,logged_at,box_wod_id,score_value,score_category_id,daily_wod_id,score_scaled,program_score_type,type_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
       ).bind(
         id,
         pid,
@@ -4465,7 +4588,8 @@ async function api(r, e, p, ctx = null) {
         box.category ?? null,
         daily.id,
         daily.scaled,
-        score.type
+        score.type,
+        sessionType.id
       ),
       ...checks,
       ...sessionTagStatements(e, u.id, id, sessionTagIds(b, u.id) || []),
@@ -4502,7 +4626,7 @@ async function api(r, e, p, ctx = null) {
         .first(),
       duration = Number(b.duration_minutes);
     if (!act || !Number.isInteger(duration) || duration < 1 || duration > 600)
-      return json({error: "Activité ou durée invalide."}, 400);
+      return json({error: "Sport ou durée invalide."}, 400);
     if (b.session_date > localToday())
       return json({error: "Impossible d’enregistrer une séance à une date future."}, 400);
     const row = await e.DB.prepare(
@@ -4536,12 +4660,16 @@ async function api(r, e, p, ctx = null) {
       }
       wid = w.id;
     }
-    const w = await e.DB.prepare("SELECT id,program_id,name,score_type FROM program_wods WHERE id=? AND program_id=?")
+    const w = await e.DB.prepare(
+      "SELECT id,program_id,name,score_type,type_id FROM program_wods WHERE id=? AND program_id=?"
+    )
       .bind(wid, b.program_id)
       .first();
     if (!w || w.program_id !== b.program_id) return json({error: "WOD ou programme invalide."}, 400);
     const score = sessionProgramScore(w, b, previous);
     if (score.error) return json({error: score.error}, 400);
+    const sessionType = await sessionTypeId(e, b, box.wod, w);
+    if (sessionType.error) return json({error: sessionType.error}, 400);
     const checks = await movementCheckStatements(
       e,
       u.id,
@@ -4555,7 +4683,7 @@ async function api(r, e, p, ctx = null) {
     const tagIds = sessionTagIds(b, u.id);
     await e.DB.batch([
       e.DB.prepare(
-        "UPDATE training_sessions SET program_id=?,wod_id=?,session_date=?,actual_comment=?,activity_id=?,duration_minutes=?,started_at=?,logged_at=?,box_wod_id=?,score_value=?,score_category_id=?,daily_wod_id=?,score_scaled=?,program_score_type=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?"
+        "UPDATE training_sessions SET program_id=?,wod_id=?,session_date=?,actual_comment=?,activity_id=?,duration_minutes=?,started_at=?,logged_at=?,box_wod_id=?,score_value=?,score_category_id=?,daily_wod_id=?,score_scaled=?,program_score_type=?,type_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?"
       ).bind(
         b.program_id,
         wid,
@@ -4573,6 +4701,7 @@ async function api(r, e, p, ctx = null) {
         daily.id,
         daily.scaled,
         score.type,
+        sessionType.id,
         m[1],
         u.id
       ),

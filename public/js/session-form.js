@@ -148,6 +148,18 @@ function syncSessionWod(session = null) {
   }
   renderSessionScore(session);
   syncSessionMovementCount();
+  syncSessionType(session);
+}
+// Type de WOD de la séance : celui du WOD choisi s’il en a un (WOD de box, WOD de programme), non modifiable ;
+// sinon (séance libre, « Autres », WOD du jour) au choix.
+function syncSessionType(session = null) {
+  const f = $("#sessionform").elements,
+    boxWod = selectedBoxWod(),
+    programWod = !boxWod && !selectedDailyWod() ? selectedProgramWod() : null,
+    fixed = boxWod?.type_id || (programWod?.name !== "__AUTRES__" ? programWod?.type_id : null) || null;
+  fillWodTypeSelect(f.type_id, fixed || (session ? session.type_id : f.type_id.value) || "");
+  f.type_id.disabled = !!fixed;
+  f.type_id.title = fixed ? "Type défini par le WOD" : "";
 }
 // Liste des mouvements repliée par défaut : le titre indique combien sont cochés.
 function syncSessionMovementCount() {
@@ -592,6 +604,7 @@ async function saveSession(event) {
     actual_comment: f.get("actual_comment"),
     movement_ids: [...form.querySelectorAll('input[name="movement_ids"]:checked')].map(x => x.value),
     catalog_movement_ids: [...form.querySelectorAll('input[name="catalog_movement_ids"]:checked')].map(x => x.value),
+    type_id: form.elements.type_id.value,
     tagged_user_ids: sessionPartners.map(p => p.id),
   };
   const boxWod = selectedBoxWod(),

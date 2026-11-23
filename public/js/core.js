@@ -31,7 +31,8 @@ let tab = "login",
   sharedPartners = [], // séances ajoutées depuis une invitation : l’auteur et les autres partenaires
   pendingTags = [], // séances où je suis tagué, en attente de ma réponse
   coachInvites = [], // programmes de coach qu’on me propose, en attente de ma réponse
-  commonWod = null; // WOD aléatoire du jour : {wod, joined_id, participants}
+  commonWod = null,
+  wodTypes = []; // types de WOD (liste commune gérée par l’administrateur) // WOD aléatoire du jour : {wod, joined_id, participants}
 const today = () => {
   const d = new Date();
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -289,3 +290,11 @@ $("#authform").onsubmit = async e => {
     $("#autherror").textContent = x.message;
   }
 };
+
+// Liste des types de WOD dans un menu, avec « Non précisé » en tête.
+function fillWodTypeSelect(select, selected = "") {
+  select.innerHTML =
+    `<option value="">Non précisé</option>` +
+    wodTypes.map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join("");
+  select.value = wodTypes.some(t => t.id === selected) ? selected : "";
+}

@@ -1,4 +1,4 @@
-// FitFactory — administration : utilisateurs, catalogue de mouvements, activités.
+// FitFactory — administration : utilisateurs, catalogue de mouvements, sports, types de WOD.
 // Scripts classiques chargés dans l’ordre par index.html (portée globale partagée) ; boot.js démarre l’application en dernier.
 
 // Espace d’administration : une page à la fois (utilisateurs ; box, gestionnaires et mouvements ; autres paramétrages).
@@ -21,14 +21,16 @@ document.querySelectorAll("#adminnav [data-admin-page]").forEach(
 );
 async function loadAdmin() {
   if (!isAdmin) return;
-  const [a, u, m, b, st, ai] = await Promise.all([
+  const [a, u, m, b, st, ai, wt] = await Promise.all([
     api("/admin/activities"),
     api("/admin/users"),
     api("/admin/movements"),
     api("/admin/boxes"),
     api("/admin/settings"),
     api("/admin/ai-usage"),
+    api("/admin/wod-types"),
   ]);
+  renderWodTypes(wt.types);
   activities = a.activities;
   renderAdminDefaults(st);
   renderAiUsage(ai);
@@ -189,7 +191,7 @@ document.querySelectorAll("[data-admin-add]").forEach(
       if (form.elements.id) form.elements.id.value = "";
       if (b.dataset.adminAdd === "movementcatalogform")
         $("#movementcatalogdialogtitle").textContent = "Ajouter un mouvement";
-      if (b.dataset.adminAdd === "activityform") $("#activitydialogtitle").textContent = "Ajouter une activité";
+      if (b.dataset.adminAdd === "activityform") $("#activitydialogtitle").textContent = "Ajouter un sport";
       if (b.dataset.adminAdd === "movementcatalogform") $("#movementcatalogerror").textContent = "";
       dialog.showModal();
       dialog.querySelector("input:not([type=hidden])")?.focus();
@@ -282,7 +284,7 @@ function renderAdmin(users, movements = []) {
         (a, i) =>
           `<div class="admin-row"><span>${esc(a.name)} · ${a.duration_minutes} min ${a.is_default ? "(par défaut)" : ""} ${a.is_active ? "" : "· inactive"}</span><span class="admin-row-actions"><button class="smallbtn admin-reorder" data-move-admin="activity" data-id="${a.id}" data-direction="-1" aria-label="Monter" title="Monter" ${i === 0 ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"/><path d="m6 11 6-6 6 6"/></svg></button><button class="smallbtn admin-reorder" data-move-admin="activity" data-id="${a.id}" data-direction="1" aria-label="Descendre" title="Descendre" ${i === activities.length - 1 ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="m6 13 6 6 6-6"/></svg></button><button class="smallbtn" data-edit-activity="${a.id}" aria-label="Modifier" title="Modifier"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.83 2.83 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg></button><button class="smallbtn delete" data-del-activity="${a.id}" aria-label="Désactiver ou supprimer" title="Désactiver si utilisée, supprimer sinon"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button><button class="smallbtn" data-default-activity="${a.id}" aria-label="Définir par défaut" title="Définir par défaut" ${a.is_default ? "disabled" : ""}>★</button></span></div>`
       )
-      .join("") || `<p class="muted">Aucune activité.</p>`;
+      .join("") || `<p class="muted">Aucun sport.</p>`;
   // Demandes de rôle coach à valider en tête de liste.
   $("#userlist").innerHTML =
     [...users]
@@ -300,13 +302,13 @@ function renderAdmin(users, movements = []) {
           const activity = activities.find(a => a.id === b.dataset.delActivity);
           if (
             confirm(
-              "Si cette activité est utilisée dans un programme ou une séance, elle sera désactivée et conservée. Sinon, elle sera définitivement supprimée. Continuer ?"
+              "Si ce sport est utilisé dans un programme ou une séance, il sera désactivé et conservé. Sinon, il sera définitivement supprimée. Continuer ?"
             )
           ) {
             try {
               const result = await api("/admin/activities/" + b.dataset.delActivity, {method: "DELETE"});
               await loadAdmin();
-              toast(result.action === "deactivated" ? "Activité désactivée." : "Activité supprimée.");
+              toast(result.action === "deactivated" ? "Sport désactivé." : "Sport supprimé.");
             } catch (e) {
               toast(e.message);
             }
@@ -324,7 +326,7 @@ function renderAdmin(users, movements = []) {
           f.elements.name.value = a.name;
           f.elements.duration_minutes.value = a.duration_minutes;
           f.elements.is_default.checked = !!a.is_default;
-          $("#activitydialogtitle").textContent = "Modifier une activité";
+          $("#activitydialogtitle").textContent = "Modifier un sport";
           $("#activitydialog").showModal();
         })
     );
@@ -464,8 +466,69 @@ $("#activityform").onsubmit = async e => {
     e.target.reset();
     $("#activitydialog").close();
     await loadAdmin();
-    toast("Activité enregistrée.");
+    toast("Sport enregistré.");
   } catch (x) {
     toast(x.message);
   }
+};
+
+// Types de WOD : une seule liste pour toute l’application (WOD de box, WOD de programme, séances) ; ajout,
+// renommage, ordre, suppression (refusée si un WOD ou une séance l’utilise).
+function renderWodTypes(types) {
+  $("#wodtypelist").innerHTML =
+    types
+      .map(
+        (t, i) =>
+          `<div class="admin-row"><span>${esc(t.name)}${i === 0 ? ` <span class="tracked-tag">Par défaut</span>` : ""}${t.uses ? ` <small class="muted">· ${t.uses} utilisation${t.uses > 1 ? "s" : ""}</small>` : ""}</span><span class="admin-row-actions"><button class="smallbtn admin-reorder" data-wod-type-move="${esc(t.id)}" data-direction="-1" aria-label="Monter" title="Monter" ${i === 0 ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"/><path d="m6 11 6-6 6 6"/></svg></button><button class="smallbtn admin-reorder" data-wod-type-move="${esc(t.id)}" data-direction="1" aria-label="Descendre" title="Descendre" ${i === types.length - 1 ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="m6 13 6 6 6-6"/></svg></button><button class="smallbtn" data-wod-type-edit="${esc(t.id)}" aria-label="Renommer" title="Renommer"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.83 2.83 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg></button><button class="smallbtn delete" data-wod-type-del="${esc(t.id)}" aria-label="Supprimer" title="Supprimer" ${t.uses ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button></span></div>`
+      )
+      .join("") || `<p class="muted">Aucun type de WOD.</p>`;
+  const act = async (path, method, body, message) => {
+    try {
+      await api(path, {method, body: body ? JSON.stringify(body) : undefined});
+      await loadAdmin();
+      wodTypes = (await api("/wod-types")).types || wodTypes;
+      if (message) toast(message);
+    } catch (e) {
+      toast(e.message);
+    }
+  };
+  $("#wodtypelist")
+    .querySelectorAll("[data-wod-type-move]")
+    .forEach(
+      b =>
+        (b.onclick = () =>
+          act("/admin/wod-types/order", "PUT", {id: b.dataset.wodTypeMove, direction: Number(b.dataset.direction)}))
+    );
+  $("#wodtypelist")
+    .querySelectorAll("[data-wod-type-edit]")
+    .forEach(
+      b =>
+        (b.onclick = () => {
+          const t = types.find(x => x.id === b.dataset.wodTypeEdit),
+            name = (prompt("Renommer le type de WOD :", t.name) || "").trim();
+          if (name && name !== t.name) act("/admin/wod-types/" + t.id, "PUT", {name}, "Type de WOD renommé.");
+        })
+    );
+  $("#wodtypelist")
+    .querySelectorAll("[data-wod-type-del]")
+    .forEach(
+      b =>
+        (b.onclick = () => {
+          const t = types.find(x => x.id === b.dataset.wodTypeDel);
+          if (confirm("Supprimer le type « " + t.name + " » ?"))
+            act("/admin/wod-types/" + t.id, "DELETE", null, "Type de WOD supprimé.");
+        })
+    );
+}
+$("#addwodtype").onclick = e => {
+  e.stopPropagation();
+  const name = (prompt("Nom du nouveau type de WOD :", "") || "").trim();
+  if (!name) return;
+  api("/admin/wod-types", {method: "POST", body: JSON.stringify({name})})
+    .then(async () => {
+      await loadAdmin();
+      wodTypes = (await api("/wod-types")).types || wodTypes;
+      toast("Type de WOD ajouté.");
+    })
+    .catch(x => toast(x.message));
 };
