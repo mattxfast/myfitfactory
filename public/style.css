@@ -3809,7 +3809,7 @@ button:disabled {
 #view-sessions #sessiontoolbar {
   margin: var(--section-content-gap) 0;
 }
-/* Interface simplifiée : propositions ou mouvements travaillés sous l’historique. */
+/* Espacement sous l’historique avant les mouvements ou les propositions. */
 #view-sessions #weekafter > * {
   margin-top: var(--section-content-gap);
 }

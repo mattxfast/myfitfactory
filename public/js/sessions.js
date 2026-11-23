@@ -383,7 +383,6 @@ function renderWeek() {
     common = weekCommonSection(from),
     personal = persoDailyWods().length,
     programMovements = simple ? [] : movementsByProgram[p?.id] || [],
-    movements = !simple || week.length ? weekMovementsSection(week, programMovements, folded) : "",
     canCreateWod = dailyCanGenerate(from),
     offerWod =
       !simple &&
@@ -403,11 +402,11 @@ function renderWeek() {
   const wodSections = simple
     ? pendingWods &&
       `<section class="session-fold"><div class="weekheading"><h2>WOD à faire</h2></div><div class="weekwodlist">${pendingWods}</div></section>`
-    : weekProgramSection(p, ws, week, folded) + weekBoxSection(week, folded, offerWod) + movements;
-  // En interface simplifiée, les suggestions ou les mouvements passent sous l’historique.
+    : weekProgramSection(p, ws, week, folded) + weekBoxSection(week, folded, offerWod);
   $("#weekboard").innerHTML =
     `<div class="weekbar card">${nav}</div>${invitations}${stats}${common}${emptyState}${wodSections}`;
-  $("#weekafter").innerHTML = simple ? (week.length ? movements : weekSuggestions(true, canCreateWod)) : "";
+  $("#weekafter").innerHTML =
+    simple && !week.length ? weekSuggestions(true, canCreateWod) : weekMovementsSection(week, programMovements, folded);
   bindCommonWod($("#weekboard"));
   $('.navtab[data-view="sessions"]').classList.toggle("has-alert", pendingTags.length > 0);
   bindInvites();
