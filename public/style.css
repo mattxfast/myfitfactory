@@ -3760,16 +3760,41 @@ button:disabled {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr));
   gap: var(--content-item-gap);
 }
+.week-empty-columns {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-areas:
+    "wod program"
+    "subscribe search";
+}
+.week-empty-columns > [data-wod-new] {
+  grid-area: wod;
+}
+.week-empty-columns > [data-week-action="subscribe"] {
+  grid-area: subscribe;
+}
+.week-empty-columns > [data-week-action="program"] {
+  grid-area: program;
+}
+.week-empty-columns > [data-week-action="search"] {
+  grid-area: search;
+}
+.week-empty-columns > [data-week-action="join"] {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
 .week-empty-actions > button {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   min-height: var(--list-row-height);
   padding: 8px 10px;
   text-align: left;
   line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 .week-empty-actions > button > span {
+  flex: none;
   font-size: 18px;
 }
 .week-empty > p {
