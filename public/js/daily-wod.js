@@ -27,6 +27,11 @@ const dailyCanGenerate = from => {
   const to = addDays(from, 6);
   return (today() >= from && today() <= to) || (addDays(today(), 1) >= from && addDays(today(), 1) <= to);
 };
+function dailyDefaultDate() {
+  const now = today(),
+    tomorrow = addDays(now, 1);
+  return selectedWeekStart === tomorrow ? tomorrow : now;
+}
 
 // WOD du jour de la semaine : affichés en fin de rubrique « Mes WOD » (après ceux de la programmation), comme des entraînements
 // en plus, rattachés à aucun programme. Même forme que les cartes de la programmation : texte à gauche, boutons à
@@ -87,7 +92,7 @@ function openManualWod(w = null) {
   f.wod_date.innerHTML = days
     .map(d => `<option value="${d}">${esc(dailyDayLabel(d) + " (" + wodDay(d) + ")")}</option>`)
     .join("");
-  f.wod_date.value = w?.wod_date || today();
+  f.wod_date.value = w?.wod_date || dailyDefaultDate();
   f.name.value = w?.manual?.name || "";
   for (const [key] of MANUAL_BLOCKS) f["block_" + key].value = w?.manual?.blocks?.[key] || "";
   f.score_type.value = w?.score_type || "none";
@@ -241,8 +246,9 @@ async function loadCommonWod() {
   } catch {
     commonWod = null;
   }
-  if (commonWod?.wod && !$("#view-sessions").hidden && $("#weekboard .weekbar") && !$("#weekboard .common-wod"))
-    renderWeek();
+  if ($("#view-sessions").hidden || selectedWeekStart !== loadedSessionWeek || !$("#weekboard .weekbar")) return;
+  const visible = selectedWeekStart === mondayOf(today()) && !!commonWod?.wod;
+  if (visible !== !!$("#weekboard .common-wod")) renderWeek();
 }
 const COMMON_SCORE_HINT = {time: "Pour le temps", reps: "Aux répétitions", load: "À la charge"};
 // Carte en tête de la page Séances, sur la semaine qui contient aujourd’hui, dans les deux interfaces.

@@ -234,19 +234,21 @@
         <section id="view-sessions">
           <div id="reportbanner" class="report-banner card" hidden></div>
           <div id="weekboard"></div>
-          <div class="toolbar section-toolbar" id="sessiontoolbar">
-            <button
-              class="smallbtn section-collapse"
-              id="toggle-session-history"
-              aria-label="Replier l’historique"
-              aria-expanded="true"
-            >
-              −
-            </button>
-            <h2>Historique des séances</h2>
-            <span class="section-count" id="sessionhistorycount"></span>
+          <div id="sessionhistory" hidden>
+            <div class="toolbar section-toolbar" id="sessiontoolbar">
+              <button
+                class="smallbtn section-collapse"
+                id="toggle-session-history"
+                aria-label="Replier l’historique"
+                aria-expanded="true"
+              >
+                −
+              </button>
+              <h2>Historique des séances</h2>
+              <span class="section-count" id="sessionhistorycount"></span>
+            </div>
+            <div id="sessionlist" class="entries"></div>
           </div>
-          <div id="sessionlist" class="entries"></div>
           <!-- Interface simplifiée : mouvements travaillés sous l’historique. -->
           <div id="weekafter"></div>
         </section>

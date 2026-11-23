@@ -222,6 +222,7 @@ function openBenchmarkDraw() {
   f.wod_date.innerHTML = days
     .map(d => `<option value="${d}">${esc(dailyDayLabel(d) + " (" + wodDay(d) + ")")}</option>`)
     .join("");
+  f.wod_date.value = dailyDefaultDate();
   $("#bencherror").textContent = benchmarks.length
     ? ""
     : "La liste des WOD de référence n’est pas encore sur ce téléphone : reconnecte-toi une fois au réseau.";

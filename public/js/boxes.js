@@ -142,7 +142,7 @@ function requestBox(role) {
 $("#boxjoin").onclick = () => requestBox("member");
 $("#boxmanagerrequest").onclick = () => requestBox("manager");
 
-// ----- Rejoindre une box en un toucher : fenêtre d’accueil (1re connexion) et ＋ de la rubrique « WOD de la box » -----
+// ----- Rejoindre une box en un toucher : fenêtre d’accueil (1re connexion) -----
 let boxWelcomeShown = false;
 function openJoinBox(welcome = false) {
   const f = $("#joinboxform").elements;

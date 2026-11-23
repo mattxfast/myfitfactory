@@ -3748,6 +3748,11 @@ button:disabled {
 #view-sessions #weekboard .weekstats {
   margin: 0 0 var(--section-content-gap);
 }
+#view-sessions .week-empty {
+  display: grid;
+  justify-items: center;
+  gap: var(--section-content-gap);
+}
 #view-sessions .session-fold {
   margin: 0 0 var(--section-content-gap);
 }
@@ -5041,7 +5046,7 @@ button:active:not(:disabled) {
 #view-prs .admin-row.section-empty > span {
   justify-content: center;
 }
-/* Rejoindre une box : boutons « Plus tard » / « Je ne suis dans aucune box », bulle cliquable sans box. */
+/* Rejoindre une box : boutons « Plus tard » et « Je ne suis dans aucune box ». */
 .join-box-later {
   display: flex;
   flex-wrap: wrap;
@@ -5051,13 +5056,6 @@ button:active:not(:disabled) {
 }
 .join-box-later[hidden] {
   display: none;
-}
-#view-sessions .weekwod.join-box-empty {
-  width: 100%;
-  font: inherit;
-  font-weight: 600;
-  color: var(--action-ink);
-  cursor: pointer;
 }
 
 /* Alimentation : bilan du jour, repas détaillés, 7 derniers jours, saisie d’un repas */
