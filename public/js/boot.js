@@ -30,6 +30,7 @@ FFOffline.init({
         daily_wod_date: dailyWod.wod_date,
         score_type: dailyWod.score_type,
         benchmark_id: dailyWod.benchmark_id,
+        common_wod_id: dailyWod.common_wod_id || null,
         program_score_type: null,
         box_name: null,
         score_category_name: null,
@@ -47,6 +48,7 @@ FFOffline.init({
         box_wod_date: boxWod.wod_date,
         score_type: boxWod.score_type,
         benchmark_id: null,
+        common_wod_id: null,
         program_score_type: null,
         score_category_name: boxCategories.find(c => c.id === b.score_category_id)?.name || null,
         ...(activities.find(x => x.id === b.activity_id)
@@ -62,6 +64,7 @@ FFOffline.init({
     return {
       program_score_type: b.score_type ?? null,
       benchmark_id: null,
+      common_wod_id: null,
       box_name: null,
       score_category_name: null,
       ...(p ? {program_name: p.name} : b.program_id === "none" ? {program_name: "Hors programme"} : {}),

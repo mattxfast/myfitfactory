@@ -19,6 +19,7 @@ function rememberDailyWods(list, from = null) {
 }
 const dailyDayLabel = d =>
   d === today() ? "Aujourd’hui" : d === addDays(today(), 1) ? "Demain" : wodDay(d).replace(/^\w/, c => c.toUpperCase());
+const wodDateTitle = date => "WOD du " + fmt(date);
 // Texte du WOD sans sa première ligne (le titre, déjà affiché au-dessus).
 const dailyBody = w => String(w?.content || "").replace(/^[^\n]*\n+/, "");
 const dailyWodDone = w => datedWodDone(w, "daily_wod_id");
@@ -35,14 +36,16 @@ function dailyDefaultDate() {
 
 // WOD personnels de la semaine : en fin de « Mes WOD » en mode avancé et dans « WOD à faire » en mode simplifié.
 // Un toucher sur la ligne ouvre le détail.
-// La copie créée par « Je le fais » est accessible depuis le détail du WOD du jour et le formulaire de séance.
-const persoDailyWods = () => dailyWods.filter(w => !w.common_wod_id);
+// Les abonnés voient aussi le WOD du jour enregistré dans leur liste.
+const persoDailyWods = () => dailyWods.filter(w => !w.common_wod_id || canUseCommonWod());
 function dailyWodCards(wods = persoDailyWods()) {
   return wods
     .map(w => {
       const n = dailyWodDone(w),
-        future = w.wod_date > today();
-      return `<article class="weekwod card ${n ? "done" : ""}"><div class="weekcount">${n ? "" : `<button type="button" class="smallbtn" data-daily-log="${w.id}" ${future ? "disabled" : ""} aria-label="${future ? "Prévu pour demain" : "Enregistrer la séance"}" title="${future ? "Prévu pour demain" : "Enregistrer la séance"}"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button><button type="button" class="smallbtn delete" data-daily-del="${w.id}" aria-label="Supprimer ce WOD" title="Supprimer ce WOD"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button>`}</div><div class="weekwod-text" role="button" tabindex="0" data-daily-open="${w.id}" aria-label="Voir le détail du WOD du ${fmt(w.wod_date)}"><b>${esc(w.title)}</b><p>Hors prog · ${fmt(w.wod_date)}</p></div></article>`;
+        future = w.wod_date > today(),
+        title = w.common_wod_id ? wodDateTitle(w.wod_date) : w.title,
+        label = w.common_wod_id ? "WOD du jour" : "Hors prog · " + fmt(w.wod_date);
+      return `<article class="weekwod card ${n ? "done" : ""}"><div class="weekcount">${n ? "" : `<button type="button" class="smallbtn" data-daily-log="${w.id}" ${future ? "disabled" : ""} aria-label="${future ? "Prévu pour demain" : "Enregistrer la séance"}" title="${future ? "Prévu pour demain" : "Enregistrer la séance"}"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button><button type="button" class="smallbtn delete" data-daily-del="${w.id}" aria-label="Supprimer ce WOD" title="Supprimer ce WOD"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button>`}</div><div class="weekwod-text" role="button" tabindex="0" data-daily-open="${w.id}" aria-label="Voir le détail de ${esc(title)}"><b>${esc(title)}</b><p>${esc(label)}</p></div></article>`;
     })
     .join("");
 }
@@ -155,9 +158,12 @@ function openDailyDetail(id) {
   if (!w) return;
   const done = dailyWodDone(w),
     future = w.wod_date > today();
-  $("#dailydetailtitle").textContent = "WOD du " + fmt(w.wod_date);
+  $("#dailydetailtitle").textContent = wodDateTitle(w.wod_date);
   $("#dailydetailmeta").textContent =
-    w.title + " · " + dailyDayLabel(w.wod_date) + (done ? " · séance enregistrée" : "");
+    (w.common_wod_id ? "WOD du jour" : w.title) +
+    " · " +
+    dailyDayLabel(w.wod_date) +
+    (done ? " · séance enregistrée" : "");
   fillWodBody($("#dailydetailbody"), w.blocks, dailyBody(w));
   $("#dailydetailactions").innerHTML = done
     ? ""
@@ -199,6 +205,7 @@ function bindDailySection(root) {
         try {
           await sendApi("/daily-wods/" + b.dataset.dailyDel, "DELETE");
           dailyWodsById.delete(b.dataset.dailyDel);
+          if (commonWod?.joined_id === b.dataset.dailyDel) commonWod.joined_id = null;
           await loadSessions();
           toast("WOD du jour supprimé.");
         } catch (e) {
@@ -235,7 +242,7 @@ async function generateDailyWod(f, request) {
   return "Blocs pré-remplis : relis-les et ajuste-les avant d’enregistrer.";
 }
 
-// ----- WOD aléatoire du jour : le même WOD pour tous (généré chaque nuit), « Je le fais », classement -----
+// ----- WOD aléatoire du jour : le même WOD pour tous, à ajouter à ses WOD -----
 const canUseCommonWod = () => !!preferences?.common_wod;
 function currentCommonWod() {
   const wod = commonWod?.wod;
@@ -244,7 +251,7 @@ function currentCommonWod() {
 function commonWodTitle(wod) {
   return wod.title
     .replace(/^WOD commun(?: du)?\b/i, "WOD du")
-    .replace(/^WOD du(?=\s*(?:[:–—-]|$))/, "WOD du " + fmt(wod.wod_date));
+    .replace(/^WOD du(?=\s*(?:[:–—-]|$))/, wodDateTitle(wod.wod_date));
 }
 function updateCommonWodChoice() {
   const button = $('[data-newwod="common"]'),
@@ -266,42 +273,16 @@ const COMMON_SCORE_HINT = {time: "Pour le temps", reps: "Aux répétitions", loa
 function openCommonWodDetail() {
   const w = currentCommonWod();
   if (!w) return;
-  const dialog = $("#dailydetaildialog"),
-    actions = $("#dailydetailactions"),
-    joinedId = commonWod.joined_id,
-    joined = dailyWodsById.get(joinedId),
-    done = joined && dailyWodDone(joined);
+  const actions = $("#dailydetailactions");
   $("#dailydetailtitle").textContent = "Le WOD du jour";
-  $("#dailydetailmeta").textContent = [
-    commonWodTitle(w),
-    COMMON_SCORE_HINT[w.score_type],
-    done ? "séance enregistrée" : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  $("#dailydetailmeta").textContent = [commonWodTitle(w), COMMON_SCORE_HINT[w.score_type]].filter(Boolean).join(" · ");
   fillWodBody($("#dailydetailbody"), w.blocks, dailyBody(w));
-  actions.innerHTML =
-    (joinedId
-      ? done
-        ? ""
-        : `<button type="button" class="primary" data-common-log><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg><span>Enregistrer la séance</span></button>`
-      : `<button type="button" class="primary" data-common-join>Je le fais</button>`) +
-    (w.score_type ? `<button type="button" class="smallbtn" data-common-board>Classement</button>` : "");
-  const join = actions.querySelector("[data-common-join]"),
-    log = actions.querySelector("[data-common-log]"),
-    board = actions.querySelector("[data-common-board]");
-  if (join) join.onclick = () => joinCommonWod(join);
-  if (log)
-    log.onclick = () => {
-      dialog.close();
-      openSession(null, "daily:" + joinedId);
-    };
-  if (board)
-    board.onclick = () => {
-      dialog.close();
-      openCommonLeaderboard(w.id);
-    };
-  if (!dialog.open) dialog.showModal();
+  actions.innerHTML = commonWod.joined_id
+    ? '<button type="button" class="primary" disabled>WOD enregistré</button>'
+    : '<button type="button" class="primary">Enregistrer le WOD</button>';
+  const button = actions.querySelector("button");
+  button.onclick = () => saveCommonWod(button);
+  $("#dailydetaildialog").showModal();
 }
 // La copie personnelle est créée une seule fois, depuis le détail ou à l’enregistrement de la séance.
 async function attachCommonWod(id) {
@@ -310,16 +291,21 @@ async function attachCommonWod(id) {
   if (commonWod?.wod?.id === id) commonWod.joined_id = wod.id;
   return wod;
 }
-async function joinCommonWod(button) {
+async function saveCommonWod(button) {
   const wod = currentCommonWod();
   if (!wod) return;
   button.disabled = true;
   try {
-    await attachCommonWod(wod.id);
-    selectedWeekStart = mondayOf(wod.wod_date);
+    const saved = await attachCommonWod(wod.id);
+    selectedWeekStart = mondayOf(saved.wod_date);
+    window.cfSessionFolded?.delete("wods");
     await loadSessions();
-    if (button.closest("dialog")?.open) openCommonWodDetail();
-    toast("C’est parti ! Enregistre ta séance et ton score une fois le WOD fait.");
+    const dialog = button.closest("dialog");
+    if (dialog?.open) {
+      dialog.close();
+      $(`[data-daily-open="${CSS.escape(saved.id)}"]`)?.scrollIntoView({block: "nearest"});
+    }
+    toast(simpleInterface() ? "WOD ajouté à « WOD à faire »." : "WOD ajouté à « Mes WOD ».");
   } catch (e) {
     toast(e.offline ? OFFLINE_MESSAGE : e.message);
   } finally {

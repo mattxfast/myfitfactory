@@ -94,7 +94,7 @@ function fillWodOptions(pid, selected = "") {
     .sort((a, b) => a.wod_date.localeCompare(b.wod_date))
     .map(
       w =>
-        `<option value="daily:${w.id}">${esc(wodDay(w.wod_date) + " · " + (w.common_wod_id ? commonWodTitle(w) : w.title))}</option>`
+        `<option value="daily:${w.id}">${esc(wodDay(w.wod_date) + " · " + (w.common_wod_id ? wodDateTitle(w.wod_date) : w.title))}</option>`
     )
     .join("");
   // WOD du jour : à la suite des WOD de la programmation, dans le même groupe « Mes WOD » (comme la rubrique de la
@@ -103,7 +103,7 @@ function fillWodOptions(pid, selected = "") {
     common = commonWodForSession(date),
     commonOption =
       common && !sessionFormWeek.dailyWods.some(w => w.common_wod_id === common.id)
-        ? `<optgroup label="WOD du jour"><option value="common:${esc(common.id)}">${esc(commonWodTitle(common))}</option></optgroup>`
+        ? `<optgroup label="WOD du jour"><option value="common:${esc(common.id)}">${esc(wodDateTitle(common.wod_date))}</option></optgroup>`
         : "";
   f.innerHTML =
     (boxOptions
