@@ -33,13 +33,12 @@ function dailyDefaultDate() {
   return selectedWeekStart === tomorrow ? tomorrow : now;
 }
 
-// WOD du jour de la semaine : affichés en fin de rubrique « Mes WOD » (après ceux de la programmation), comme des entraînements
-// en plus, rattachés à aucun programme. Même forme que les cartes de la programmation : texte à gauche, boutons à
-// droite ; le titre du WOD en gras, « Hors prog · JJ/MM/AAAA » dessous ; un toucher sur la ligne ouvre le détail.
+// WOD personnels de la semaine : en fin de « Mes WOD » en mode avancé et dans « WOD à faire » en mode simplifié.
+// Un toucher sur la ligne ouvre le détail.
 // Le WOD aléatoire du jour repris par « Je le fais » reste dans sa propre rubrique (pas en double dans Mes WOD).
 const persoDailyWods = () => dailyWods.filter(w => !w.common_wod_id);
-function dailyWodCards() {
-  return persoDailyWods()
+function dailyWodCards(wods = persoDailyWods()) {
+  return wods
     .map(w => {
       const n = dailyWodDone(w),
         future = w.wod_date > today();

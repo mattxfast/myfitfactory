@@ -398,11 +398,15 @@ function renderWeek() {
     future && (simple || !p)
       ? '<div class="card empty">Cette semaine est dans le futur. La saisie d’entraînements n’est pas autorisée.</div>'
       : `<div class="weekstats card">${offerWod || (simple && !week.length) ? "" : dailyGenerateRow(from)}<div class="weekstat weekstat-sessions"><strong>${week.length}</strong><span>Nombre de séances</span></div>${personalStats}<button id="addsession" class="primary addsession-compact" aria-label="Ajouter une séance" title="Ajouter une séance" ${future ? "disabled" : ""}>＋</button><label class="competition-toggle" title="Semaine de compétition : coche-la si tu as une compétition cette semaine"><span>Compét.</span><input type="checkbox" id="weekcompetition" aria-label="Semaine de compétition" ${weekCompetition ? "checked" : ""}></label></div>`;
-  const emptyState = offerWod ? weekSuggestions(false, canCreateWod) : "";
+  const emptyState = offerWod ? weekSuggestions(false, canCreateWod) : "",
+    pendingWods = simple ? dailyWodCards(persoDailyWods().filter(w => !dailyWodDone(w))) : "";
+  const wodSections = simple
+    ? pendingWods &&
+      `<section class="session-fold"><div class="weekheading"><h2>WOD à faire</h2></div><div class="weekwodlist">${pendingWods}</div></section>`
+    : weekProgramSection(p, ws, week, folded) + weekBoxSection(week, folded, offerWod) + movements;
   // En interface simplifiée, les suggestions ou les mouvements passent sous l’historique.
   $("#weekboard").innerHTML =
-    `<div class="weekbar card">${nav}</div>${invitations}${stats}${common}${emptyState}` +
-    (simple ? "" : weekProgramSection(p, ws, week, folded) + weekBoxSection(week, folded, offerWod) + movements);
+    `<div class="weekbar card">${nav}</div>${invitations}${stats}${common}${emptyState}${wodSections}`;
   $("#weekafter").innerHTML = simple ? (week.length ? movements : weekSuggestions(true, canCreateWod)) : "";
   bindCommonWod($("#weekboard"));
   $('.navtab[data-view="sessions"]').classList.toggle("has-alert", pendingTags.length > 0);
