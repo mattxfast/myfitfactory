@@ -5202,6 +5202,12 @@ button:active:not(:disabled) {
   color: var(--muted);
   font-weight: 400;
 }
+/* Consommation de l’IA (administration) : période (« Aujourd’hui », « Ce mois-ci ») et ligne Total en gras. */
+#aiusage thead th:first-child,
+#aiusage .ai-usage-total > * {
+  color: var(--ink);
+  font-weight: 700;
+}
 .meal-detail .meal-extra,
 .meal-detail .meal-remarks {
   margin: 8px 0 0;

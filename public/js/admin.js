@@ -48,16 +48,16 @@ function renderAiUsage(d) {
       n >= 1e6 ? (n / 1e6).toFixed(2).replace(".", ",") + " M" : n >= 1e4 ? Math.round(n / 1e3) + " k" : String(n),
     cost = t => (t.calls ? "$" + t.cost.toFixed(t.cost < 1 ? 3 : 2).replace(".", ",") + (t.unpriced ? "*" : "") : "—"),
     cells = t =>
-      `<td>${t.calls}</td><td>${tokens(t.input_tokens)}</td><td>${tokens(t.output_tokens)}<small>dont ${tokens(t.reasoning_tokens)} réfl.</small></td><td>${cost(t)}</td>`,
+      `<td>${t.calls}</td><td>${tokens(t.input_tokens)}</td><td>${tokens(t.output_tokens)}<small>dont ${tokens(t.reasoning_tokens)} réfl.</small></td><td>${tokens(t.input_tokens + t.output_tokens)}</td><td>${cost(t)}</td>`,
     table = (label, key) =>
-      `<table class="meal-table"><thead><tr><th scope="col">${label}</th><th scope="col">Appels</th><th scope="col">Envoyés</th><th scope="col">Produits</th><th scope="col">Coût</th></tr></thead><tbody>${d.features
+      `<table class="meal-table"><thead><tr><th scope="col">${label}</th><th scope="col">Appels</th><th scope="col">Envoyés</th><th scope="col">Produits</th><th scope="col">Total</th><th scope="col">Coût</th></tr></thead><tbody>${d.features
         .map(f => `<tr><th scope="row">${esc(AI_FEATURE_NAMES[f.feature] || f.feature)}</th>${cells(f[key])}</tr>`)
-        .join("")}<tr><th scope="row">Total</th>${cells(d[key])}</tr></tbody></table>`,
+        .join("")}<tr class="ai-usage-total"><th scope="row">Total</th>${cells(d[key])}</tr></tbody></table>`,
     unpriced = d.month.unpriced;
   $("#aiusage").innerHTML =
     table("Aujourd’hui", "day") +
     table("Ce mois-ci", "month") +
-    `<p class="hint">Tokens renvoyés par OpenAI à chaque appel ; les tokens produits comprennent ceux de réflexion. Coût estimé en dollars d’après les tarifs publics${unpriced ? ` (* ${unpriced} appel${unpriced > 1 ? "s" : ""} d’un modèle au tarif inconnu, non compté${unpriced > 1 ? "s" : ""})` : ""}.</p>`;
+    `<p class="hint">Tokens renvoyés par OpenAI à chaque appel ; les tokens produits comprennent ceux de réflexion, le total additionne envoyés et produits. Coût estimé en dollars d’après les tarifs publics${unpriced ? ` (* ${unpriced} appel${unpriced > 1 ? "s" : ""} d’un modèle au tarif inconnu, non compté${unpriced > 1 ? "s" : ""})` : ""}.</p>`;
 }
 // Réglages par défaut des comptes : thème et rappels (chaque utilisateur peut ensuite faire son propre choix).
 function renderAdminDefaults(st) {
