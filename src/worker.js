@@ -1883,15 +1883,16 @@ async function api(r, e, p, ctx = null) {
     return session(u.id, u.email, e);
   }
   if (r.method === "POST" && p === "/api/logout") {
-    const t = sessionToken(r);
+    const t = sessionToken(r),
+      defaults = await appDefaults(e);
     if (t)
       await e.DB.prepare("DELETE FROM sessions WHERE id_hash=?")
         .bind(await sha(t))
         .run();
-    return json({ok: true}, 200, {"set-cookie": setCookie("", 0)});
+    return json({ok: true, default_theme: defaults.theme}, 200, {"set-cookie": setCookie("", 0)});
   }
   if (r.method === "GET" && p === "/api/me") {
-    const u = await me(r, e);
+    const [u, defaults] = await Promise.all([me(r, e), appDefaults(e)]);
     return json({
       user: u
         ? {
@@ -1905,6 +1906,7 @@ async function api(r, e, p, ctx = null) {
           }
         : null,
       is_admin: isAdminUser(e, u),
+      default_theme: defaults.theme,
     });
   }
   const u = await me(r, e);

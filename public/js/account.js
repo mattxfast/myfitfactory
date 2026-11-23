@@ -35,7 +35,22 @@ $("#profileform").onsubmit = async e => {
   }
 };
 
-// Thème effectif gardé sur l’appareil (copie du thème du compte) ; « Sombre » si rien n’est encore connu.
+// Le thème par défaut est partagé par l’écran de connexion et les comptes qui le choisissent.
+const THEME_BAR_COLORS = {light: "#f5f5f0", dark: "#121212", massilia: "#f4f4f4", massilia2: "#0d0d0d"};
+let defaultTheme = document.documentElement.dataset.theme || "dark";
+function cacheDefaultTheme(theme) {
+  if (!Object.hasOwn(THEME_BAR_COLORS, theme)) return;
+  defaultTheme = theme;
+  try {
+    localStorage.setItem("fitfactory-default-theme", theme);
+  } catch {}
+}
+function applyTheme(theme = defaultTheme) {
+  if (!Object.hasOwn(THEME_BAR_COLORS, theme)) theme = defaultTheme;
+  document.documentElement.dataset.theme = theme;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", THEME_BAR_COLORS[theme]);
+}
+// Copie du thème du compte, utilisée après l’ouverture de la session.
 function themePreference() {
   try {
     const old = localStorage.getItem("cfplanner-theme");
@@ -43,21 +58,11 @@ function themePreference() {
       if (localStorage.getItem("fitfactory-theme") === null) localStorage.setItem("fitfactory-theme", old);
       localStorage.removeItem("cfplanner-theme");
     }
-    const theme = localStorage.getItem("fitfactory-theme");
-    return THEME_BAR_COLORS[theme] ? theme : "dark";
+    return localStorage.getItem("fitfactory-theme");
   } catch {
-    return "dark";
+    return null;
   }
 }
-// Thèmes appliqués tels quels (data-theme sur <html>).
-const THEME_BAR_COLORS = {light: "#f5f5f0", dark: "#121212", massilia: "#f4f4f4", massilia2: "#0d0d0d"};
-function applyTheme() {
-  const theme = themePreference();
-  document.documentElement.dataset.theme = theme;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", THEME_BAR_COLORS[theme]);
-}
-// Thème du compte (et non de l’appareil) : enregistré sur le serveur ; « Par défaut » suit le thème choisi par
-// l’administrateur. Le thème effectif est recopié sur l’appareil pour s’afficher dès l’ouverture (avant connexion).
 const THEME_NAMES = {
   light: "Clair",
   dark: "Sombre",
@@ -69,16 +74,18 @@ function cacheTheme(theme) {
   try {
     localStorage.setItem("fitfactory-theme", theme);
   } catch {}
-  applyTheme();
+  applyTheme(theme);
 }
 function setPreferences(d) {
+  if (!user) return;
   preferences = d;
   const select = $("#themeselect");
   select.innerHTML =
     `<option value="default">Par défaut (${esc(THEME_NAMES[d.default_theme] || d.default_theme)})</option>` +
     d.choices.themes.map(t => `<option value="${t}">${esc(THEME_NAMES[t] || t)}</option>`).join("");
   select.value = d.theme || "default";
-  cacheTheme(d.theme || d.default_theme);
+  cacheDefaultTheme(d.default_theme);
+  cacheTheme(d.theme || defaultTheme);
   $("#interfaceselect").value = simpleInterface() ? "simple" : "advanced";
   $("#commonwodoptin").checked = !!d.common_wod;
   applyInterface();
@@ -124,7 +131,7 @@ $("#interfaceselect").onchange = async e => {
 };
 $("#themeselect").onchange = async e => {
   const theme = e.target.value === "default" ? null : e.target.value;
-  cacheTheme(theme || preferences?.default_theme || "dark");
+  cacheTheme(theme || defaultTheme);
   try {
     await api("/preferences", {method: "PUT", body: JSON.stringify({theme})});
     if (preferences) preferences.theme = theme;
@@ -133,4 +140,3 @@ $("#themeselect").onchange = async e => {
     toast(x.message);
   }
 };
-applyTheme();

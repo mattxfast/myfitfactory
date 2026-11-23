@@ -372,21 +372,24 @@ test("programme suivi : dates propres à l'utilisateur, programmation hebdomadai
 });
 
 test("préférences : thème et rappels propres au compte, valeurs par défaut fixées par un admin", async () => {
-  const erin = client(worker.base);
+  const erin = client(worker.base),
+    visitor = client(worker.base);
   await erin.post("/register", {email: "erin@test.local", password: PASSWORD});
   let prefs = (await erin.get("/preferences")).data;
   assert.equal(prefs.theme, null);
   assert.equal(prefs.default_theme, "dark");
+  assert.deepEqual((await visitor.get("/me")).data, {user: null, is_admin: false, default_theme: "dark"});
   assert.equal(prefs.choices.themes.includes("auto"), false, "plus de thème « Automatique »");
   assert.equal((await erin.put("/preferences", {theme: "auto"})).status, 400);
   assert.deepEqual(prefs.reminders, {enabled: 1, days: 3, hour: 18});
   // seul un admin fixe les valeurs par défaut
-  const defaults = {theme: "dark", reminder_days: 5, reminder_hour: 7, reminders_enabled: false};
+  const defaults = {theme: "massilia2", reminder_days: 5, reminder_hour: 7, reminders_enabled: false};
   assert.equal((await erin.put("/admin/settings", defaults)).status, 403);
   assert.equal((await admin.put("/admin/settings", {...defaults, theme: "rose"})).status, 400);
   assert.equal((await admin.put("/admin/settings", defaults)).status, 200);
   prefs = (await erin.get("/preferences")).data;
-  assert.equal(prefs.default_theme, "dark");
+  assert.equal(prefs.default_theme, defaults.theme);
+  assert.deepEqual((await visitor.get("/me")).data, {user: null, is_admin: false, default_theme: defaults.theme});
   assert.deepEqual(prefs.reminders, {enabled: 0, days: 5, hour: 7});
   // le choix du compte l'emporte, sur tous ses appareils (nouvelle connexion)
   assert.equal((await erin.put("/preferences", {theme: "massilia", reminders: {enabled: 1, days: 2}})).status, 200);
@@ -400,6 +403,7 @@ test("préférences : thème et rappels propres au compte, valeurs par défaut f
   // revenir au thème par défaut
   assert.equal((await other.put("/preferences", {theme: null})).status, 200);
   assert.equal((await erin.get("/preferences")).data.theme, null);
+  assert.equal((await other.post("/logout")).data.default_theme, defaults.theme);
 });
 
 test("espace gestionnaire : infos de la box modifiables par ses seuls gestionnaires", async () => {

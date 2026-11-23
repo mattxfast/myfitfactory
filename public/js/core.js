@@ -142,8 +142,9 @@ function fillWodBody(el, parts, fallback) {
   else el.textContent = fallback;
 }
 function showAuth() {
-  $("#auth").hidden = false;
+  applyTheme();
   $("#dashboard").hidden = true;
+  $("#auth").hidden = false;
   $("#userbar").innerHTML = "";
   focusAuthField();
 }
@@ -193,7 +194,8 @@ function renderUserbar() {
     )
       return;
     try {
-      await api("/logout", {method: "POST"});
+      const d = await api("/logout", {method: "POST"});
+      cacheDefaultTheme(d.default_theme);
     } catch (e) {
       toast(e.message);
       return;
@@ -205,6 +207,7 @@ function renderUserbar() {
 }
 function showApp() {
   $("#auth").hidden = true;
+  applyTheme(themePreference());
   $("#dashboard").hidden = false;
   // Première page pour tous (utilisateur, gestionnaire ou administrateur) : les séances.
   switchView("sessions");

@@ -96,30 +96,29 @@ FFOffline.init({
 $("#syncstatus").onclick = () => FFOffline.flush();
 (async () => {
   // Lien « mot de passe oublié » : ?reset=<jeton> ouvre directement le formulaire de nouveau mot de passe.
-  const params = new URLSearchParams(location.search);
-  if (params.has("reset")) {
+  const params = new URLSearchParams(location.search),
+    reset = params.has("reset");
+  if (reset) {
     resetToken = params.get("reset");
     history.replaceState(null, "", location.pathname);
-    showAuth();
     showAuthPanel("reset");
-    return;
   }
   try {
     const d = await api("/me");
-    if (d.user) {
+    if (!FFOffline.state().offline) cacheDefaultTheme(d.default_theme);
+    if (!reset && d.user) {
       user = d.user;
       isAdmin = !!d.is_admin;
       FFOffline.setOwner(user.id);
       showApp();
       FFOffline.flush();
-    } else {
-      FFOffline.clear();
-      showAuth();
+      return;
     }
+    if (!reset) FFOffline.clear();
   } catch (e) {
-    showAuth();
-    if (e.message === OFFLINE_MESSAGE)
+    if (!reset && e.message === OFFLINE_MESSAGE)
       $("#autherror").textContent =
         "Pas de connexion internet et aucune donnée enregistrée sur ce téléphone : connecte-toi une première fois avec du réseau.";
   }
+  showAuth();
 })();
