@@ -1784,12 +1784,13 @@ async function movementCheckStatements(
   ids = [],
   catalogIds = [],
   anyMovement = false,
-  wodId = null
+  wodId = null,
+  requireValid = false
 ) {
   const uniqueIds = [...new Set(ids.map(String).filter(Boolean))];
   const validIds = [];
-  for (let offset = 0; offset < uniqueIds.length; offset += 100) {
-    const chunk = uniqueIds.slice(offset, offset + 100);
+  for (let offset = 0; offset < uniqueIds.length; offset += 99) {
+    const chunk = uniqueIds.slice(offset, offset + 99);
     const placeholders = chunk.map(() => "?").join(",");
     const rows = await env.DB.prepare(
       "SELECT id FROM program_movements WHERE program_id=? AND id IN (" + placeholders + ")"
@@ -1829,6 +1830,8 @@ async function movementCheckStatements(
       validCatalogIds.push(...rows.results.map(row => row.id));
     }
   }
+  if (requireValid && (validIds.length !== new Set(ids).size || validCatalogIds.length !== new Set(catalogIds).size))
+    return null;
   const owned = "EXISTS(SELECT 1 FROM training_sessions WHERE id=? AND user_id=?)";
   return [
     env.DB.prepare("DELETE FROM session_movement_checks WHERE session_id=? AND " + owned).bind(
@@ -1857,6 +1860,10 @@ async function movementCheckStatements(
 const API_KEY_PERMISSIONS = new Map([
   ["GET /api/program-data", "programs:read"],
   ["GET /api/week-data", "workouts:read"],
+  ["GET /api/activities", "workouts:read"],
+  ["GET /api/movement-catalog", "workouts:read"],
+  ["GET /api/wod-types", "workouts:read"],
+  ["POST /api/sessions", "workouts:write"],
   ["GET /api/prs", "prs:read"],
 ]);
 const API_KEY_SCOPES = new Set(API_KEY_PERMISSIONS.values());
@@ -1872,7 +1879,7 @@ async function authenticateApiKey(r, e, p, authorization) {
   if (!match) return apiKeyUnauthorized();
   const now = Math.floor(Date.now() / 1000),
     key = await e.DB.prepare(
-      "SELECT k.id,k.user_id,k.key_hash,k.permissions FROM api_keys k JOIN users u ON u.id=k.user_id WHERE k.prefix=? AND k.revoked_at IS NULL AND k.expires_at>? AND u.is_active=1"
+      "SELECT k.id,k.user_id,k.key_hash,k.permissions,u.first_name,u.last_name FROM api_keys k JOIN users u ON u.id=k.user_id WHERE k.prefix=? AND k.revoked_at IS NULL AND k.expires_at>? AND u.is_active=1"
     )
       .bind("mff_" + match[2], now)
       .first();
@@ -1907,7 +1914,7 @@ async function authenticateApiKey(r, e, p, authorization) {
       "Retry-After": String(60 - (Math.floor(Date.now() / 1000) % 60)),
     });
   }
-  return {id: key.user_id};
+  return {id: key.user_id, first_name: key.first_name, last_name: key.last_name};
 }
 
 async function manageApiKeys(r, e, p, userId) {
@@ -1950,7 +1957,7 @@ async function manageApiKeys(r, e, p, userId) {
     !permissions.every(scope => API_KEY_SCOPES.has(scope)) ||
     new Set(permissions).size !== permissions.length
   )
-    return json({error: "Sélectionne des permissions de lecture valides."}, 400);
+    return json({error: "Sélectionne des permissions valides."}, 400);
   if (!midnight || midnight.toISOString().slice(0, 10) !== date)
     return json({error: "Date d’expiration invalide."}, 400);
   const expiresAt = midnight.getTime() / 1000 + 86400;
@@ -2171,12 +2178,12 @@ async function api(r, e, p, ctx = null, apiUser = null) {
   if (r.method === "GET" && p === "/api/activities") {
     const owner = await e.DB.prepare("SELECT id FROM users WHERE email=?").bind(adminEmail).first();
     if (owner) {
-      let seed = await e.DB.prepare("SELECT id FROM activities WHERE user_id=? LIMIT 1").bind(owner.id).first();
+      const seed = await e.DB.prepare("SELECT id FROM activities WHERE user_id=? LIMIT 1").bind(owner.id).first();
       if (!seed) {
         await e.DB.prepare(
-          "INSERT INTO activities(id,user_id,name,duration_minutes,is_default,is_active) VALUES(?,?,?,?,1,1)"
+          "INSERT INTO activities(id,user_id,name,duration_minutes,is_default,is_active) SELECT ?,?,?,?,1,1 WHERE NOT EXISTS(SELECT 1 FROM activities WHERE user_id=?)"
         )
-          .bind(uid(), owner.id, "CrossFit", 60)
+          .bind(uid(), owner.id, "CrossFit", 60, owner.id)
           .run();
       }
     }
@@ -4696,10 +4703,43 @@ async function api(r, e, p, ctx = null, apiUser = null) {
     return json({scores: scores.results});
   }
   if (r.method === "POST" && p === "/api/sessions") {
-    const b = await r.json(),
-      cid = clientId(b.client_id);
-    if (cid && (await e.DB.prepare("SELECT 1 FROM training_sessions WHERE id=? AND user_id=?").bind(cid, u.id).first()))
-      return json({ok: true, id: cid});
+    if (apiUser && r.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase() !== "application/json")
+      return json({error: "Un corps JSON est requis."}, 415);
+    const b = await r.json().catch(() => null);
+    if (!b || typeof b !== "object" || Array.isArray(b)) return json({error: "Un objet JSON est requis."}, 400);
+    const cid = apiUser && typeof b.client_id !== "string" ? null : clientId(b.client_id),
+      existingSession = () =>
+        e.DB.prepare("SELECT 1 FROM training_sessions WHERE id=? AND user_id=?").bind(cid, u.id).first();
+    if (cid && (await existingSession())) return json({ok: true, id: cid});
+    if (apiUser) {
+      if (b.client_id != null && !cid) return json({error: "L’identifiant client doit être un UUID v4."}, 400);
+      if (typeof b.activity_id !== "string" || !Number.isInteger(b.duration_minutes))
+        return json({error: "Sport ou durée invalide."}, 400);
+      if ([b.box_wod_id, b.daily_wod_id, b.type_id].some(id => id != null && typeof id !== "string"))
+        return json({error: "Identifiant de WOD ou de type invalide."}, 400);
+      if (
+        !(b.box_wod_id || b.daily_wod_id) &&
+        (typeof b.program_id !== "string" || !b.program_id || typeof b.wod_id !== "string" || !b.wod_id)
+      )
+        return json({error: "Le programme et le WOD sont requis."}, 400);
+      if (
+        [b.movement_ids, b.catalog_movement_ids].some(
+          ids => ids !== undefined && (!Array.isArray(ids) || !ids.every(id => typeof id === "string" && id))
+        )
+      )
+        return json({error: "Liste de mouvements invalide."}, 400);
+      if (b.score_value != null && typeof b.score_value !== "number" && typeof b.score_value !== "string")
+        return json({error: "Score invalide."}, 400);
+      if (b.score_category_id != null && typeof b.score_category_id !== "string")
+        return json({error: "Identifiant de catégorie invalide."}, 400);
+      if (b.actual_comment != null && typeof b.actual_comment !== "string")
+        return json({error: "Commentaire invalide."}, 400);
+      if (
+        b.tagged_user_ids != null &&
+        (!Array.isArray(b.tagged_user_ids) || !b.tagged_user_ids.every(id => typeof id === "string"))
+      )
+        return json({error: "Liste de partenaires invalide."}, 400);
+    }
     // WOD de box : la séance est rattachée au programme technique « Hors programme » (WOD « Autres »).
     const box = await sessionBoxWod(e, u.id, b);
     if (box.error) return json({error: box.error}, box.status);
@@ -4712,8 +4752,15 @@ async function api(r, e, p, ctx = null, apiUser = null) {
     // « Autres » sur le programme d'un autre auteur (programme suivi) : séance rattachée à « Hors programme ».
     if (b.wod_id === "other" && b.program_id !== "none" && !(await ownProgram(e, u.id, b.program_id)))
       b.program_id = "none";
-    const date = b.session_date,
-      pid = b.program_id === "none" ? await fallbackProgramId(e, u.id) : b.program_id;
+    const date = b.session_date;
+    if (
+      (apiUser && typeof date !== "string") ||
+      !validDate(date) ||
+      (apiUser && new Date(date).toISOString().slice(0, 10) !== date)
+    )
+      return json({error: "Date invalide."}, 400);
+    if (date > localToday()) return json({error: "Impossible d’enregistrer une séance à une date future."}, 400);
+    const pid = b.program_id === "none" ? await fallbackProgramId(e, u.id) : b.program_id;
     let wid = b.wod_id;
     const isOther = wid === "other"; // WOD « Autres » : tous les mouvements du catalogue
     const act = await e.DB.prepare(
@@ -4724,8 +4771,6 @@ async function api(r, e, p, ctx = null, apiUser = null) {
       duration = Number(b.duration_minutes);
     if (!act || !Number.isInteger(duration) || duration < 1 || duration > 600)
       return json({error: "Sport ou durée invalide."}, 400);
-    if (!validDate(date)) return json({error: "Date invalide."}, 400);
-    if (date > localToday()) return json({error: "Impossible d’enregistrer une séance à une date future."}, 400);
     const row = await e.DB.prepare(
       "SELECT p.id,p.user_id,p.start_monday,p.end_monday,f.start_monday AS follow_start,f.end_monday AS follow_end FROM programs p" +
         FOLLOW_JOIN +
@@ -4774,35 +4819,44 @@ async function api(r, e, p, ctx = null, apiUser = null) {
         Array.isArray(b.movement_ids) ? b.movement_ids : [],
         Array.isArray(b.catalog_movement_ids) ? b.catalog_movement_ids : [],
         isOther,
-        w.id
+        w.id,
+        Boolean(apiUser)
       );
-    await e.DB.batch([
-      e.DB.prepare(
-        "INSERT INTO training_sessions(id,program_id,wod_id,user_id,session_date,actual_comment,activity_id,duration_minutes,started_at,logged_at,box_wod_id,score_value,score_category_id,daily_wod_id,score_scaled,program_score_type,type_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
-      ).bind(
-        id,
-        pid,
-        wid,
-        u.id,
-        date,
-        String(b.actual_comment || "").slice(0, 3000),
-        b.activity_id,
-        duration,
-        typeof b.started_at === "string" && !Number.isNaN(Date.parse(b.started_at))
-          ? new Date(b.started_at).toISOString()
-          : new Date(Date.now() - duration * 60000).toISOString(),
-        new Date().toISOString(),
-        box.wod?.id || null,
-        box.value ?? daily.value ?? score.value,
-        box.category ?? null,
-        daily.id,
-        daily.scaled,
-        score.type,
-        sessionType.id
-      ),
-      ...checks,
-      ...sessionTagStatements(e, u.id, id, sessionTagIds(b, u.id) || []),
-    ]);
+    if (!checks) return json({error: "Mouvement inconnu ou non autorisé pour ce WOD."}, 400);
+    try {
+      await e.DB.batch([
+        e.DB.prepare(
+          "INSERT INTO training_sessions(id,program_id,wod_id,user_id,session_date,actual_comment,activity_id,duration_minutes,started_at,logged_at,box_wod_id,score_value,score_category_id,daily_wod_id,score_scaled,program_score_type,type_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        ).bind(
+          id,
+          pid,
+          wid,
+          u.id,
+          date,
+          String(b.actual_comment || "").slice(0, 3000),
+          b.activity_id,
+          duration,
+          typeof b.started_at === "string" && !Number.isNaN(Date.parse(b.started_at))
+            ? new Date(b.started_at).toISOString()
+            : new Date(Date.now() - duration * 60000).toISOString(),
+          new Date().toISOString(),
+          box.wod?.id || null,
+          box.value ?? daily.value ?? score.value,
+          box.category ?? null,
+          daily.id,
+          daily.scaled,
+          score.type,
+          sessionType.id
+        ),
+        ...checks,
+        ...sessionTagStatements(e, u.id, id, sessionTagIds(b, u.id) || []),
+      ]);
+    } catch (err) {
+      // La contrainte sur l’identifiant arbitre les créations concurrentes. Le lot perdant est annulé.
+      if (!cid || !String(err?.message).includes("UNIQUE constraint failed: training_sessions.id")) throw err;
+      if (await existingSession()) return json({ok: true, id: cid});
+      return json({error: "Identifiant de séance indisponible."}, 409);
+    }
     await afterTagging(ctx, e, u, id);
     return json({ok: true, id});
   }

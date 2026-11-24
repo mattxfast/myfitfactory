@@ -9,7 +9,7 @@ dire « fais l'idée 7 ».
 - Nouvelle idée : l'ajouter dans la bonne rubrique avec le **numéro suivant le plus grand existant**.
 - *En italique* : la décision de Matt quand il y en a une.
 
-Prochain numéro libre : **61**
+Prochain numéro libre : **62**
 
 ## Fiabilité et exploitation
 
@@ -64,6 +64,7 @@ Prochain numéro libre : **61**
 - [x] **59.** Ajouter la mesure « Nombre de répétitions / Temps » pour les records et renommer la mesure simple « Nombre de répétitions ». — fait le 24/11/2026
 
 - [x] **60.** Intégrations IA et API : clés API personnelles révocables avec permissions de lecture par catégorie. — fait le 24/11/2026 ([documentation](docs/api-integrations.md))
+- [ ] **61.** Intégrations IA et API V3.0 : enregistrer des entraînements avec une clé personnelle. Évolution en attente de validation de la PR.
 
 ## Look and feel
 

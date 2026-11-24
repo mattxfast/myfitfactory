@@ -321,7 +321,7 @@ Le premier appel API après déploiement déclenche la vérification et, si néc
 
 ## Intégrations IA et API
 
-Dans **Mon compte → Intégrations IA & API**, créez une clé personnelle avec les permissions de lecture nécessaires (programmes, entraînements ou records), puis copiez-la pour configurer votre intégration. Voir [la documentation de l’API](docs/api-integrations.md) pour les routes, les quotas, la révocation et la migration D1 automatique.
+Dans **Mon compte → Intégrations IA & API**, créez une clé personnelle avec les permissions nécessaires (lecture des programmes, entraînements ou records ; enregistrement des entraînements), puis copiez-la pour configurer votre intégration. Voir [la documentation de l’API](docs/api-integrations.md) pour les routes, les quotas, la révocation et la migration D1 automatique.
 
 ## API conservées
 

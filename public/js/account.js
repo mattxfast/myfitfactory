@@ -180,6 +180,7 @@ const apiKeyForm = $("#apikeyform"),
     "programs:read": "Programmes",
     "workouts:read": "Entraînements et planification",
     "prs:read": "Records personnels",
+    "workouts:write": "Enregistrer des entraînements",
   };
 let apiKeyView = 0;
 
@@ -282,7 +283,7 @@ apiKeyForm.onsubmit = async event => {
     view = apiKeyView;
   if (button.disabled) return;
   if (!permissions.length) {
-    error.textContent = "Sélectionne au moins une permission de lecture.";
+    error.textContent = "Sélectionne au moins une permission.";
     return;
   }
   error.textContent = "";
