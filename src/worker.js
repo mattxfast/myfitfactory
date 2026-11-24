@@ -33,8 +33,13 @@ import {FOOD_CACHE_DAYS, fetchProduct, validBarcode} from "./foodfacts.js";
 import {athleteProfileInput, computeFitness} from "./fitness.js";
 import {BENCHMARKS, benchmarkById, benchmarkOut, benchmarkMovementIds, benchmarkScore} from "./benchmarks.js";
 import {REPORT_PROMPT_VERSION, reportCoachComment} from "./report.js";
+import {MOVEMENT_CATEGORIES, movementCategory} from "./movements.js";
 const SESSION_DAYS = 30,
   enc = new TextEncoder();
+const MOVEMENT_CATALOG_QUERY =
+  "SELECT id,name,measurement_method,category FROM movement_catalog ORDER BY sort_order,name COLLATE NOCASE";
+const withMovementCategory = movement => ({...movement, category: movementCategory(movement)});
+const validMovementCategory = category => typeof category === "string" && Object.hasOwn(MOVEMENT_CATEGORIES, category);
 const json = (d, s = 200, h = {}) =>
   new Response(JSON.stringify(d), {
     status: s,
@@ -719,6 +724,11 @@ async function ensureV2Schema(env) {
           "UPDATE training_sessions SET type_id=? WHERE type_id IS NULL",
         ].map(sql => env.DB.prepare(sql).bind(first.id))
       );
+    });
+    await runMigration("v46-movement-categories", async () => {
+      const columns = await env.DB.prepare("PRAGMA table_info(movement_catalog)").all();
+      if (!columns.results.some(c => c.name === "category"))
+        await env.DB.prepare("ALTER TABLE movement_catalog ADD COLUMN category TEXT").run();
     });
   })().catch(err => {
     schemaReady = null;
@@ -2011,10 +2021,8 @@ async function api(r, e, p, ctx = null) {
     return json({activities: x.results});
   }
   if (r.method === "GET" && p === "/api/movement-catalog") {
-    const x = await e.DB.prepare(
-      "SELECT id,name,measurement_method FROM movement_catalog ORDER BY sort_order,name COLLATE NOCASE"
-    ).all();
-    return json({movements: x.results});
+    const x = await e.DB.prepare(MOVEMENT_CATALOG_QUERY).all();
+    return json({movements: x.results.map(withMovementCategory)});
   }
   // Liste commune des types de WOD (choix dans les formulaires de WOD et de séance).
   if (r.method === "GET" && p === "/api/wod-types")
@@ -2026,10 +2034,8 @@ async function api(r, e, p, ctx = null) {
     if (p.startsWith("/api/admin/activities") && !ownerId)
       return json({error: "Le compte administrateur principal n’existe pas encore."}, 409);
     if (r.method === "GET" && p === "/api/admin/movements") {
-      const x = await e.DB.prepare(
-        "SELECT id,name,measurement_method FROM movement_catalog ORDER BY sort_order,name COLLATE NOCASE"
-      ).all();
-      return json({movements: x.results});
+      const x = await e.DB.prepare(MOVEMENT_CATALOG_QUERY).all();
+      return json({movements: x.results.map(withMovementCategory)});
     }
     if (r.method === "POST" && p === "/api/admin/movements") {
       const b = await r.json(),
@@ -2040,12 +2046,14 @@ async function api(r, e, p, ctx = null) {
       if (!name) return json({error: "Nom du mouvement requis."}, 400);
       if (!["load", "force", "reps", "distance"].includes(method))
         return json({error: "Méthode de calcul invalide."}, 400);
+      if (b.category !== undefined && !validMovementCategory(b.category))
+        return json({error: "Catégorie de mouvement invalide."}, 400);
       const id = uid();
       try {
         await e.DB.prepare(
-          "INSERT INTO movement_catalog(id,name,measurement_method,sort_order) VALUES(?,?,?,COALESCE((SELECT MAX(sort_order)+1 FROM movement_catalog),0))"
+          "INSERT INTO movement_catalog(id,name,measurement_method,category,sort_order) VALUES(?,?,?,?,COALESCE((SELECT MAX(sort_order)+1 FROM movement_catalog),0))"
         )
-          .bind(id, name, method)
+          .bind(id, name, method, b.category ?? null)
           .run();
       } catch {
         return json({error: "Ce mouvement existe déjà dans le catalogue."}, 409);
@@ -2077,7 +2085,9 @@ async function api(r, e, p, ctx = null) {
       if (!name) return json({error: "Nom du mouvement requis."}, 400);
       if (!["load", "force", "reps", "distance"].includes(method))
         return json({error: "Méthode de calcul invalide."}, 400);
-      const current = await e.DB.prepare("SELECT measurement_method FROM movement_catalog WHERE id=?")
+      if (b.category !== undefined && !validMovementCategory(b.category))
+        return json({error: "Catégorie de mouvement invalide."}, 400);
+      const current = await e.DB.prepare("SELECT measurement_method,category FROM movement_catalog WHERE id=?")
         .bind(m[1])
         .first();
       if (!current) return json({error: "Mouvement introuvable."}, 404);
@@ -2093,14 +2103,16 @@ async function api(r, e, p, ctx = null) {
           return json(
             {
               error:
-                "Impossible de changer cette catégorie : ce mouvement possède déjà des PR. Seul le passage entre Lift et Force est autorisé.",
+                "Impossible de changer la mesure du record : ce mouvement possède déjà des PR. Le passage entre les deux mesures de charge est possible.",
             },
             409
           );
       }
       try {
-        const result = await e.DB.prepare("UPDATE movement_catalog SET name=?,measurement_method=? WHERE id=?")
-          .bind(name, method, m[1])
+        const result = await e.DB.prepare(
+          "UPDATE movement_catalog SET name=?,measurement_method=?,category=? WHERE id=?"
+        )
+          .bind(name, method, b.category ?? current.category, m[1])
           .run();
         if (!result.meta?.changes) return json({error: "Mouvement introuvable."}, 404);
       } catch {
@@ -2928,11 +2940,11 @@ async function api(r, e, p, ctx = null) {
   }
   if (r.method === "GET" && p === "/api/prs") {
     const x = await e.DB.prepare(
-      "SELECT pr.id,pr.movement_id,mc.name AS movement_name,mc.measurement_method,pr.record_date,pr.value,pr.rep_count,pr.fixed_kind,pr.fixed_value,pr.created_at FROM personal_records pr JOIN movement_catalog mc ON mc.id=pr.movement_id WHERE pr.user_id=? ORDER BY pr.record_date,pr.created_at"
+      "SELECT pr.id,pr.movement_id,mc.name AS movement_name,mc.measurement_method,mc.category,pr.record_date,pr.value,pr.rep_count,pr.fixed_kind,pr.fixed_value,pr.created_at FROM personal_records pr JOIN movement_catalog mc ON mc.id=pr.movement_id WHERE pr.user_id=? ORDER BY pr.record_date,pr.created_at"
     )
       .bind(u.id)
       .all();
-    return json({records: x.results});
+    return json({records: x.results.map(withMovementCategory)});
   }
   if (r.method === "POST" && p === "/api/prs") {
     const b = await r.json(),
@@ -3108,7 +3120,7 @@ async function api(r, e, p, ctx = null) {
       )
         .bind(u.id, from, today, u.id, from, today)
         .all(),
-      e.DB.prepare("SELECT name,measurement_method FROM movement_catalog").all(),
+      e.DB.prepare("SELECT name,measurement_method,category FROM movement_catalog").all(),
       // Mes scores de box des 8 dernières semaines (20 WOD au plus) et ceux des autres membres sur ces WOD.
       e.DB.prepare(
         "SELECT s.box_wod_id,s.user_id,s.score_category_id,s.score_value,w.score_type,w.box_id,(SELECT COUNT(*) FROM box_categories c2 WHERE c2.box_id=w.box_id AND (c2.sort_order<c.sort_order OR (c2.sort_order=c.sort_order AND c2.name<c.name))) AS category_index FROM training_sessions s JOIN box_wods w ON w.id=s.box_wod_id JOIN box_categories c ON c.id=s.score_category_id JOIN box_members m ON m.box_id=w.box_id AND m.user_id=s.user_id AND m.role='member' AND m.status='approved' WHERE s.score_value IS NOT NULL AND s.box_wod_id IN (SELECT box_wod_id FROM training_sessions WHERE user_id=? AND box_wod_id IS NOT NULL AND score_value IS NOT NULL AND session_date BETWEEN ? AND ? ORDER BY session_date DESC LIMIT 20) LIMIT 5000"
@@ -3878,9 +3890,7 @@ async function api(r, e, p, ctx = null) {
       )
         .bind(u.id)
         .all(),
-      e.DB.prepare(
-        "SELECT id,name,measurement_method FROM movement_catalog ORDER BY sort_order,name COLLATE NOCASE"
-      ).all(),
+      e.DB.prepare(MOVEMENT_CATALOG_QUERY).all(),
       e.DB.prepare("SELECT name FROM program_movements WHERE program_id=? AND user_id=? ORDER BY sort_order")
         .bind(wod.program_id, u.id)
         .all(),
@@ -3964,9 +3974,7 @@ async function api(r, e, p, ctx = null) {
       )
         .bind(u.id)
         .all(),
-      e.DB.prepare(
-        "SELECT id,name,measurement_method FROM movement_catalog ORDER BY sort_order,name COLLATE NOCASE"
-      ).all(),
+      e.DB.prepare(MOVEMENT_CATALOG_QUERY).all(),
       e.DB.prepare(
         "SELECT s.session_date,COALESCE(bw.name,dw.title,CASE WHEN w.name='__AUTRES__' THEN 'Autres' ELSE w.name END) AS name,COALESCE(NULLIF(s.actual_comment,''),bw.content,dw.content,'') AS comment FROM training_sessions s JOIN program_wods w ON w.id=s.wod_id LEFT JOIN box_wods bw ON bw.id=s.box_wod_id LEFT JOIN daily_wods dw ON dw.id=s.daily_wod_id AND dw.user_id=s.user_id WHERE s.user_id=? AND s.session_date BETWEEN ? AND ? ORDER BY s.session_date LIMIT 20"
       )

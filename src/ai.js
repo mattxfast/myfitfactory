@@ -1,6 +1,8 @@
 // Génération de WOD par IA (API OpenAI, sans dépendance) : options de séance, prompt modèle, appel et mise en texte.
 // Le Worker (src/worker.js) lit le contexte en base (profil, records, programme, séances) et enregistre le résultat.
 
+import {MOVEMENT_CATEGORIES, movementCategory} from "./movements.js";
+
 export const AI_PROMPT_VERSION = "wod-seance-v4";
 export const AI_DAILY_LIMIT = 100; // générations par utilisateur et par 24 h (maîtrise du coût)
 export const AI_DEFAULT_MODEL = "gpt-5-mini";
@@ -25,7 +27,10 @@ const BLOCK_ICONS = {echauffement: "🔥", technique: "🎯", force: "🏋️", 
 const WRITING_RULES = `- Rédaction : dans chaque bloc, "description" tient en une ou deux phrases courtes (intention, consignes d'exécution, repos). Ne répète ni le nom du bloc, ni le format, ni la durée, et ne liste pas les mouvements dans la description : ils vont dans "mouvements", un par ligne.
 - "format" est court : « AMRAP 12 min », « EMOM 10 min », « For Time », « 5 x 3 », « 21-15-9 »… ou null.
 - Pour chaque mouvement : "reps" (ex. « 5 », « 3 x 5 », « 200 m ») et "charge" (ex. « 75 % 1RM », « 43/30 kg ») courts ; "scaling" seulement si utile, en quelques mots.`;
-const FAMILY = {load: "Lift", force: "Force", reps: "Gym", distance: "Engine"};
+function catalogMovementLabel(movement) {
+  const category = MOVEMENT_CATEGORIES[movementCategory(movement)];
+  return category ? movement.name + " (" + category + ")" : movement.name;
+}
 
 const text = (v, max) =>
   String(v ?? "")
@@ -137,9 +142,7 @@ export function buildPrompt(c) {
     "Consigne particulière : " + (o.instructions || "aucune"),
     "",
     "## Catalogue des mouvements",
-    c.catalog
-      .map(m => m.name + (FAMILY[m.measurement_method] ? " (" + FAMILY[m.measurement_method] + ")" : ""))
-      .join(", ") || "vide",
+    c.catalog.map(catalogMovementLabel).join(", ") || "vide",
   ];
   return lines.join("\n");
 }
@@ -382,9 +385,7 @@ export function buildDailyPrompt(c) {
     "Consigne particulière : " + (o.instructions || "aucune"),
     "",
     "## Catalogue des mouvements",
-    c.catalog
-      .map(m => m.name + (FAMILY[m.measurement_method] ? " (" + FAMILY[m.measurement_method] + ")" : ""))
-      .join(", ") || "vide",
+    c.catalog.map(catalogMovementLabel).join(", ") || "vide",
   ].join("\n");
 }
 

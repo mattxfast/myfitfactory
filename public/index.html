@@ -401,11 +401,21 @@
             </div>
             <label>Nom du mouvement<input name="name" maxlength="80" placeholder="Ex. Snatch" required /></label
             ><label
-              >Catégorie<select name="measurement_method" required>
-                <option value="load">Lift</option>
+              >Catégorie<select name="category" required>
+                <option value="lift">Lift</option>
                 <option value="force">Force</option>
-                <option value="reps">Gym</option>
-                <option value="distance">Engine</option>
+                <option value="gym">Gym</option>
+                <option value="engine">Engine</option>
+                <option value="core">Core</option>
+                <option value="functional">Fonctionnel</option>
+              </select></label
+            ><label
+              >Mesure du record<select name="measurement_method" required>
+                <option value="">Choisir une mesure</option>
+                <option value="load">Charge (Lift)</option>
+                <option value="force">Charge (Force)</option>
+                <option value="reps">Répétitions</option>
+                <option value="distance">Distance et temps</option>
               </select></label
             ><button class="primary">Enregistrer</button>
             <div id="movementcatalogerror" class="error"></div>
@@ -1186,7 +1196,7 @@
           <h3>Polyvalence · 10 %</h3>
           <p>
             Le nombre de mouvements différents cochés dans tes séances sur 8 semaines (70 points à 12 mouvements) et les
-            familles travaillées : Lift, Force, Gym, Engine (30 points).
+            familles travaillées parmi celles du catalogue (30 points).
           </p>
           <h3>Progression · 10 %</h3>
           <p>

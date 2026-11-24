@@ -33,6 +33,16 @@ let tab = "login",
   coachInvites = [], // programmes de coach qu’on me propose, en attente de ma réponse
   commonWod = null,
   wodTypes = []; // types de WOD (liste commune gérée par l’administrateur) // WOD aléatoire du jour : {wod, joined_id, participants}
+const movementCategoryLabels = {
+  lift: "Lift",
+  force: "Force",
+  gym: "Gym",
+  engine: "Engine",
+  core: "Core",
+  functional: "Fonctionnel",
+};
+const movementCategoryByMethod = {load: "lift", force: "force", reps: "gym", distance: "engine"};
+const movementCategory = movement => movement.category ?? movementCategoryByMethod[movement.measurement_method];
 const today = () => {
   const d = new Date();
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);

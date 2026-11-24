@@ -117,7 +117,9 @@ test("isolation : un utilisateur ne voit ni ne modifie les données d'un autre",
 test("PR : création rejouable sans doublon (client_id)", async () => {
   const mv = await admin.post("/admin/movements", {name: "Back Squat test", measurement_method: "load"});
   assert.equal(mv.status, 200, JSON.stringify(mv.data));
-  const movementId = (await alice.get("/movement-catalog")).data.movements.find(m => m.name === "Back Squat test").id;
+  const movement = (await alice.get("/movement-catalog")).data.movements.find(m => m.id === mv.data.id);
+  assert.equal(movement.category, "lift");
+  const movementId = movement.id;
   const id = randomUUID(),
     body = {client_id: id, movement_id: movementId, record_date: today(), value: 100, rep_count: 1};
   assert.equal((await alice.post("/prs", body)).data.id, id);
@@ -125,6 +127,31 @@ test("PR : création rejouable sans doublon (client_id)", async () => {
   const records = (await alice.get("/prs")).data.records.filter(r => r.id === id);
   assert.equal(records.length, 1);
   assert.equal(records[0].value, 100);
+});
+
+test("catalogue : Core et Fonctionnel sont indépendants de la mesure du record", async () => {
+  const body = {name: "Abdos test", category: "core", measurement_method: "reps"};
+  assert.equal((await alice.post("/admin/movements", body)).status, 403);
+  assert.equal((await admin.post("/admin/movements", {...body, category: "inconnue"})).status, 400);
+  const created = await admin.post("/admin/movements", body);
+  assert.equal(created.status, 200);
+  const movementId = created.data.id,
+    route = `/admin/movements/${movementId}`;
+  const catalogEntry = (await admin.get("/admin/movements")).data.movements.find(m => m.id === movementId);
+  assert.equal(catalogEntry.category, "core");
+  const pr = await alice.post("/prs", {movement_id: movementId, record_date: today(), value: 25});
+  assert.equal(pr.status, 200);
+  const edited = {...body, category: "functional"};
+  assert.equal((await admin.put(route, edited)).status, 200);
+  assert.equal((await admin.put(route, {...edited, category: "inconnue"})).status, 400);
+  assert.equal((await admin.put(route, {...edited, measurement_method: "load"})).status, 409);
+  assert.equal((await admin.put(route, {name: body.name, measurement_method: body.measurement_method})).status, 200);
+  const movement = (await alice.get("/movement-catalog")).data.movements.find(m => m.id === movementId);
+  assert.deepEqual(movement, {id: movementId, ...edited});
+  const record = (await alice.get("/prs")).data.records.find(r => r.id === pr.data.id);
+  assert.equal(record.category, "functional");
+  assert.equal(record.measurement_method, "reps");
+  assert.equal(record.value, 25);
 });
 
 test("administration réservée au compte ADMIN_EMAIL", async () => {

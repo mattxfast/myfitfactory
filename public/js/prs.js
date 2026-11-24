@@ -168,11 +168,9 @@ function renderPrChart(records) {
   );
 }
 window.cfPrCategorySections = window.cfPrCategorySections || {};
-const prCategoryOrder = ["load", "force", "reps", "distance"];
-const prCategoryLabel = method =>
-  method === "load" ? "LIFT" : method === "force" ? "FORCE" : method === "reps" ? "GYM" : "ENGINE";
-function renderPrCategory(method, items) {
-  const key = "records:" + method,
+function renderPrCategory(category, items) {
+  const key = "records:" + category,
+    label = esc(movementCategoryLabels[category].toUpperCase()),
     collapsed = !!window.cfPrCategorySections[key];
   const content = items
     .map(
@@ -203,11 +201,11 @@ function renderPrCategory(method, items) {
     '"><span class="admin-collapse-indicator">' +
     (collapsed ? "＋" : "−") +
     "</span><span>" +
-    prCategoryLabel(method) +
+    label +
     '</span><button type="button" class="admin-add" data-add-pr="' +
-    method +
+    category +
     '" aria-label="Ajouter un PR ' +
-    prCategoryLabel(method) +
+    label +
     '" title="Ajouter un PR">＋</button></div><div class="admin-group-body"><div class="pr-category-body">' +
     (content || '<div class="admin-row section-empty"><span>Pas de PR enregistré</span></div>') +
     "</div></div></section>"
@@ -298,7 +296,8 @@ function renderPrs() {
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(r);
   }
-  const catalogOrder = new Map(movementCatalog.map((m, i) => [m.id, i]));
+  const catalogOrder = new Map(movementCatalog.map((m, i) => [m.id, i])),
+    catalogCategories = new Map(movementCatalog.map(m => [m.id, m.category]));
   const items = [...groups.entries()]
     .map(([key, records]) => {
       records.sort((a, b) => a.record_date.localeCompare(b.record_date) || a.created_at.localeCompare(b.created_at));
@@ -311,6 +310,7 @@ function renderPrs() {
         best,
         movement_name: best.movement_name,
         movement_id: best.movement_id,
+        category: catalogCategories.get(best.movement_id) ?? movementCategory(best),
         measurement_method: best.measurement_method,
         rep_count: best.rep_count,
         fixed_kind: best.fixed_kind,
@@ -327,10 +327,8 @@ function renderPrs() {
         Number(a.fixed_value || 0) - Number(b.fixed_value || 0)
     );
   // Une rubrique par famille ayant des mouvements au catalogue (même sans PR), avec son bouton ＋.
-  const families = prCategoryOrder.filter(
-    method =>
-      movementCatalog.some(m => m.measurement_method === method) || items.some(x => x.measurement_method === method)
-  );
+  const withMovements = new Set([...movementCatalog.map(movementCategory), ...items.map(x => x.category)]),
+    families = Object.keys(movementCategoryLabels).filter(category => withMovements.has(category));
   // Onglet « Mon fitness » : trois sous-onglets (Forme, Records, Bilans), le dernier ouvert est mémorisé.
   const tab = fitnessTab(),
     content =
@@ -340,10 +338,10 @@ function renderPrs() {
           ? renderReportSection()
           : (families.length
               ? families
-                  .map(method =>
+                  .map(category =>
                     renderPrCategory(
-                      method,
-                      items.filter(x => x.measurement_method === method)
+                      category,
+                      items.filter(x => x.category === category)
                     )
                   )
                   .join("")
@@ -545,13 +543,13 @@ function fillEnginePr(f, record) {
   }
 }
 // Ouvre le formulaire de PR : vide pour une création, pré-rempli pour la modification d'un PR existant.
-// method : famille choisie avec le ＋ d’une rubrique (seuls ses mouvements sont proposés).
-function openPrForm(record = null, method = "") {
+// category : famille choisie avec le ＋ d’une rubrique (seuls ses mouvements sont proposés).
+function openPrForm(record = null, category = "") {
   const f = $("#prform");
   f.reset();
   f.elements.record_date.value = today();
   f.elements.movement_id.innerHTML = movementCatalog
-    .filter(m => !method || m.measurement_method === method)
+    .filter(m => !category || movementCategory(m) === category)
     .map(m => '<option value="' + m.id + '">' + esc(m.name) + "</option>")
     .join("");
   f.elements.pr_id.value = record?.id || "";
@@ -566,7 +564,7 @@ function openPrForm(record = null, method = "") {
   $("#prformsubmit").textContent = record ? "Enregistrer les modifications" : "Enregistrer le PR";
   $("#prformerror").textContent = "";
   syncPrForm();
-  if (!movementCatalog.length) {
+  if (!f.elements.movement_id.options.length) {
     toast("Aucun mouvement disponible dans le catalogue.");
     return;
   }

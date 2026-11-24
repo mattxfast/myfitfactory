@@ -123,7 +123,7 @@ Une planification n'est pas une séance réalisée : elle sert de repère dans l
 - Fiche produit : `GET /api/food-products/:code` (8 à 14 chiffres ; un UPC-A à 12 chiffres est complété d'un zéro par le front). Le Worker interroge Open Food Facts (`/api/v2/product/<code>.json`, champs utiles seulement, application identifiée par son User-Agent, aucune donnée personnelle), réduit la fiche (énergie convertie des kJ et sel déduit du sodium si besoin) et la garde 30 jours dans `food_products` (données publiques, partagées entre comptes) ; produit introuvable : 404. La fiche consultée reste lisible hors ligne sur le téléphone. Aucune image de produit n'est chargée (pas de ressource externe).
 
 ### Mon fitness
-- L'onglet « Mon fitness » (icône courbe, anciennement « PR ») a trois sous-onglets en tête de page, le dernier ouvert étant mémorisé sur l'appareil : **Forme** (score de forme et progression), **Records** (PR LIFT / FORCE / GYM / ENGINE et benchmarks), **Bilans** (bilans mensuels).
+- L'onglet « Mon fitness » (icône courbe, anciennement « PR ») a trois sous-onglets en tête de page. Le dernier ouvert est mémorisé sur l'appareil. **Forme** affiche le score de forme et la progression, **Records** les PR par catégorie et les benchmarks, et **Bilans** les bilans mensuels.
 
 ### Progression (Mon fitness → Forme)
 - Rubrique repliable **PROGRESSION** de Mon fitness → Forme, du lundi de la première séance enregistrée (selon la date de la séance) à aujourd’hui : nombre de séances, moyenne par semaine, semaines actives d'affilée (la semaine en cours ne casse pas la série tant qu'elle est vide) ; histogramme des séances par semaine (un toucher ou le survol d'une colonne affiche son détail, les autres s'atténuent, défilement horizontal si nécessaire) ; répartition par origine (Mes WOD — programmation et WOD générés —, WOD de la box, séances libres) ; mouvements les plus travaillés (une fois par séance, regroupés par nom).
@@ -148,21 +148,16 @@ Une planification n'est pas une séance réalisée : elle sert de repère dans l
 - **Gym** (15 %) : PR en répétitions (pull-ups, butterfly, C2B, T2B, HSPU, muscle-ups, DU, push-ups, pistols) comparés aux mêmes niveaux.
 - **Engine** (10 %) : PR de course et de rameur sur les épreuves de référence (course 1 km, 5 km, 10 km, 12 min de Cooper ; rameur 500 m, 1 km, 2 km), comparés en vitesse à des repères par niveau selon le sexe (temps femmes × 1,12, distances × 0,88), avec le même ajustement d'âge.
 - **Conditionnement** (10 %) : place dans sa catégorie aux classements des WOD de box des 8 dernières semaines (au moins 3 participants ; −15 % par catégorie après la première, RX).
-- **Polyvalence** (10 %) : mouvements différents cochés sur 8 semaines (objectif 12) et familles couvertes (Lift, Force, Gym, Engine).
+- **Polyvalence** (10 %) : mouvements différents cochés sur 8 semaines (objectif 12) et familles couvertes parmi celles du catalogue.
 - **Progression** (10 %) : PR battus (1 point ; pour un temps sur une distance, un temps plus court) et premiers PR (½ point) des 90 derniers jours (5 points = 100).
 
 Un pilier sans données est « à compléter » (avec la marche à suivre) et sort du calcul ; le score global, moyenne pondérée des piliers renseignés, demande au moins 2 piliers. Sous le détail, un lien discret « Comment est-il calculé ? » ouvre une fenêtre qui explique le calcul pilier par pilier. Le profil d'athlète (Mon compte → Profil : poids de corps, sexe, date de naissance, facultatifs, validés par le serveur : 25 à 300 kg, au moins 10 ans ; migration V28, colonnes `users.body_weight_kg`, `birth_date`, `sex`) sert uniquement à ce score, visible de l'athlète seul.
 
-Les mouvements du catalogue sont répartis en quatre familles :
+Dans **Administration → Paramètres → Liste des mouvements**, le formulaire propose les catégories **Lift**, **Force**, **Gym**, **Engine**, **Core** et **Fonctionnel**. Le champ « Mesure du record » détermine les unités et le format de saisie du PR. Changer la catégorie d'un mouvement conserve ses records.
 
-| Catégorie | Type de mesure | Exemple de saisie |
-|---|---|---|
-| Lift | Charge en kg | 100 kg – 1 RM |
-| Force | Charge en kg | 120 kg – 3 RM |
-| Gym | Nombre de répétitions | 25 répétitions |
-| Engine | Distance en mètres | 2 000 m |
+La migration V46 ajoute `movement_catalog.category`. Les mouvements sans catégorie explicite gardent leur classement selon leur mesure d'origine (`load` → Lift, `force` → Force, `reps` → Gym, `distance` → Engine). Le catalogue et les records renvoient la catégorie effective dans le champ `category`.
 
-La page n'a pas de titre : chaque famille (LIFT, FORCE, GYM, ENGINE) qui a des mouvements au catalogue a un bandeau de titre repliable, même sans PR (une famille sans PR affiche « Pas de PR enregistré », au style des rubriques vides des autres pages) ; le ＋ en fin de bandeau ouvre « Nouveau PR » avec les seuls mouvements de cette famille. Les cartes PR sont classées selon l'ordre du catalogue. L'historique d'un mouvement affiche les enregistrements et la courbe d'évolution. Les enregistrements peuvent être supprimés depuis leur historique.
+Chaque catégorie qui contient des mouvements au catalogue a un bandeau repliable. Elle affiche « Pas de PR enregistré » si l'historique est vide. Le ＋ ouvre « Nouveau PR » avec les seuls mouvements de cette catégorie. Les cartes PR suivent l'ordre du catalogue. L'historique d'un mouvement affiche ses enregistrements et sa courbe d'évolution. Les enregistrements peuvent être supprimés depuis leur historique.
 
 ### Compte et administration
 - Page « Mon compte » (pastille aux initiales en haut, cerclée tant qu'on est sur la page) : rubriques Profil, Mes box, Apparence, Rappels, Export Excel et Déconnexion, chacune avec un bandeau de titre et repliable (−/＋).

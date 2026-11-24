@@ -8,10 +8,11 @@
 // - Gym : PR en répétitions des mouvements de gymnastique de référence, comparés aux mêmes 4 niveaux.
 // - Engine : PR de course et de rameur sur les épreuves de référence (temps sur une distance, Cooper 12 min).
 // - Conditionnement : place dans les classements des WOD de box (8 dernières semaines, catégorie prise en compte).
-// - Polyvalence : variété des mouvements et des familles (Lift, Force, Gym, Engine) cochés dans les séances.
+// - Polyvalence : variété des mouvements et des familles du catalogue cochés dans les séances.
 // - Progression : PR battus (et premiers PR) des 90 derniers jours.
 // Un pilier sans données vaut null (« à compléter ») et n'entre pas dans le score global.
 import {movementKey} from "./ai.js";
+import {movementCategory} from "./movements.js";
 
 export const FITNESS_VERSION = "forme-v1";
 const WEIGHTS = {
@@ -255,8 +256,9 @@ export function computeFitness(d) {
 
   // Polyvalence : mouvements différents (objectif : 12) et familles couvertes parmi celles du catalogue.
   {
-    const familyOf = new Map((d.catalog || []).map(m => [movementKey(m.name), m.measurement_method])),
-      available = new Set((d.catalog || []).map(m => m.measurement_method)),
+    const catalog = d.catalog || [],
+      familyOf = new Map(catalog.map(m => [movementKey(m.name), movementCategory(m)])),
+      available = new Set(catalog.map(movementCategory)),
       names = new Set((d.movementNames || []).map(movementKey).filter(Boolean)),
       families = new Set([...names].map(k => familyOf.get(k)).filter(f => f && available.has(f)));
     pillars.polyvalence = {

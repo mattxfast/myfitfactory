@@ -67,6 +67,20 @@ test("forme : piliers et score global", () => {
   assert.deepEqual(r.profile_missing, []);
 });
 
+test("forme : la polyvalence compte les catégories du catalogue même si la mesure est identique", () => {
+  const r = computeFitness({
+    today: TODAY,
+    movementNames: ["Abdos"],
+    catalog: [
+      {name: "Abdos", category: "core", measurement_method: "reps"},
+      {name: "Burpees", category: "functional", measurement_method: "reps"},
+    ],
+  });
+  const pillar = r.pillars.find(p => p.key === "polyvalence");
+  assert.equal(pillar.score, 21);
+  assert.match(pillar.detail, /1 famille sur 2/);
+});
+
 test("forme : piliers à compléter sans poids de corps ni données", () => {
   const r = computeFitness({
     today: TODAY,

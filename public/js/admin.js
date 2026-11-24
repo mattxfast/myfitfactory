@@ -232,7 +232,7 @@ function renderAdmin(users, movements = []) {
     movements
       .map(
         (m, i) =>
-          `<div class="admin-row"><span>${esc(m.name)} <small class="muted">· ${m.measurement_method === "force" ? "Force" : m.measurement_method === "reps" ? "Gym" : m.measurement_method === "distance" ? "Engine" : "Lift"}</small></span><span class="admin-row-actions">${reorderCatalog ? `<button class="smallbtn admin-reorder" data-move-admin="movement" data-id="${m.id}" data-direction="-1" aria-label="Monter" title="Monter" ${i === 0 ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"/><path d="m6 11 6-6 6 6"/></svg></button><button class="smallbtn admin-reorder" data-move-admin="movement" data-id="${m.id}" data-direction="1" aria-label="Descendre" title="Descendre" ${i === movements.length - 1 ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="m6 13 6 6 6-6"/></svg></button>` : ""}<button class="smallbtn" data-edit-catalog-movement="${m.id}" aria-label="Modifier" title="Modifier"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.83 2.83 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg></button><button class="smallbtn delete" data-del-catalog-movement="${m.id}" aria-label="Supprimer" title="Supprimer"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button></span></div>`
+          `<div class="admin-row"><span>${esc(m.name)} <small class="muted">· ${esc(movementCategoryLabels[movementCategory(m)])}</small></span><span class="admin-row-actions">${reorderCatalog ? `<button class="smallbtn admin-reorder" data-move-admin="movement" data-id="${m.id}" data-direction="-1" aria-label="Monter" title="Monter" ${i === 0 ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"/><path d="m6 11 6-6 6 6"/></svg></button><button class="smallbtn admin-reorder" data-move-admin="movement" data-id="${m.id}" data-direction="1" aria-label="Descendre" title="Descendre" ${i === movements.length - 1 ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="m6 13 6 6 6-6"/></svg></button>` : ""}<button class="smallbtn" data-edit-catalog-movement="${m.id}" aria-label="Modifier" title="Modifier"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.83 2.83 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg></button><button class="smallbtn delete" data-del-catalog-movement="${m.id}" aria-label="Supprimer" title="Supprimer"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button></span></div>`
       )
       .join("") || `<p class="muted">Aucun mouvement dans le catalogue.</p>`;
   $("#view-admin")
@@ -259,9 +259,11 @@ function renderAdmin(users, movements = []) {
           const m = movements.find(x => x.id === b.dataset.editCatalogMovement),
             f = $("#movementcatalogform");
           f.elements.name.value = m.name;
+          f.elements.category.value = movementCategory(m);
           f.elements.measurement_method.value = m.measurement_method || "load";
           f.dataset.editId = m.id;
           $("#movementcatalogdialogtitle").textContent = "Modifier un mouvement";
+          $("#movementcatalogerror").textContent = "";
           $("#movementcatalogdialog").showModal();
         })
     );
@@ -432,12 +434,13 @@ function renderAdmin(users, movements = []) {
 $("#movementcatalogform").onsubmit = async e => {
   e.preventDefault();
   const name = e.target.elements.name.value.trim(),
+    category = e.target.elements.category.value,
     method = e.target.elements.measurement_method.value,
     editing = e.target.dataset.editId;
   try {
     await api(editing ? "/admin/movements/" + editing : "/admin/movements", {
       method: editing ? "PUT" : "POST",
-      body: JSON.stringify({name, measurement_method: method}),
+      body: JSON.stringify({name, category, measurement_method: method}),
     });
     e.target.reset();
     delete e.target.dataset.editId;
