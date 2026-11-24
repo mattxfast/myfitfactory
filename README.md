@@ -153,7 +153,7 @@ Une planification n'est pas une séance réalisée : elle sert de repère dans l
 
 Un pilier sans données est « à compléter » (avec la marche à suivre) et sort du calcul ; le score global, moyenne pondérée des piliers renseignés, demande au moins 2 piliers. Sous le détail, un lien discret « Comment est-il calculé ? » ouvre une fenêtre qui explique le calcul pilier par pilier. Le profil d'athlète (Mon compte → Profil : poids de corps, sexe, date de naissance, facultatifs, validés par le serveur : 25 à 300 kg, au moins 10 ans ; migration V28, colonnes `users.body_weight_kg`, `birth_date`, `sex`) sert uniquement à ce score, visible de l'athlète seul.
 
-Dans **Administration → Paramètres → Liste des mouvements**, le formulaire propose les catégories **Lift**, **Force**, **Gym**, **Engine**, **Core** et **Fonctionnel**. Le champ « Mesure du record » détermine les unités et le format de saisie du PR. Changer la catégorie d'un mouvement conserve ses records.
+Dans **Administration → Paramètres → Liste des mouvements**, le formulaire propose les catégories **Lift**, **Force**, **Gym**, **Engine**, **Core** et **Fonctionnel**. Le champ « Mesure du record » détermine les unités et le format de saisie du PR. Une seule option « Charge (kg) » est proposée quelle que soit la catégorie. Changer la catégorie d'un mouvement conserve ses records.
 
 La migration V46 ajoute `movement_catalog.category`. Les mouvements sans catégorie explicite gardent leur classement selon leur mesure d'origine (`load` → Lift, `force` → Force, `reps` → Gym, `distance` → Engine). Le catalogue et les records renvoient la catégorie effective dans le champ `category`.
 

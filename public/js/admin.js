@@ -260,7 +260,9 @@ function renderAdmin(users, movements = []) {
             f = $("#movementcatalogform");
           f.elements.name.value = m.name;
           f.elements.category.value = movementCategory(m);
-          f.elements.measurement_method.value = m.measurement_method || "load";
+          f.elements.measurement_method.value =
+            m.measurement_method === "force" ? "load" : m.measurement_method || "load";
+          f.dataset.originalMeasurementMethod = m.measurement_method;
           f.dataset.editId = m.id;
           $("#movementcatalogdialogtitle").textContent = "Modifier un mouvement";
           $("#movementcatalogerror").textContent = "";
@@ -433,17 +435,22 @@ function renderAdmin(users, movements = []) {
 }
 $("#movementcatalogform").onsubmit = async e => {
   e.preventDefault();
-  const name = e.target.elements.name.value.trim(),
-    category = e.target.elements.category.value,
-    method = e.target.elements.measurement_method.value,
-    editing = e.target.dataset.editId;
+  const f = e.target,
+    name = f.elements.name.value.trim(),
+    category = f.elements.category.value,
+    selectedMethod = f.elements.measurement_method.value,
+    editing = f.dataset.editId,
+    method =
+      editing && selectedMethod === "load" && f.dataset.originalMeasurementMethod === "force"
+        ? "force"
+        : selectedMethod;
   try {
     await api(editing ? "/admin/movements/" + editing : "/admin/movements", {
       method: editing ? "PUT" : "POST",
       body: JSON.stringify({name, category, measurement_method: method}),
     });
-    e.target.reset();
-    delete e.target.dataset.editId;
+    f.reset();
+    delete f.dataset.editId;
     $("#movementcatalogdialog").close();
     const d = await api("/movement-catalog");
     movementCatalog = d.movements;
