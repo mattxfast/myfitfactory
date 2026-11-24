@@ -767,6 +767,24 @@ async function ensureV2Schema(env) {
           END`),
       ]);
     });
+    await runMigration("v48-session-edit-version", async () => {
+      const columns = await env.DB.prepare("PRAGMA table_info(training_sessions)").all();
+      if (!columns.results.some(column => column.name === "edit_version")) {
+        try {
+          await env.DB.prepare("ALTER TABLE training_sessions ADD COLUMN edit_version TEXT NOT NULL DEFAULT ''").run();
+        } catch (error) {
+          if (!String(error.message).includes("duplicate column name: edit_version")) throw error;
+        }
+      }
+      await env.DB.batch([
+        env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS training_sessions_initial_edit_version
+          AFTER INSERT ON training_sessions WHEN NEW.edit_version=''
+          BEGIN
+            UPDATE training_sessions SET edit_version=lower(hex(randomblob(16))) WHERE id=NEW.id;
+          END`),
+        env.DB.prepare("UPDATE training_sessions SET edit_version=lower(hex(randomblob(16))) WHERE edit_version=''"),
+      ]);
+    });
   })().catch(err => {
     schemaReady = null;
     throw err;
@@ -1491,11 +1509,14 @@ function sessionTagIds(b, userId) {
     .slice(0, 10);
 }
 // Invitations à créer : seulement pour des comptes actifs, une seule par partenaire et par séance.
-function sessionTagStatements(e, userId, sessionId, ids) {
+function sessionTagStatements(e, userId, sessionId, ids, version = null) {
+  const guard = version ? " AND " + SESSION_AT_VERSION : "";
+  const args = version ? [sessionId, userId, version] : [];
   return ids.map(id =>
     e.DB.prepare(
-      "INSERT OR IGNORE INTO session_tags(id,session_id,from_user_id,to_user_id) SELECT ?,?,?,id FROM users WHERE id=? AND is_active=1"
-    ).bind(uid(), sessionId, userId, id)
+      "INSERT OR IGNORE INTO session_tags(id,session_id,from_user_id,to_user_id) SELECT ?,?,?,id FROM users WHERE id=? AND is_active=1" +
+        guard
+    ).bind(uid(), sessionId, userId, id, ...args)
   );
 }
 // Séance sur un WOD de box : l'utilisateur doit être membre validé de la box (sauf s'il modifie une séance
@@ -1785,7 +1806,8 @@ async function movementCheckStatements(
   catalogIds = [],
   anyMovement = false,
   wodId = null,
-  requireValid = false
+  requireValid = false,
+  {version, apiEditable = false, replaceProgram = true, replaceCatalog = true} = {}
 ) {
   const uniqueIds = [...new Set(ids.map(String).filter(Boolean))];
   const validIds = [];
@@ -1832,31 +1854,264 @@ async function movementCheckStatements(
   }
   if (requireValid && (validIds.length !== new Set(ids).size || validCatalogIds.length !== new Set(catalogIds).size))
     return null;
-  const owned = "EXISTS(SELECT 1 FROM training_sessions WHERE id=? AND user_id=?)";
+  const owned = version
+    ? apiEditable
+      ? "EXISTS(SELECT 1 FROM training_sessions WHERE id=? AND user_id=? AND edit_version=? AND " +
+        SESSION_API_EDITABLE +
+        ")"
+      : SESSION_AT_VERSION
+    : "EXISTS(SELECT 1 FROM training_sessions WHERE id=? AND user_id=?)";
+  const owner = version ? [sessionId, userId, version] : [sessionId, userId];
   return [
-    env.DB.prepare("DELETE FROM session_movement_checks WHERE session_id=? AND " + owned).bind(
-      sessionId,
-      sessionId,
-      userId
-    ),
-    env.DB.prepare("DELETE FROM session_catalog_movement_checks WHERE session_id=? AND " + owned).bind(
-      sessionId,
-      sessionId,
-      userId
-    ),
-    ...validIds.map(id =>
-      env.DB.prepare(
-        "INSERT OR IGNORE INTO session_movement_checks(session_id,movement_id) SELECT ?,? WHERE " + owned
-      ).bind(sessionId, id, sessionId, userId)
-    ),
-    ...validCatalogIds.map(id =>
-      env.DB.prepare(
-        "INSERT OR IGNORE INTO session_catalog_movement_checks(session_id,catalog_movement_id) SELECT ?,? WHERE " +
-          owned
-      ).bind(sessionId, id, sessionId, userId)
-    ),
+    ...(replaceProgram
+      ? [
+          env.DB.prepare("DELETE FROM session_movement_checks WHERE session_id=? AND " + owned).bind(
+            sessionId,
+            ...owner
+          ),
+          ...validIds.map(id =>
+            env.DB.prepare(
+              "INSERT OR IGNORE INTO session_movement_checks(session_id,movement_id) SELECT ?,? WHERE " + owned
+            ).bind(sessionId, id, ...owner)
+          ),
+        ]
+      : []),
+    ...(replaceCatalog
+      ? [
+          env.DB.prepare("DELETE FROM session_catalog_movement_checks WHERE session_id=? AND " + owned).bind(
+            sessionId,
+            ...owner
+          ),
+          ...validCatalogIds.map(id =>
+            env.DB.prepare(
+              "INSERT OR IGNORE INTO session_catalog_movement_checks(session_id,catalog_movement_id) SELECT ?,? WHERE " +
+                owned
+            ).bind(sessionId, id, ...owner)
+          ),
+        ]
+      : []),
   ];
 }
+const SESSION_ID_PATH = /^\/api\/sessions\/([\w-]+)$/;
+const SESSION_AT_VERSION = "EXISTS(SELECT 1 FROM training_sessions WHERE id=? AND user_id=? AND edit_version=?)";
+const SESSION_API_EDITABLE =
+  "box_wod_id IS NULL AND daily_wod_id IS NULL AND shared_from_user_id IS NULL AND " +
+  "NOT EXISTS(SELECT 1 FROM session_tags WHERE session_id=training_sessions.id OR id=training_sessions.id)";
+
+const activeSessionActivity = (e, activityId, adminEmail) =>
+  e.DB.prepare("SELECT id FROM activities WHERE id=? AND user_id=(SELECT id FROM users WHERE email=?) AND is_active=1")
+    .bind(activityId, adminEmail)
+    .first();
+
+async function sessionProgram(e, userId, programId) {
+  const row = await e.DB.prepare(
+    "SELECT p.id,p.user_id,p.start_monday,p.end_monday,f.start_monday AS follow_start,f.end_monday AS follow_end FROM programs p" +
+      FOLLOW_JOIN +
+      "WHERE p.id=? AND " +
+      PROGRAM_ACCESS
+  )
+    .bind(userId, programId, userId, userId, userId)
+    .first();
+  return row && {...row, ...userProgramDates(row, userId)};
+}
+
+const SESSION_EDIT_FIELDS = new Set([
+  "program_id",
+  "wod_id",
+  "session_date",
+  "activity_id",
+  "duration_minutes",
+  "actual_comment",
+  "started_at",
+  "type_id",
+  "score_value",
+  "score_type",
+  "movement_ids",
+  "catalog_movement_ids",
+]);
+
+async function editApiSession(r, e, userId, id, adminEmail) {
+  const load = () =>
+    e.DB.prepare("SELECT *,(" + SESSION_API_EDITABLE + ") AS editable FROM training_sessions WHERE id=? AND user_id=?")
+      .bind(id, userId)
+      .first();
+  const previous = await load();
+  if (!previous) return json({error: "Séance introuvable."}, 404);
+  const unsupported = () =>
+    json(
+      {error: "Les séances partagées, de box ou liées à un WOD du jour ne sont pas modifiables avec une clé API."},
+      409
+    );
+  if (!previous.editable) return unsupported();
+  const match = r.headers.get("If-Match");
+  if (match === null) return json({error: "L’en-tête If-Match est requis."}, 428);
+  const version = /^"([\w-]{32}|[\w-]{43})"$/.exec(match)?.[1];
+  if (!version) return json({error: "Version de séance invalide."}, 400);
+  if (r.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase() !== "application/json")
+    return json({error: "Un corps JSON est requis."}, 415);
+  const raw = await r.text();
+  const nextVersion = await sha(JSON.stringify([userId, id, version, raw]));
+  const success = () => json({ok: true, id, edit_version: nextVersion}, 200, {ETag: '"' + nextVersion + '"'});
+  const conflict = () => json({error: "La séance a changé. Relis-la avant de la modifier."}, 412);
+  if (previous.edit_version === nextVersion) return success();
+  if (previous.edit_version !== version) return conflict();
+
+  let body;
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    return json({error: "Un objet JSON est requis."}, 400);
+  }
+  if (
+    !body ||
+    typeof body !== "object" ||
+    Array.isArray(body) ||
+    !Object.keys(body).length ||
+    Object.keys(body).some(field => !SESSION_EDIT_FIELDS.has(field))
+  )
+    return json({error: "Indique au moins un champ modifiable dans un objet JSON."}, 400);
+
+  for (const field of ["program_id", "wod_id", "activity_id", "type_id"]) {
+    if (Object.hasOwn(body, field) && (typeof body[field] !== "string" || !body[field]))
+      return json({error: "Identifiant invalide."}, 400);
+  }
+  if (
+    Object.hasOwn(body, "duration_minutes") &&
+    (!Number.isInteger(body.duration_minutes) || body.duration_minutes < 1 || body.duration_minutes > 600)
+  )
+    return json({error: "Sport ou durée invalide."}, 400);
+  if (Object.hasOwn(body, "actual_comment") && typeof body.actual_comment !== "string")
+    return json({error: "Commentaire invalide."}, 400);
+  if (
+    Object.hasOwn(body, "started_at") &&
+    (typeof body.started_at !== "string" || Number.isNaN(Date.parse(body.started_at)))
+  )
+    return json({error: "Heure de début invalide."}, 400);
+  if (body.score_value != null && typeof body.score_value !== "number" && typeof body.score_value !== "string")
+    return json({error: "Score invalide."}, 400);
+  if (
+    Object.hasOwn(body, "score_type") &&
+    (body.score_value == null ||
+      body.score_value === "" ||
+      !PROGRAM_SCORE_TYPES.includes(body.score_type) ||
+      body.score_type === "none")
+  )
+    return json({error: "Indique un score et un type valides."}, 400);
+
+  const programId = body.program_id ?? previous.program_id,
+    wodId = body.wod_id ?? previous.wod_id,
+    date = body.session_date ?? previous.session_date,
+    associationChanged = programId !== previous.program_id || wodId !== previous.wod_id;
+  if (
+    Object.hasOwn(body, "session_date") &&
+    (typeof body.session_date !== "string" || !validDate(date) || new Date(date).toISOString().slice(0, 10) !== date)
+  )
+    return json({error: "Date invalide."}, 400);
+  if (associationChanged || Object.hasOwn(body, "session_date")) {
+    if (date > localToday()) return json({error: "Impossible d’enregistrer une séance à une date future."}, 400);
+    const program = await sessionProgram(e, userId, programId);
+    if (!program) return json({error: "Programme introuvable."}, 404);
+    if (date < program.start || date > program.end)
+      return json({error: "La date de la séance doit être comprise dans la période du programme."}, 400);
+  }
+  if (body.activity_id !== undefined && !(await activeSessionActivity(e, body.activity_id, adminEmail)))
+    return json({error: "Sport ou durée invalide."}, 400);
+
+  const replaceProgram = Object.hasOwn(body, "movement_ids"),
+    replaceCatalog = Object.hasOwn(body, "catalog_movement_ids");
+  if (
+    [body.movement_ids, body.catalog_movement_ids].some(
+      ids =>
+        ids !== undefined && (!Array.isArray(ids) || ids.length > 200 || !ids.every(x => typeof x === "string" && x))
+    )
+  )
+    return json({error: "Liste de mouvements invalide."}, 400);
+  const w = await e.DB.prepare("SELECT id,name,score_type,type_id FROM program_wods WHERE id=? AND program_id=?")
+    .bind(wodId, programId)
+    .first();
+  if (!w) return json({error: "WOD ou programme invalide."}, 400);
+
+  let score = {value: previous.score_value, type: previous.program_score_type};
+  if (associationChanged || Object.hasOwn(body, "score_value")) {
+    const scoreInput = Object.hasOwn(body, "score_value") ? body : {score_value: score.value, score_type: score.type};
+    if (w.name === "__AUTRES__" && scoreInput.score_value != null && scoreInput.score_value !== "")
+      return json({error: "Ce WOD n’accepte pas de score."}, 400);
+    score = sessionProgramScore(w, scoreInput, previous);
+    if (score.error) return json({error: score.error}, 400);
+  }
+  let typeId = previous.type_id;
+  if (associationChanged || body.type_id !== undefined) {
+    const type = await sessionTypeId(e, {type_id: body.type_id ?? typeId}, null, w);
+    if (type.error || (body.type_id !== undefined && body.type_id !== type.id))
+      return json({error: type.error || "Le type de WOD est imposé par le programme."}, 400);
+    typeId = type.id;
+  }
+
+  let checks = [];
+  if (associationChanged || replaceProgram || replaceCatalog) {
+    const [storedProgram, storedCatalog] = await Promise.all([
+      associationChanged && !replaceProgram
+        ? e.DB.prepare(
+            "SELECT movement_id FROM session_movement_checks WHERE session_id=? AND EXISTS(SELECT 1 FROM training_sessions WHERE id=? AND user_id=?)"
+          )
+            .bind(id, id, userId)
+            .all()
+        : null,
+      associationChanged && !replaceCatalog
+        ? e.DB.prepare(
+            "SELECT catalog_movement_id FROM session_catalog_movement_checks WHERE session_id=? AND EXISTS(SELECT 1 FROM training_sessions WHERE id=? AND user_id=?)"
+          )
+            .bind(id, id, userId)
+            .all()
+        : null,
+    ]);
+    checks = await movementCheckStatements(
+      e,
+      userId,
+      id,
+      programId,
+      body.movement_ids ?? storedProgram?.results.map(row => row.movement_id) ?? [],
+      body.catalog_movement_ids ?? storedCatalog?.results.map(row => row.catalog_movement_id) ?? [],
+      w.name === "__AUTRES__",
+      wodId,
+      true,
+      {version, apiEditable: true, replaceProgram, replaceCatalog}
+    );
+    if (!checks) return json({error: "Mouvement inconnu ou non autorisé pour ce WOD."}, 400);
+  }
+  // Toutes les écritures utilisent la même précondition. Changer la version en dernier garde
+  // les écritures des mouvements conditionnelles et permet à D1 de les annuler si le lot échoue.
+  const results = await e.DB.batch([
+    ...checks,
+    e.DB.prepare(
+      "UPDATE training_sessions SET program_id=?,wod_id=?,session_date=?,activity_id=?,duration_minutes=?," +
+        "actual_comment=?,started_at=?,type_id=?,score_value=?,program_score_type=?,updated_at=CURRENT_TIMESTAMP,edit_version=? " +
+        "WHERE id=? AND user_id=? AND edit_version=? AND " +
+        SESSION_API_EDITABLE
+    ).bind(
+      programId,
+      wodId,
+      date,
+      body.activity_id ?? previous.activity_id,
+      body.duration_minutes ?? previous.duration_minutes,
+      body.actual_comment === undefined ? previous.actual_comment : body.actual_comment.slice(0, 3000),
+      body.started_at === undefined ? previous.started_at : new Date(body.started_at).toISOString(),
+      typeId,
+      score.value,
+      score.type,
+      nextVersion,
+      id,
+      userId,
+      version
+    ),
+  ]);
+  if (results.at(-1).meta.changes) return success();
+  const current = await load();
+  if (!current) return json({error: "Séance introuvable."}, 404);
+  if (!current.editable) return unsupported();
+  return current.edit_version === nextVersion ? success() : conflict();
+}
+
 const API_KEY_PERMISSIONS = new Map([
   ["GET /api/program-data", "programs:read"],
   ["GET /api/week-data", "workouts:read"],
@@ -1886,7 +2141,8 @@ async function authenticateApiKey(r, e, p, authorization) {
   if (!key || !crypto.subtle.timingSafeEqual(unb64(key.key_hash), unb64(await sha(match[1]))))
     return apiKeyUnauthorized();
 
-  const scope = API_KEY_PERMISSIONS.get(r.method + " " + p);
+  const scope =
+    r.method === "PUT" && SESSION_ID_PATH.test(p) ? "workouts:write" : API_KEY_PERMISSIONS.get(r.method + " " + p);
   if (!scope || !JSON.parse(key.permissions).includes(scope))
     return json({error: "Accès interdit avec cette clé API."}, 403);
 
@@ -4763,23 +5019,11 @@ async function api(r, e, p, ctx = null, apiUser = null) {
     const pid = b.program_id === "none" ? await fallbackProgramId(e, u.id) : b.program_id;
     let wid = b.wod_id;
     const isOther = wid === "other"; // WOD « Autres » : tous les mouvements du catalogue
-    const act = await e.DB.prepare(
-        "SELECT id FROM activities WHERE id=? AND user_id=(SELECT id FROM users WHERE email=?) AND is_active=1"
-      )
-        .bind(b.activity_id, adminEmail)
-        .first(),
+    const act = await activeSessionActivity(e, b.activity_id, adminEmail),
       duration = Number(b.duration_minutes);
     if (!act || !Number.isInteger(duration) || duration < 1 || duration > 600)
       return json({error: "Sport ou durée invalide."}, 400);
-    const row = await e.DB.prepare(
-      "SELECT p.id,p.user_id,p.start_monday,p.end_monday,f.start_monday AS follow_start,f.end_monday AS follow_end FROM programs p" +
-        FOLLOW_JOIN +
-        "WHERE p.id=? AND " +
-        PROGRAM_ACCESS
-    )
-      .bind(u.id, pid, u.id, u.id, u.id)
-      .first();
-    const program = row && {...row, ...userProgramDates(row, u.id)};
+    const program = await sessionProgram(e, u.id, pid);
     if (!program) return json({error: "Programme introuvable."}, 404);
     if (date < program.start || date > program.end)
       return json({error: "La date de la séance doit être comprise dans la période du programme."}, 400);
@@ -4860,10 +5104,11 @@ async function api(r, e, p, ctx = null, apiUser = null) {
     await afterTagging(ctx, e, u, id);
     return json({ok: true, id});
   }
-  m = p.match(/^\/api\/sessions\/([\w-]+)$/);
+  m = p.match(SESSION_ID_PATH);
   if (m && r.method === "PUT") {
+    if (apiUser) return editApiSession(r, e, u.id, m[1], adminEmail);
     const previous = await e.DB.prepare(
-      "SELECT wod_id,program_score_type,score_value FROM training_sessions WHERE id=? AND user_id=?"
+      "SELECT wod_id,program_score_type,score_value,edit_version FROM training_sessions WHERE id=? AND user_id=?"
     )
       .bind(m[1], u.id)
       .first();
@@ -4882,25 +5127,13 @@ async function api(r, e, p, ctx = null, apiUser = null) {
       b.program_id = "none";
     if (b.program_id === "none") b.program_id = await fallbackProgramId(e, u.id);
     if (!validDate(b.session_date)) return json({error: "Date invalide."}, 400);
-    const act = await e.DB.prepare(
-        "SELECT id FROM activities WHERE id=? AND user_id=(SELECT id FROM users WHERE email=?) AND is_active=1"
-      )
-        .bind(b.activity_id, adminEmail)
-        .first(),
+    const act = await activeSessionActivity(e, b.activity_id, adminEmail),
       duration = Number(b.duration_minutes);
     if (!act || !Number.isInteger(duration) || duration < 1 || duration > 600)
       return json({error: "Sport ou durée invalide."}, 400);
     if (b.session_date > localToday())
       return json({error: "Impossible d’enregistrer une séance à une date future."}, 400);
-    const row = await e.DB.prepare(
-      "SELECT p.id,p.user_id,p.start_monday,p.end_monday,f.start_monday AS follow_start,f.end_monday AS follow_end FROM programs p" +
-        FOLLOW_JOIN +
-        "WHERE p.id=? AND " +
-        PROGRAM_ACCESS
-    )
-      .bind(u.id, b.program_id, u.id, u.id, u.id)
-      .first();
-    const program = row && {...row, ...userProgramDates(row, u.id)};
+    const program = await sessionProgram(e, u.id, b.program_id);
     if (!program) return json({error: "Programme introuvable."}, 404);
     if (b.session_date < program.start || b.session_date > program.end)
       return json({error: "La date de la séance doit être comprise dans la période du programme."}, 400);
@@ -4933,6 +5166,7 @@ async function api(r, e, p, ctx = null, apiUser = null) {
     if (score.error) return json({error: score.error}, 400);
     const sessionType = await sessionTypeId(e, b, box.wod, w);
     if (sessionType.error) return json({error: sessionType.error}, 400);
+    const nextVersion = uid().replaceAll("-", "");
     const checks = await movementCheckStatements(
       e,
       u.id,
@@ -4941,12 +5175,14 @@ async function api(r, e, p, ctx = null, apiUser = null) {
       Array.isArray(b.movement_ids) ? b.movement_ids : [],
       Array.isArray(b.catalog_movement_ids) ? b.catalog_movement_ids : [],
       isOther,
-      w.id
+      w.id,
+      false,
+      {version: nextVersion}
     );
     const tagIds = sessionTagIds(b, u.id);
-    await e.DB.batch([
+    const [updated] = await e.DB.batch([
       e.DB.prepare(
-        "UPDATE training_sessions SET program_id=?,wod_id=?,session_date=?,actual_comment=?,activity_id=?,duration_minutes=?,started_at=?,logged_at=?,box_wod_id=?,score_value=?,score_category_id=?,daily_wod_id=?,score_scaled=?,program_score_type=?,type_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?"
+        "UPDATE training_sessions SET program_id=?,wod_id=?,session_date=?,actual_comment=?,activity_id=?,duration_minutes=?,started_at=?,logged_at=?,box_wod_id=?,score_value=?,score_category_id=?,daily_wod_id=?,score_scaled=?,program_score_type=?,type_id=?,updated_at=CURRENT_TIMESTAMP,edit_version=? WHERE id=? AND user_id=? AND edit_version=?"
       ).bind(
         b.program_id,
         wid,
@@ -4965,8 +5201,10 @@ async function api(r, e, p, ctx = null, apiUser = null) {
         daily.scaled,
         score.type,
         sessionType.id,
+        nextVersion,
         m[1],
-        u.id
+        u.id,
+        previous.edit_version
       ),
       ...checks,
       // Partenaires : les invitations encore en attente qui ne sont plus dans la liste sont retirées ; celles déjà
@@ -4975,12 +5213,15 @@ async function api(r, e, p, ctx = null, apiUser = null) {
         ? [
             e.DB.prepare(
               "DELETE FROM session_tags WHERE session_id=? AND from_user_id=? AND status='pending'" +
-                (tagIds.length ? " AND to_user_id NOT IN (" + tagIds.map(() => "?").join(",") + ")" : "")
-            ).bind(m[1], u.id, ...tagIds),
-            ...sessionTagStatements(e, u.id, m[1], tagIds),
+                (tagIds.length ? " AND to_user_id NOT IN (" + tagIds.map(() => "?").join(",") + ")" : "") +
+                " AND " +
+                SESSION_AT_VERSION
+            ).bind(m[1], u.id, ...tagIds, m[1], u.id, nextVersion),
+            ...sessionTagStatements(e, u.id, m[1], tagIds, nextVersion),
           ]
         : []),
     ]);
+    if (!updated.meta.changes) return json({error: "La séance a changé. Relis-la avant de la modifier."}, 409);
     if (tagIds?.length) await afterTagging(ctx, e, u, m[1]);
     return json({ok: true});
   }

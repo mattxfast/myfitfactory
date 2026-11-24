@@ -1,6 +1,6 @@
 # Intégrations IA et API
 
-Les clés API personnelles permettent à un service externe de lire les données d’un compte myFitFactory et d’y enregistrer des entraînements selon les permissions accordées. Chaque clé est rattachée à son propriétaire. Utilisez une clé distincte pour chaque intégration et transmettez-la avec l’en-tête `Authorization: Bearer <clé>` sur HTTPS.
+Les clés API personnelles permettent à un service externe de lire les données d’un compte myFitFactory et d’y enregistrer ou modifier des entraînements selon les permissions accordées. Chaque clé est rattachée à son propriétaire. Utilisez une clé distincte pour chaque intégration et transmettez-la avec l’en-tête `Authorization: Bearer <clé>` sur HTTPS.
 
 ## Créer, renouveler et révoquer une clé
 
@@ -21,9 +21,10 @@ La liste montre le nom, le préfixe public, les permissions, l’expiration, le 
 | `GET /api/movement-catalog` | `workouts:read`  | Aucun                                                                     |
 | `GET /api/wod-types`        | `workouts:read`  | Aucun                                                                     |
 | `POST /api/sessions`        | `workouts:write` | Objet JSON, voir ci-dessous                                               |
+| `PUT /api/sessions/{id}`    | `workouts:write` | Objet JSON partiel et en-tête `If-Match`, voir ci-dessous |
 | `GET /api/prs`              | `prs:read`       | Aucun                                                                     |
 
-Les réponses sont les mêmes qu’avec une session web du propriétaire. Elles incluent aussi les données partagées auxquelles ce compte a accès dans myFitFactory, comme les programmes suivis et les WOD des box dont il est membre validé. La liste ci-dessus couvre toutes les méthodes et routes Bearer. Les clés existantes gardent leurs permissions. Les clés avec `workouts:read` peuvent également consulter les trois référentiels communs ci-dessus. La permission `workouts:write` s’accorde explicitement à la création d’une clé. Les méthodes `PUT`, `PATCH` et `DELETE` sont interdites avec une clé API.
+Les réponses de lecture sont les mêmes qu’avec une session web du propriétaire. Elles incluent aussi les données partagées auxquelles ce compte a accès dans myFitFactory, comme les programmes suivis et les WOD des box dont il est membre validé. La liste ci-dessus couvre toutes les méthodes et routes Bearer. Les clés existantes gardent leurs permissions. Celles disposant déjà de `workouts:write` peuvent aussi modifier des séances avec la V3.1. Les clés avec `workouts:read` peuvent également consulter les trois référentiels communs ci-dessus. La permission `workouts:write` s’accorde explicitement à la création d’une clé. Les méthodes `PATCH` et `DELETE` sont interdites avec une clé API.
 
 ### Programmes
 
@@ -136,6 +137,42 @@ La création et le rejeu réussi renvoient `200 OK` et le même objet. Un rejeu 
 
 `measurement_method` détermine l’unité de `value`. Les formats chronométrés peuvent aussi utiliser `fixed_kind` et `fixed_value` pour indiquer la distance, le nombre de répétitions ou la durée fixée.
 
+## Modifier une séance existante (V3.1)
+
+Envoyez `PUT /api/sessions/{id}` avec une clé `workouts:write`, `Content-Type: application/json` et un en-tête `If-Match` contenant la version de la séance entre guillemets doubles. Lisez `sessions[].id` et `sessions[].edit_version` dans `GET /api/week-data` avec `workouts:read`. Une intégration qui utilise une seule clé pour les deux opérations doit lui accorder les deux permissions.
+
+Le corps contient au moins un des champs ci-dessous. Les champs omis gardent leur valeur, notamment l’heure de début et le score lors d’un changement de durée ou de commentaire. Les champs inconnus sont refusés.
+
+| Champ | Valeur et validation |
+| --- | --- |
+| `session_date` | Date réelle `YYYY-MM-DD`, sans jour futur et dans la période du programme. |
+| `activity_id`, `duration_minutes` | Identifiant d’une activité active et durée entière de 1 à 600 minutes. |
+| `actual_comment` | Chaîne tronquée à 3 000 caractères. Une chaîne vide efface le commentaire. |
+| `started_at` | Chaîne de date et heure interprétable, telle que `2026-11-24T17:30:00Z`, normalisée en UTC. |
+| `program_id`, `wod_id` | Identifiants réels du programme accessible et de son WOD. Pour une séance libre, conservez les identifiants existants ou utilisez des identifiants lus dans l’API. Les raccourcis `none` et `other` du POST ne sont pas acceptés ici. |
+| `type_id` | Identifiant du type de WOD. En cas de changement de WOD, son type imposé s’applique automatiquement. |
+| `score_value`, `score_type` | Score numérique ou chaîne conforme aux formats de création. Pour retirer le score, envoyez `score_value: null` ou une chaîne vide, sans `score_type`. Avec un score, le type facultatif est `time`, `rounds` ou `load`. Un changement de WOD exige un score compatible, ou un retrait explicite du score existant. |
+| `movement_ids`, `catalog_movement_ids` | Chaque tableau fourni remplace uniquement sa propre liste, avec au plus 200 identifiants. Un tableau vide retire tous les mouvements de cette liste. Lors d’un changement de WOD ou de programme, les mouvements conservés doivent être compatibles avec la nouvelle association. |
+
+Seules les séances du propriétaire de la clé sont modifiables. Les séances liées à un WOD de box ou du jour, les séances avec des invitations encore enregistrées et les copies reçues via un partage sont refusées avec `409`. La modification par clé API refuse les champs de partage, de liaison box ou WOD du jour ainsi que `client_id`. La suppression par clé API est interdite.
+
+Une modification réussie renvoie `200`, l’en-tête `ETag` avec la nouvelle version entre guillemets et le corps suivant.
+
+```json
+{"ok": true, "id": "seance-1", "edit_version": "nouvelle-version-opaque"}
+```
+
+Après une perte de réponse, renvoyez le même corps JSON à l’identique avec le même `If-Match`. Tant qu’aucune modification ultérieure n’est intervenue, un rejeu déjà appliqué renvoie le même succès sans réécrire la séance. Une version devenue obsolète renvoie `412`. Relisez alors la séance avant de décider si la modification doit être réappliquée. Une version manquante renvoie `428`. La séance et les mouvements changent dans une seule transaction D1.
+
+```bash
+# SEANCE_ID et EDIT_VERSION proviennent de GET /api/week-data.
+curl -X PUT "${BASE_URL}/api/sessions/${SEANCE_ID}" \
+  -H "Authorization: Bearer ${MYFITFACTORY_API_KEY}" \
+  -H "If-Match: \"${EDIT_VERSION}\"" \
+  -H 'Content-Type: application/json' \
+  --data '{"duration_minutes": 45, "actual_comment": "Séance technique"}'
+```
+
 ## Erreurs et quotas
 
 Les erreurs renvoient un corps JSON avec un champ `error`.
@@ -145,9 +182,11 @@ Les erreurs renvoient un corps JSON avec un champ `error`.
 | `400`  | Période invalide pour `week-data` ou corps de séance mal formé, incomplet ou invalide          |
 | `401`  | Aucune authentification, clé inconnue, invalide, expirée ou révoquée, ou compte désactivé      |
 | `403`  | Clé valide sans la permission requise, ou méthode ou route interdite                           |
-| `404`  | Programme, WOD de box ou WOD du jour introuvable ou inaccessible                               |
-| `409`  | Identifiant de séance indisponible                                                             |
-| `415`  | Type de contenu autre que `application/json` pour la création                                  |
+| `404`  | Séance, programme, WOD de box ou WOD du jour introuvable ou inaccessible                               |
+| `409`  | Identifiant de séance indisponible à la création, ou séance exclue de la modification                                                             |
+| `412`  | Version de séance obsolète |
+| `415`  | Type de contenu autre que `application/json` pour la création ou la modification |
+| `428`  | En-tête `If-Match` absent lors de la modification |
 | `429`  | Quota dépassé. L’en-tête `Retry-After` indique le délai en secondes avant la prochaine fenêtre |
 | `500`  | Erreur interne                                                                                 |
 
@@ -188,4 +227,4 @@ curl -X POST "${BASE_URL}/api/sessions" \
 
 Le Worker applique la migration applicative `v47-personal-api-keys` au premier appel API ou à la première exécution planifiée. La migration crée `api_keys`, un index de consultation par propriétaire, `api_user_rates` et un déclencheur SQLite qui associe l’incrément du compteur de clé à celui du compte dans la même écriture atomique. La migration est additive et réexécutable. Elle ne demande ni binding Cloudflare supplémentaire ni migration Wrangler distante distincte.
 
-L’enregistrement des entraînements réutilise la table des séances et sa clé primaire. Cette extension ne nécessite aucune migration D1 supplémentaire.
+L’enregistrement des entraînements réutilise la table des séances et sa clé primaire. La V3.1 ajoute la migration applicative `v48-session-edit-version`. Elle initialise la version des séances existantes et installe un déclencheur qui attribue une version aux nouvelles séances. Elle s’applique automatiquement et ne requiert ni binding ni commande Wrangler supplémentaire.
