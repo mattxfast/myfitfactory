@@ -169,3 +169,138 @@ $("#themeselect").onchange = async e => {
     toast(x.message);
   }
 };
+
+// Les clés sont gérées en ligne, sans le cache ni la file d'attente des modifications hors ligne.
+const apiKeyForm = $("#apikeyform"),
+  apiKeyDialog = $("#apikeydialog"),
+  apiKeyToken = $("#apikeytoken"),
+  apiKeyList = $("#apikeylist"),
+  apiKeyStatus = $("#apikeystatus"),
+  apiKeyLabels = {
+    "programs:read": "Programmes",
+    "workouts:read": "Entraînements et planification",
+    "prs:read": "Records personnels",
+  };
+let apiKeyView = 0;
+
+function clearApiKeyView() {
+  apiKeyView++;
+  apiKeyToken.value = "";
+  apiKeyDialog.close();
+  apiKeyForm.reset();
+  $("#apikeyerror").textContent = "";
+  apiKeyList.replaceChildren();
+  apiKeyStatus.textContent = "";
+}
+apiKeyDialog.onclose = () => {
+  apiKeyToken.value = "";
+  $("#copyapikeystatus").textContent = "";
+};
+$("#copyapikey").onclick = async () => {
+  const token = apiKeyToken.value;
+  try {
+    await navigator.clipboard.writeText(token);
+    if (apiKeyToken.value === token) $("#copyapikeystatus").textContent = "Clé copiée.";
+  } catch {
+    if (apiKeyToken.value !== token) return;
+    apiKeyToken.focus();
+    apiKeyToken.select();
+    $("#copyapikeystatus").textContent = "Copie la clé sélectionnée.";
+  }
+};
+const apiKeyDate = seconds => new Date(seconds * 1000).toLocaleString("fr-FR");
+function renderApiKeys(keys) {
+  apiKeyList.replaceChildren();
+  if (!keys.length) {
+    apiKeyList.textContent = "Aucune clé API pour ce compte.";
+    return;
+  }
+  for (const key of keys) {
+    const row = document.createElement("article");
+    row.className = "profile-card apikey-card";
+    const title = document.createElement("strong");
+    title.textContent = key.name;
+    const details = document.createElement("span");
+    details.textContent = [key.prefix, ...key.permissions.map(scope => apiKeyLabels[scope] || scope)].join(" · ");
+    const dates = document.createElement("span");
+    dates.textContent =
+      "Expiration : " +
+      apiKeyDate(key.expires_at) +
+      " · Dernière utilisation : " +
+      (key.last_used_at ? apiKeyDate(key.last_used_at) : "jamais");
+    row.append(title, details, dates);
+    if (key.revoked_at || key.expires_at * 1000 <= Date.now()) {
+      const status = document.createElement("span");
+      status.textContent = key.revoked_at ? "Révoquée le " + apiKeyDate(key.revoked_at) : "Expirée";
+      row.append(status);
+    } else {
+      const button = document.createElement("button");
+      button.className = "smallbtn delete";
+      button.type = "button";
+      button.textContent = "Révoquer";
+      button.setAttribute("aria-label", "Révoquer la clé " + key.name);
+      button.onclick = async () => {
+        if (!confirm("Révoquer la clé « " + key.name + " » ? L’application perdra son accès immédiatement.")) return;
+        const view = apiKeyView;
+        button.disabled = true;
+        apiKeyStatus.textContent = "";
+        try {
+          await sendApi("/api-keys/" + key.id, "DELETE");
+          if (view === apiKeyView) {
+            row.remove();
+            await loadApiKeys();
+          }
+        } catch (x) {
+          if (view === apiKeyView) apiKeyStatus.textContent = x.message;
+          button.disabled = false;
+        }
+      };
+      row.append(button);
+    }
+    apiKeyList.append(row);
+  }
+}
+async function loadApiKeys() {
+  const view = apiKeyView;
+  apiKeyForm.elements.expires_on.min = new Date().toISOString().slice(0, 10);
+  apiKeyStatus.textContent = "Chargement des clés…";
+  try {
+    const {keys} = await sendApi("/api-keys", "GET");
+    if (view !== apiKeyView) return;
+    renderApiKeys(keys);
+    apiKeyStatus.textContent = "";
+  } catch (x) {
+    if (view === apiKeyView) apiKeyStatus.textContent = x.message;
+  }
+}
+apiKeyForm.onsubmit = async event => {
+  event.preventDefault();
+  const fields = new FormData(apiKeyForm),
+    permissions = fields.getAll("permissions"),
+    error = $("#apikeyerror"),
+    button = apiKeyForm.querySelector("button"),
+    view = apiKeyView;
+  if (button.disabled) return;
+  if (!permissions.length) {
+    error.textContent = "Sélectionne au moins une permission de lecture.";
+    return;
+  }
+  error.textContent = "";
+  button.disabled = true;
+  try {
+    const {token} = await sendApi("/api-keys", "POST", {
+      name: fields.get("name"),
+      expires_on: fields.get("expires_on"),
+      permissions,
+    });
+    if (view !== apiKeyView) return;
+    apiKeyForm.reset();
+    apiKeyToken.value = token;
+    apiKeyDialog.showModal();
+    await loadApiKeys();
+  } catch (x) {
+    if (view === apiKeyView) error.textContent = x.message;
+  } finally {
+    button.disabled = false;
+  }
+};

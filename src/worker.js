@@ -734,6 +734,39 @@ async function ensureV2Schema(env) {
       if (!columns.results.some(c => c.name === "category"))
         await env.DB.prepare("ALTER TABLE movement_catalog ADD COLUMN category TEXT").run();
     });
+    await runMigration("v47-personal-api-keys", async () => {
+      await env.DB.batch([
+        env.DB.prepare(`CREATE TABLE IF NOT EXISTS api_keys (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          prefix TEXT NOT NULL UNIQUE,
+          key_hash TEXT NOT NULL,
+          permissions TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          last_used_at INTEGER,
+          expires_at INTEGER NOT NULL,
+          revoked_at INTEGER,
+          rate_window INTEGER NOT NULL DEFAULT -1,
+          rate_count INTEGER NOT NULL DEFAULT 0
+        )`),
+        env.DB.prepare("CREATE INDEX IF NOT EXISTS api_keys_user_created ON api_keys(user_id,created_at DESC,id)"),
+        env.DB.prepare(`CREATE TABLE IF NOT EXISTS api_user_rates (
+          user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+          rate_window INTEGER NOT NULL,
+          rate_count INTEGER NOT NULL
+        )`),
+        env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS api_keys_count_user_rate
+          AFTER UPDATE OF rate_count ON api_keys
+          BEGIN
+            INSERT INTO api_user_rates(user_id,rate_window,rate_count)
+            VALUES(NEW.user_id,NEW.rate_window,1)
+            ON CONFLICT(user_id) DO UPDATE SET
+              rate_count=CASE WHEN rate_window=NEW.rate_window THEN rate_count+1 ELSE 1 END,
+              rate_window=NEW.rate_window;
+          END`),
+      ]);
+    });
   })().catch(err => {
     schemaReady = null;
     throw err;
@@ -1821,7 +1854,135 @@ async function movementCheckStatements(
     ),
   ];
 }
-async function api(r, e, p, ctx = null) {
+const API_KEY_PERMISSIONS = new Map([
+  ["GET /api/program-data", "programs:read"],
+  ["GET /api/week-data", "workouts:read"],
+  ["GET /api/prs", "prs:read"],
+]);
+const API_KEY_SCOPES = new Set(API_KEY_PERMISSIONS.values());
+const API_KEY_LIMIT = 60,
+  API_USER_LIMIT = 120;
+const API_KEY_METADATA = "id,name,prefix,permissions,created_at,last_used_at,expires_at,revoked_at";
+const apiKeyOut = row => ({...row, permissions: JSON.parse(row.permissions)});
+const apiKeyUnauthorized = () =>
+  json({error: "Clé API invalide, expirée ou révoquée."}, 401, {"WWW-Authenticate": "Bearer"});
+
+async function authenticateApiKey(r, e, p, authorization) {
+  const match = /^Bearer (mff_([a-f0-9]{32})\.[A-Za-z0-9_-]{43})$/i.exec(authorization);
+  if (!match) return apiKeyUnauthorized();
+  const now = Math.floor(Date.now() / 1000),
+    key = await e.DB.prepare(
+      "SELECT k.id,k.user_id,k.key_hash,k.permissions FROM api_keys k JOIN users u ON u.id=k.user_id WHERE k.prefix=? AND k.revoked_at IS NULL AND k.expires_at>? AND u.is_active=1"
+    )
+      .bind("mff_" + match[2], now)
+      .first();
+  if (!key || !crypto.subtle.timingSafeEqual(unb64(key.key_hash), unb64(await sha(match[1]))))
+    return apiKeyUnauthorized();
+
+  const scope = API_KEY_PERMISSIONS.get(r.method + " " + p);
+  if (!scope || !JSON.parse(key.permissions).includes(scope))
+    return json({error: "Accès interdit avec cette clé API."}, 403);
+
+  // Une écriture atomique, contrôlée par D1 : le trigger incrémente aussi le compteur du compte.
+  const admitted = await e.DB.prepare(
+    `UPDATE api_keys
+       SET rate_count=CASE WHEN rate_window=unixepoch()/60 THEN rate_count+1 ELSE 1 END,
+           rate_window=unixepoch()/60,
+           last_used_at=CASE WHEN last_used_at IS NULL OR last_used_at<=unixepoch()-3600 THEN unixepoch() ELSE last_used_at END
+       WHERE id=? AND user_id=? AND revoked_at IS NULL AND expires_at>unixepoch()
+         AND EXISTS(SELECT 1 FROM users WHERE id=api_keys.user_id AND is_active=1)
+         AND (rate_window<>unixepoch()/60 OR rate_count<?)
+         AND NOT EXISTS(SELECT 1 FROM api_user_rates WHERE user_id=api_keys.user_id AND rate_window=unixepoch()/60 AND rate_count>=?)`
+  )
+    .bind(key.id, key.user_id, API_KEY_LIMIT, API_USER_LIMIT)
+    .run();
+  if (!admitted.meta.changes) {
+    const stillValid = await e.DB.prepare(
+      "SELECT 1 FROM api_keys k JOIN users u ON u.id=k.user_id WHERE k.id=? AND k.user_id=? AND k.revoked_at IS NULL AND k.expires_at>? AND u.is_active=1"
+    )
+      .bind(key.id, key.user_id, Math.floor(Date.now() / 1000))
+      .first();
+    if (!stillValid) return apiKeyUnauthorized();
+    return json({error: "Limite de requêtes API atteinte. Réessaie dans un instant."}, 429, {
+      "Retry-After": String(60 - (Math.floor(Date.now() / 1000) % 60)),
+    });
+  }
+  return {id: key.user_id};
+}
+
+async function manageApiKeys(r, e, p, userId) {
+  const base = "/api/api-keys",
+    isList = p === base && r.method === "GET",
+    isCreate = p === base && r.method === "POST",
+    revoke = r.method === "DELETE" && /^\/api\/api-keys\/([a-f0-9-]{36})$/.exec(p);
+  if (isList) {
+    const {results} = await e.DB.prepare(
+      `SELECT ${API_KEY_METADATA} FROM api_keys WHERE user_id=? ORDER BY created_at DESC,id`
+    )
+      .bind(userId)
+      .all();
+    return json({keys: results.map(apiKeyOut)});
+  }
+  if (!isCreate && !revoke) return json({error: "Route inconnue."}, 404);
+  if (r.headers.get("Origin") !== new URL(r.url).origin)
+    return json({error: "Origine de la requête non autorisée."}, 403);
+
+  const now = Math.floor(Date.now() / 1000);
+  if (revoke) {
+    const result = await e.DB.prepare("UPDATE api_keys SET revoked_at=COALESCE(revoked_at,?) WHERE id=? AND user_id=?")
+      .bind(now, revoke[1], userId)
+      .run();
+    return result.meta.changes ? json({ok: true}) : json({error: "Clé API introuvable."}, 404);
+  }
+
+  if (r.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase() !== "application/json")
+    return json({error: "Un corps JSON est requis."}, 415);
+  const body = await r.json().catch(() => null),
+    name = typeof body?.name === "string" ? body.name.trim() : "",
+    permissions = body?.permissions,
+    date = body?.expires_on,
+    midnight = typeof date === "string" && validDate(date) ? new Date(date + "T00:00:00Z") : null;
+  if (!name || name.length > 80) return json({error: "Choisis un nom de 1 à 80 caractères."}, 400);
+  if (
+    !Array.isArray(permissions) ||
+    !permissions.length ||
+    permissions.length > API_KEY_SCOPES.size ||
+    !permissions.every(scope => API_KEY_SCOPES.has(scope)) ||
+    new Set(permissions).size !== permissions.length
+  )
+    return json({error: "Sélectionne des permissions de lecture valides."}, 400);
+  if (!midnight || midnight.toISOString().slice(0, 10) !== date)
+    return json({error: "Date d’expiration invalide."}, 400);
+  const expiresAt = midnight.getTime() / 1000 + 86400;
+  if (expiresAt <= now) return json({error: "La date d’expiration est passée."}, 400);
+
+  const id = uid(),
+    prefix = "mff_" + uid().replaceAll("-", ""),
+    token = prefix + "." + b64(crypto.getRandomValues(new Uint8Array(32)));
+  await e.DB.prepare(
+    "INSERT INTO api_keys(id,user_id,name,prefix,key_hash,permissions,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?)"
+  )
+    .bind(id, userId, name, prefix, await sha(token), JSON.stringify(permissions), now, expiresAt)
+    .run();
+  return json(
+    {
+      key: {
+        id,
+        name,
+        prefix,
+        permissions,
+        created_at: now,
+        expires_at: expiresAt,
+        last_used_at: null,
+        revoked_at: null,
+      },
+      token,
+    },
+    201
+  );
+}
+
+async function api(r, e, p, ctx = null, apiUser = null) {
   const adminEmail = ownerEmail(e);
   if (r.method === "POST" && p === "/api/register") {
     const b = await r.json(),
@@ -1942,9 +2103,13 @@ async function api(r, e, p, ctx = null) {
       default_theme: defaults.theme,
     });
   }
-  const u = await me(r, e);
+  const u = apiUser || (await me(r, e));
   if (!u) return json({error: "Connexion requise."}, 401);
-  const admin = isAdminUser(e, u);
+  if (p === "/api/api-keys" || p.startsWith("/api/api-keys/")) {
+    if (apiUser) return json({error: "Connexion par session requise."}, 403);
+    return manageApiKeys(r, e, p, u.id);
+  }
+  const admin = !apiUser && isAdminUser(e, u);
   let m;
   if (p.startsWith("/api/push/")) {
     if (r.method === "GET" && p === "/api/push/config") {
@@ -4894,8 +5059,14 @@ export default {
   async fetch(r, e, ctx) {
     const u = new URL(r.url);
     if (!u.pathname.startsWith("/api/")) return e.ASSETS.fetch(r);
+    const authorization = r.headers.get("Authorization");
     try {
       await ensureV2Schema(e);
+      if (authorization !== null) {
+        const principal = await authenticateApiKey(r, e, u.pathname, authorization);
+        if (principal instanceof Response) return principal;
+        return await api(r, e, u.pathname, ctx, principal);
+      }
       const res = await api(r, e, u.pathname, ctx),
         legacy = cookie(r, LEGACY_SESSION_COOKIE);
       if (legacy) {
@@ -4905,7 +5076,11 @@ export default {
       }
       return res;
     } catch (err) {
-      console.error("myFitFactory", {name: err?.name, message: err?.message, stack: err?.stack, cause: err?.cause});
+      if (authorization !== null || /^\/api\/api-keys(?:\/|$)/.test(u.pathname)) {
+        console.error("myFitFactory : erreur de traitement des clés API");
+      } else {
+        console.error("myFitFactory", {name: err?.name, message: err?.message, stack: err?.stack, cause: err?.cause});
+      }
       return json({error: "Erreur serveur. Réessaie."}, 500);
     }
   },

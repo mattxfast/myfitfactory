@@ -317,7 +317,11 @@ Déployer le Worker et les assets :
 npx wrangler deploy
 ```
 
-Le premier appel API après déploiement déclenche la vérification et, si nécessaire, l'application des migrations applicatives V2/V3. Vérifier les journaux du Worker après une évolution de schéma.
+Le premier appel API après déploiement déclenche la vérification et, si nécessaire, l'application des migrations applicatives versionnées. Vérifier les journaux du Worker après une évolution de schéma.
+
+## Intégrations IA et API
+
+Dans **Mon compte → Intégrations IA & API**, créez une clé personnelle avec les permissions de lecture nécessaires (programmes, entraînements ou records), puis copiez-la pour configurer votre intégration. Voir [la documentation de l’API](docs/api-integrations.md) pour les routes, les quotas, la révocation et la migration D1 automatique.
 
 ## API conservées
 

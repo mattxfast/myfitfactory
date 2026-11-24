@@ -5636,3 +5636,10 @@ button:active:not(:disabled) {
 .wod-block-5 {
   --block-color: #e5484d;
 }
+
+.apikey-card {
+  overflow-wrap: anywhere;
+}
+.apikey-card .smallbtn {
+  justify-self: start;
+}

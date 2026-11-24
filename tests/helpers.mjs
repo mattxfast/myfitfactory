@@ -104,7 +104,7 @@ async function startWorkerOnce(port, vars) {
     }
     await new Promise(r => setTimeout(r, 1000));
   }
-  return {base, stop};
+  return {base, stop, persistPath: dir};
 }
 
 // Client HTTP minimal avec cookie de session et IP simulée (en-tête CF-Connecting-IP).

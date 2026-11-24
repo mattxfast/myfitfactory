@@ -635,6 +635,39 @@
           </section>
           <section class="admin-group" data-account-group>
             <div class="admin-group-title" role="button" tabindex="0" aria-expanded="true">
+              <span class="admin-collapse-indicator">−</span><span>Intégrations IA &amp; API</span>
+            </div>
+            <div class="admin-group-body">
+              <form id="apikeyform" class="profile-card" autocomplete="off">
+                <p class="muted">
+                  Une application qui possède cette clé peut consulter les données autorisées jusqu’à son expiration ou
+                  sa révocation. Elle peut conserver les données déjà reçues. Partage la clé uniquement avec une
+                  application en laquelle tu as confiance.
+                </p>
+                <label>Nom de la clé<input name="name" maxlength="80" required /></label>
+                <label>Date d’expiration (fin de journée UTC)<input name="expires_on" type="date" required /></label>
+                <span id="apikeypermissions">Données accessibles en lecture</span>
+                <div role="group" aria-labelledby="apikeypermissions">
+                  <label class="reminder-switch"
+                    ><input type="checkbox" name="permissions" value="programs:read" />Programmes</label
+                  >
+                  <label class="reminder-switch"
+                    ><input type="checkbox" name="permissions" value="workouts:read" />Entraînements et
+                    planification</label
+                  >
+                  <label class="reminder-switch"
+                    ><input type="checkbox" name="permissions" value="prs:read" />Records personnels</label
+                  >
+                </div>
+                <button class="primary">Créer la clé</button>
+                <div id="apikeyerror" class="error" role="status"></div>
+              </form>
+              <div id="apikeylist" class="admin-data-list"></div>
+              <div id="apikeystatus" class="error" role="status"></div>
+            </div>
+          </section>
+          <section class="admin-group" data-account-group>
+            <div class="admin-group-title" role="button" tabindex="0" aria-expanded="true">
               <span class="admin-collapse-indicator">−</span><span>Export Excel</span>
             </div>
             <div class="admin-group-body">
@@ -658,6 +691,18 @@
           </section>
         </section>
       </section>
+      <dialog id="apikeydialog" class="modal" aria-labelledby="apikeydialogtitle">
+        <form method="dialog">
+          <h2 id="apikeydialogtitle">Ta clé API</h2>
+          <p>Copie la clé maintenant. Sa valeur complète disparaît à la fermeture de cette fenêtre.</p>
+          <label>Clé API<input id="apikeytoken" type="text" readonly autocomplete="off" spellcheck="false" /></label>
+          <div class="entryactions">
+            <button type="button" class="primary" id="copyapikey">Copier la clé</button>
+            <button type="submit" class="smallbtn">Fermer</button>
+          </div>
+          <div id="copyapikeystatus" role="status"></div>
+        </form>
+      </dialog>
       <dialog id="programdialog" class="modal">
         <form id="programform" method="dialog">
           <input type="hidden" name="program_id" />

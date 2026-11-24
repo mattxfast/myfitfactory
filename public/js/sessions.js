@@ -87,6 +87,8 @@ async function loadPrs() {
 const inManagerSpace = () => !$("#view-box").hidden,
   inAdminSpace = () => !$("#view-admin").hidden;
 function switchView(v) {
+  const wasInAccount = !$("#view-account").hidden;
+  if (wasInAccount && v !== "account") clearApiKeyView();
   document.querySelectorAll(".navtab[data-view]").forEach(b => b.classList.toggle("active", b.dataset.view === v));
   ["sessions", "programs", "prs", "nutrition", "timer", "account", "admin", "box"].forEach(
     x => ($("#view-" + x).hidden = x !== v)
@@ -104,6 +106,7 @@ function switchView(v) {
     loadReportMonths();
   }
   if (v === "nutrition") loadNutrition();
+  if (v === "account" && !wasInAccount) loadApiKeys();
 }
 document.querySelectorAll(".navtab[data-view]").forEach(b => (b.onclick = () => switchView(b.dataset.view)));
 function sessionTitle(s) {

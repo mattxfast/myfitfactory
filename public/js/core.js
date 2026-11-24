@@ -152,6 +152,7 @@ function fillWodBody(el, parts, fallback) {
   else el.textContent = fallback;
 }
 function showAuth() {
+  clearApiKeyView();
   applyTheme();
   $("#dashboard").hidden = true;
   $("#auth").hidden = false;
