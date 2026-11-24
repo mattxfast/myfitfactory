@@ -41,7 +41,7 @@ const movementCategoryLabels = {
   core: "Core",
   functional: "Fonctionnel",
 };
-const movementCategoryByMethod = {load: "lift", force: "force", reps: "gym", distance: "engine"};
+const movementCategoryByMethod = {load: "lift", force: "force", reps: "gym", distance: "engine", reps_time: "gym"};
 const movementCategory = movement => movement.category ?? movementCategoryByMethod[movement.measurement_method];
 const today = () => {
   const d = new Date();

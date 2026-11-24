@@ -1,7 +1,7 @@
 // Génération de WOD par IA (API OpenAI, sans dépendance) : options de séance, prompt modèle, appel et mise en texte.
 // Le Worker (src/worker.js) lit le contexte en base (profil, records, programme, séances) et enregistre le résultat.
 
-import {MOVEMENT_CATEGORIES, movementCategory} from "./movements.js";
+import {MOVEMENT_CATEGORIES, movementCategory, prMeasuresTime} from "./movements.js";
 
 export const AI_PROMPT_VERSION = "wod-seance-v4";
 export const AI_DAILY_LIMIT = 100; // générations par utilisateur et par 24 h (maîtrise du coût)
@@ -30,6 +30,14 @@ const WRITING_RULES = `- Rédaction : dans chaque bloc, "description" tient en u
 function catalogMovementLabel(movement) {
   const category = MOVEMENT_CATEGORIES[movementCategory(movement)];
   return category ? movement.name + " (" + category + ")" : movement.name;
+}
+
+function contextRecord(r) {
+  const quantityUnit = r.measurement_method === "distance" ? " m" : " rép.";
+  if (prMeasuresTime(r)) return `${r.name} : ${r.value} s pour ${r.fixed_value}${quantityUnit}`;
+  if (r.fixed_kind === "time") return `${r.name} : ${r.value}${quantityUnit} en ${r.fixed_value} s`;
+  const unit = r.measurement_method === "load" || r.measurement_method === "force" ? " kg" : quantityUnit;
+  return `${r.name} : ${r.value}${unit}${r.rep_count ? " (" + r.rep_count + " RM)" : ""}`;
 }
 
 const text = (v, max) =>
@@ -109,10 +117,7 @@ function aiBlockLines(o, catalog) {
 export function buildPrompt(c) {
   const p = c.profile || {},
     o = c.options;
-  const prs = c.records.map(r => {
-    const unit = r.measurement_method === "reps" ? " rép." : r.measurement_method === "distance" ? " m" : " kg";
-    return `${r.name} : ${r.value}${unit}${r.rep_count ? " (" + r.rep_count + " RM)" : ""}`;
-  });
+  const prs = c.records.map(contextRecord);
   const lines = [
     "## Athlète",
     "Niveau : " + (AI_LEVELS[p.level] || "non précisé"),
@@ -356,10 +361,7 @@ Règles :
 export function buildDailyPrompt(c) {
   const p = c.profile || {},
     o = c.options;
-  const prs = c.records.map(r => {
-    const unit = r.measurement_method === "reps" ? " rép." : r.measurement_method === "distance" ? " m" : " kg";
-    return `${r.name} : ${r.value}${unit}${r.rep_count ? " (" + r.rep_count + " RM)" : ""}`;
-  });
+  const prs = c.records.map(contextRecord);
   return [
     "## Athlète",
     "Niveau : " + (AI_LEVELS[p.level] || "non précisé"),

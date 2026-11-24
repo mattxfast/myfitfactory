@@ -33,11 +33,15 @@ import {FOOD_CACHE_DAYS, fetchProduct, validBarcode} from "./foodfacts.js";
 import {athleteProfileInput, computeFitness} from "./fitness.js";
 import {BENCHMARKS, benchmarkById, benchmarkOut, benchmarkMovementIds, benchmarkScore} from "./benchmarks.js";
 import {REPORT_PROMPT_VERSION, reportCoachComment} from "./report.js";
-import {MOVEMENT_CATEGORIES, movementCategory} from "./movements.js";
+import {MOVEMENT_CATEGORIES, movementCategory, validMeasurementMethod} from "./movements.js";
 const SESSION_DAYS = 30,
   enc = new TextEncoder();
 const MOVEMENT_CATALOG_QUERY =
   "SELECT id,name,measurement_method,category FROM movement_catalog ORDER BY sort_order,name COLLATE NOCASE";
+const AI_RECORDS_QUERY = `SELECT mc.name,mc.measurement_method,pr.rep_count,pr.fixed_kind,pr.fixed_value,
+  CASE WHEN pr.fixed_kind IN ('distance','reps') THEN MIN(pr.value) ELSE MAX(pr.value) END AS value
+  FROM personal_records pr JOIN movement_catalog mc ON mc.id=pr.movement_id WHERE pr.user_id=?
+  GROUP BY pr.movement_id,pr.rep_count,pr.fixed_kind,pr.fixed_value ORDER BY mc.sort_order,pr.rep_count LIMIT 40`;
 const withMovementCategory = movement => ({...movement, category: movementCategory(movement)});
 const validMovementCategory = category => typeof category === "string" && Object.hasOwn(MOVEMENT_CATEGORIES, category);
 const json = (d, s = 200, h = {}) =>
@@ -127,41 +131,41 @@ const addDays = (s, n) => {
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
 };
-// PR ENGINE : « temps sur une distance » (fixed_kind distance : fixed_value en mètres, valeur = temps en secondes,
-// le plus court est le meilleur) ou « distance dans un temps » (fixed_kind time : fixed_value en secondes, valeur =
-// distance en mètres). Sans format (anciens PR) : distance seule, en mètres.
+// PR chronométrés : fixed_kind indique la grandeur fixée (distance, répétitions ou durée).
+// Sans format, les anciennes valeurs de distance ou de répétitions restent modifiables.
 function validatePr(movement, value, repCountInput, b = {}) {
+  const method = movement.measurement_method,
+    validReps = n => Number.isInteger(n) && n > 0 && n <= 1000,
+    repsError = {error: "Le nombre de répétitions doit être un entier compris entre 1 et 1 000."};
   if (!Number.isFinite(value) || value <= 0) return {error: "Valeur de record invalide."};
-  if (movement.measurement_method === "load" || movement.measurement_method === "force") {
+  if (method === "load" || method === "force") {
     if (value > 10000) return {error: "Valeur de record invalide."};
     const repCount = Number(repCountInput);
     if (!Number.isInteger(repCount) || repCount < 1 || repCount > 20)
       return {error: "Le nombre de RM doit être compris entre 1 et 20."};
     return {repCount};
   }
-  if (movement.measurement_method === "reps") {
-    if (!Number.isInteger(value) || value > 1000)
-      return {error: "Le nombre de répétitions doit être un entier positif."};
-    return {repCount: null};
+  if (method === "reps") {
+    if (b.fixed_kind) return {error: "Format de PR invalide."};
+    return validReps(value) ? {repCount: null} : repsError;
   }
-  if (movement.measurement_method === "distance") {
+  if (method === "distance" || method === "reps_time") {
     const kind = b.fixed_kind ? String(b.fixed_kind) : "",
-      fixed = Number(b.fixed_value);
-    if (kind === "distance") {
-      if (!Number.isFinite(fixed) || fixed < 10 || fixed > 100000)
+      fixed = Number(b.fixed_value),
+      distance = method === "distance";
+    if (kind === (distance ? "distance" : "reps")) {
+      if (distance && (!Number.isFinite(fixed) || fixed < 10 || fixed > 100000))
         return {error: "La distance doit être comprise entre 10 m et 100 km."};
+      if (!distance && !validReps(fixed)) return repsError;
       if (!Number.isInteger(value) || value > 360000) return {error: "Temps invalide (100 h au plus)."};
       return {repCount: null, fixedKind: kind, fixedValue: Math.round(fixed * 10) / 10};
     }
-    if (kind === "time") {
-      if (!Number.isInteger(fixed) || fixed < 10 || fixed > 86400)
-        return {error: "La durée doit être comprise entre 10 s et 24 h."};
-      if (value > 100000) return {error: "La distance doit être inférieure ou égale à 100 000 mètres."};
-      return {repCount: null, fixedKind: kind, fixedValue: fixed};
-    }
-    if (kind) return {error: "Format de PR invalide."};
-    if (value > 100000) return {error: "La distance doit être inférieure ou égale à 100 000 mètres."};
-    return {repCount: null, fixedKind: null, fixedValue: null};
+    if (kind && kind !== "time") return {error: "Format de PR invalide."};
+    if (kind === "time" && (!Number.isInteger(fixed) || fixed < 10 || fixed > 86400))
+      return {error: "La durée doit être comprise entre 10 s et 24 h."};
+    if (distance && value > 100000) return {error: "La distance doit être inférieure ou égale à 100 000 mètres."};
+    if (!distance && !validReps(value)) return repsError;
+    return {repCount: null, fixedKind: kind || null, fixedValue: kind ? fixed : null};
   }
   return {error: "Méthode de mesure du mouvement invalide."};
 }
@@ -2044,8 +2048,7 @@ async function api(r, e, p, ctx = null) {
           .slice(0, 80),
         method = String(b.measurement_method || "load");
       if (!name) return json({error: "Nom du mouvement requis."}, 400);
-      if (!["load", "force", "reps", "distance"].includes(method))
-        return json({error: "Méthode de calcul invalide."}, 400);
+      if (!validMeasurementMethod(method)) return json({error: "Méthode de calcul invalide."}, 400);
       if (b.category !== undefined && !validMovementCategory(b.category))
         return json({error: "Catégorie de mouvement invalide."}, 400);
       const id = uid();
@@ -2083,8 +2086,7 @@ async function api(r, e, p, ctx = null) {
           .slice(0, 80),
         method = String(b.measurement_method || "load");
       if (!name) return json({error: "Nom du mouvement requis."}, 400);
-      if (!["load", "force", "reps", "distance"].includes(method))
-        return json({error: "Méthode de calcul invalide."}, 400);
+      if (!validMeasurementMethod(method)) return json({error: "Méthode de calcul invalide."}, 400);
       if (b.category !== undefined && !validMovementCategory(b.category))
         return json({error: "Catégorie de mouvement invalide."}, 400);
       const current = await e.DB.prepare("SELECT measurement_method,category FROM movement_catalog WHERE id=?")
@@ -2098,12 +2100,12 @@ async function api(r, e, p, ctx = null) {
         const loadFamily = ["load", "force"];
         if (
           current.measurement_method !== method &&
-          !(loadFamily.includes(current.measurement_method) && loadFamily.includes(method))
+          !(loadFamily.includes(current.measurement_method) && loadFamily.includes(method)) &&
+          !(current.measurement_method === "reps" && method === "reps_time")
         )
           return json(
             {
-              error:
-                "Impossible de changer la mesure du record : ce mouvement possède déjà des PR. Le passage entre les deux mesures de charge est possible.",
+              error: "Cette mesure est incompatible avec les records déjà enregistrés pour ce mouvement.",
             },
             409
           );
@@ -3885,11 +3887,7 @@ async function api(r, e, p, ctx = null) {
       return json({error: "Limite de " + AI_DAILY_LIMIT + " générations par 24 h atteinte. Réessaie demain."}, 429);
     const [profile, records, catalog, focus, planned, done] = await Promise.all([
       e.DB.prepare("SELECT level,goals,equipment,constraints FROM ai_profiles WHERE user_id=?").bind(u.id).first(),
-      e.DB.prepare(
-        "SELECT mc.name,mc.measurement_method,MAX(pr.value) AS value,pr.rep_count FROM personal_records pr JOIN movement_catalog mc ON mc.id=pr.movement_id WHERE pr.user_id=? GROUP BY pr.movement_id,pr.rep_count ORDER BY mc.sort_order,pr.rep_count LIMIT 40"
-      )
-        .bind(u.id)
-        .all(),
+      e.DB.prepare(AI_RECORDS_QUERY).bind(u.id).all(),
       e.DB.prepare(MOVEMENT_CATALOG_QUERY).all(),
       e.DB.prepare("SELECT name FROM program_movements WHERE program_id=? AND user_id=? ORDER BY sort_order")
         .bind(wod.program_id, u.id)
@@ -3969,11 +3967,7 @@ async function api(r, e, p, ctx = null) {
       return json({error: "Limite de " + DAILY_WOD_LIMIT + " WOD du jour par 24 h atteinte. Réessaie demain."}, 429);
     const [profile, records, catalog, done, recent] = await Promise.all([
       e.DB.prepare("SELECT level,goals,equipment,constraints FROM ai_profiles WHERE user_id=?").bind(u.id).first(),
-      e.DB.prepare(
-        "SELECT mc.name,mc.measurement_method,MAX(pr.value) AS value,pr.rep_count FROM personal_records pr JOIN movement_catalog mc ON mc.id=pr.movement_id WHERE pr.user_id=? GROUP BY pr.movement_id,pr.rep_count ORDER BY mc.sort_order,pr.rep_count LIMIT 40"
-      )
-        .bind(u.id)
-        .all(),
+      e.DB.prepare(AI_RECORDS_QUERY).bind(u.id).all(),
       e.DB.prepare(MOVEMENT_CATALOG_QUERY).all(),
       e.DB.prepare(
         "SELECT s.session_date,COALESCE(bw.name,dw.title,CASE WHEN w.name='__AUTRES__' THEN 'Autres' ELSE w.name END) AS name,COALESCE(NULLIF(s.actual_comment,''),bw.content,dw.content,'') AS comment FROM training_sessions s JOIN program_wods w ON w.id=s.wod_id LEFT JOIN box_wods bw ON bw.id=s.box_wod_id LEFT JOIN daily_wods dw ON dw.id=s.daily_wod_id AND dw.user_id=s.user_id WHERE s.user_id=? AND s.session_date BETWEEN ? AND ? ORDER BY s.session_date LIMIT 20"

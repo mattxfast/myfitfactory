@@ -4,14 +4,13 @@
 function isLoadBased(method) {
   return method === "load" || method === "force";
 }
-// PR ENGINE : « temps sur une distance » (fixed_kind distance : fixed_value en m, valeur = temps en s, le plus court
-// gagne) ou « distance dans un temps » (fixed_kind time : fixed_value en s, valeur = distance en m) ; sans format
-// (anciens PR) : distance seule en m. Un PR = un mouvement + son format (comme les RM des charges).
-const lowerIsBetter = record => record.measurement_method === "distance" && record.fixed_kind === "distance";
+// Un PR chronométré se compare aux PR du même mouvement, à distance, répétitions ou durée fixée.
+const isTimedPrMethod = method => method === "distance" || method === "reps_time";
+const lowerIsBetter = record => record.fixed_kind === "distance" || record.fixed_kind === "reps";
 function prKey(record) {
   const format = isLoadBased(record.measurement_method)
     ? record.rep_count
-    : record.measurement_method === "distance" && record.fixed_kind
+    : isTimedPrMethod(record.measurement_method) && record.fixed_kind
       ? record.fixed_kind + "=" + Number(record.fixed_value)
       : record.measurement_method;
   return record.movement_id + ":" + format;
@@ -38,19 +37,18 @@ function formatDistance(m) {
     ? (v / 1000).toLocaleString("fr-FR", {maximumFractionDigits: 3}) + " km"
     : v.toLocaleString("fr-FR", {maximumFractionDigits: 1}) + " m";
 }
+const formatReps = reps => Number(reps).toLocaleString("fr-FR") + " reps";
 function prValue(record) {
   if (isLoadBased(record.measurement_method)) return Number(record.value).toLocaleString("fr-FR") + " kg";
-  if (record.measurement_method === "distance")
-    return record.fixed_kind === "distance" ? formatDuration(record.value) : formatDistance(record.value);
-  return Number(record.value).toLocaleString("fr-FR") + " reps";
+  if (lowerIsBetter(record)) return formatDuration(record.value);
+  return record.measurement_method === "distance" ? formatDistance(record.value) : formatReps(record.value);
 }
 // Format d'un PR : « 3 RM », « 2 km », « 12 min » (rien pour les répétitions et les anciennes distances).
 function prFormatLabel(record) {
   if (isLoadBased(record.measurement_method)) return record.rep_count + " RM";
-  if (record.measurement_method === "distance" && record.fixed_kind)
-    return record.fixed_kind === "distance"
-      ? formatDistance(record.fixed_value)
-      : formatFixedDuration(record.fixed_value);
+  if (record.fixed_kind === "distance") return formatDistance(record.fixed_value);
+  if (record.fixed_kind === "reps") return formatReps(record.fixed_value);
+  if (record.fixed_kind === "time") return formatFixedDuration(record.fixed_value);
   return "";
 }
 // Allure d'un PR ENGINE : au 500 m pour le rameur, au km sinon.
@@ -93,7 +91,7 @@ function renderPrChart(records) {
   const method = sorted[0].measurement_method,
     timed = lowerIsBetter(sorted[0]),
     unit = method === "load" || method === "force" ? "kg" : timed ? "" : method === "distance" ? "m" : "reps";
-  // Temps (PR ENGINE sur une distance) : graduations en mn:s ; un temps qui baisse est un progrès.
+  // Temps sur une distance ou un nombre de répétitions : graduations en mn:s.
   const formatTick = n =>
     timed ? formatDuration(n) : Number(n.toFixed(6)).toLocaleString("fr-FR", {maximumFractionDigits: 2}) + " " + unit;
   const yFor = value => height - bottom - (Number(value) / axisMax) * plotHeight;
@@ -404,7 +402,7 @@ function openPrHistory(key) {
     .sort((a, b) => b.record_date.localeCompare(a.record_date) || b.created_at.localeCompare(a.created_at));
   if (!records.length) return;
   const first = records[0],
-    label = prFormatLabel(first) || (first.measurement_method === "distance" ? "Distance" : "Répétitions");
+    label = prFormatLabel(first) || (first.measurement_method === "distance" ? "Distance" : "Nombre de répétitions");
   $("#prhistorytitle").textContent = first.movement_name + " · " + label;
   $("#prhistorychart").innerHTML = renderPrChart(records);
   $("#prhistorylist").innerHTML =
@@ -458,31 +456,50 @@ function openPrHistory(key) {
 }
 function syncPrForm() {
   const f = $("#prform"),
-    movement = movementCatalog.find(m => m.id === f.elements.movement_id.value),
+    el = f.elements,
+    movement = movementCatalog.find(m => m.id === el.movement_id.value),
     method = movement?.measurement_method,
     load = isLoadBased(method),
-    distance = method === "distance";
+    distance = method === "distance",
+    timed = isTimedPrMethod(method),
+    allowUntimed = method === "reps_time" && f.dataset.untimedMovementId === movement?.id,
+    formats = distance ? ["distance", "time"] : ["reps", "time"];
+  if (allowUntimed) formats.push("");
+  for (const option of el.fixed_kind.options) option.hidden = option.disabled = !formats.includes(option.value);
+  el.fixed_kind.querySelector('[value="time"]').textContent = distance
+    ? "Distance dans un temps"
+    : "Répétitions dans un temps";
+  el.fixed_time.querySelector('[value="720"]').textContent = distance ? "12 min (Cooper)" : "12 min";
+  if (!formats.includes(el.fixed_kind.value)) el.fixed_kind.value = formats[0];
+
+  const kind = el.fixed_kind.value,
+    formatted = timed && kind !== "",
+    onDistance = timed && kind === "distance",
+    onReps = timed && kind === "reps",
+    onTime = timed && kind === "time",
+    timedReps = formatted && !distance;
   $("#prvaluelabel").textContent = load ? "Charge (kg)" : distance ? "Distance (m)" : "Nombre de répétitions";
   $("#prvalue").step = load ? "0.5" : distance ? "0.1" : "1";
   $("#prvalue").min = load ? "0.5" : distance ? "0.1" : "1";
   $("#prvalue").placeholder = load ? "Ex. 80" : distance ? "Ex. 500" : "Ex. 15";
   $("#prrmfield").hidden = !load;
-  f.elements.rep_count.required = load;
-  f.elements.rep_count.disabled = !load;
-  // ENGINE : format (temps sur une distance / distance dans un temps), valeur fixe, puis temps ou distance réalisé.
-  const kind = f.elements.fixed_kind.value,
-    onDistance = distance && kind === "distance",
-    onTime = distance && kind === "time";
-  $("#prvaluefield").hidden = distance;
-  f.elements.value.required = !distance;
-  f.elements.value.disabled = distance;
-  $("#prenginefields").hidden = !distance;
+  el.rep_count.required = load;
+  el.rep_count.disabled = !load;
+  $("#prvaluefield").hidden = formatted;
+  el.value.required = !formatted;
+  el.value.disabled = formatted;
+  const timedFields = $("#prenginefields");
+  timedFields.hidden = !timed;
   $("#prfixeddistancefield").hidden = !onDistance;
   $("#prfixedtimefield").hidden = !onTime;
-  $("#protherdistance").hidden = !(onDistance && f.elements.fixed_distance.value === "other");
-  $("#prothertime").hidden = !(onTime && f.elements.fixed_time.value === "other");
-  $("#prtimefield").hidden = !onDistance;
-  $("#prdistancefield").hidden = !onTime;
+  $("#protherdistance").hidden = !(onDistance && el.fixed_distance.value === "other");
+  $("#prothertime").hidden = !(onTime && el.fixed_time.value === "other");
+  $("#prtimefield").hidden = !(onDistance || onReps);
+  $("#prdistancefield").hidden = !(distance && onTime);
+  $("#prtimedrepsfield").hidden = !timedReps;
+  $("#prtimedrepslabel").textContent = onReps ? "Nombre de répétitions à faire" : "Nombre de répétitions réalisées";
+  el.timed_reps.required = timedReps;
+  for (const input of timedFields.querySelectorAll("input,select")) input.disabled = !!input.closest("[hidden]");
 }
 // Temps saisi en heures / minutes / secondes (cases séparées) → secondes ; null si vide ou invalide.
 function readTime(f, prefix) {
@@ -499,32 +516,36 @@ function fillTime(f, prefix, seconds) {
   f.elements[prefix + "_min"].value = Math.floor((t % 3600) / 60);
   f.elements[prefix + "_sec"].value = t % 60;
 }
-// Valeurs du formulaire ENGINE → {fixed_kind, fixed_value, value} (ou {error}).
-function readEnginePr(f) {
+// Valeurs du formulaire chronométré → {fixed_kind, fixed_value, value} (ou {error}).
+function readTimedPr(f, method) {
   const el = f.elements,
     kind = el.fixed_kind.value,
+    reps = Number(el.timed_reps.value),
     meters = (v, unit) => Number(String(v).replace(",", ".")) * (unit === "km" ? 1000 : 1);
-  if (kind === "distance") {
+  if (kind === "distance" || kind === "reps") {
     const fixed =
-        el.fixed_distance.value === "other"
-          ? meters(el.other_distance.value, el.other_distance_unit.value)
-          : Number(el.fixed_distance.value),
+        kind === "reps"
+          ? reps
+          : el.fixed_distance.value === "other"
+            ? meters(el.other_distance.value, el.other_distance_unit.value)
+            : Number(el.fixed_distance.value),
       time = readTime(f, "duration");
-    if (!(fixed > 0)) return {error: "Indique la distance."};
+    if (!(fixed > 0)) return {error: kind === "reps" ? "Indique le nombre de répétitions." : "Indique la distance."};
     if (!time) return {error: "Indique ton temps en minutes et secondes (secondes de 0 à 59)."};
     return {fixed_kind: kind, fixed_value: Math.round(fixed * 10) / 10, value: time};
   }
-  const fixed = el.fixed_time.value === "other" ? readTime(f, "other_time") : Number(el.fixed_time.value),
-    dist = meters(el.distance.value, el.distance_unit.value);
+  const distance = method === "distance",
+    fixed = el.fixed_time.value === "other" ? readTime(f, "other_time") : Number(el.fixed_time.value),
+    value = distance ? meters(el.distance.value, el.distance_unit.value) : reps;
   if (!fixed) return {error: "Indique la durée en minutes et secondes (secondes de 0 à 59)."};
-  if (!(dist > 0)) return {error: "Indique la distance parcourue."};
-  return {fixed_kind: kind, fixed_value: fixed, value: Math.round(dist * 10) / 10};
+  if (!(value > 0)) return {error: distance ? "Indique la distance parcourue." : "Indique le nombre de répétitions."};
+  return {fixed_kind: kind, fixed_value: fixed, value: Math.round(value * 10) / 10};
 }
-// Formulaire ENGINE pré-rempli pour la modification d'un PR.
-function fillEnginePr(f, record) {
-  const el = f.elements;
-  el.fixed_kind.value = record.fixed_kind === "distance" ? "distance" : "time";
-  if (record.fixed_kind === "distance") {
+function fillTimedPr(f, record, method) {
+  const el = f.elements,
+    kind = record.fixed_kind || (method === "distance" ? "time" : "");
+  el.fixed_kind.value = kind;
+  if (kind === "distance") {
     const preset = [...el.fixed_distance.options].some(o => Number(o.value) === Number(record.fixed_value));
     el.fixed_distance.value = preset ? String(Number(record.fixed_value)) : "other";
     if (!preset) {
@@ -532,14 +553,19 @@ function fillEnginePr(f, record) {
       el.other_distance_unit.value = "m";
     }
     fillTime(f, "duration", record.value);
-  } else {
+  } else if (kind === "reps") {
+    el.timed_reps.value = record.fixed_value;
+    fillTime(f, "duration", record.value);
+  } else if (kind === "time") {
     if (record.fixed_kind === "time") {
       const preset = [...el.fixed_time.options].some(o => Number(o.value) === Number(record.fixed_value));
       el.fixed_time.value = preset ? String(Number(record.fixed_value)) : "other";
       if (!preset) fillTime(f, "other_time", record.fixed_value);
     }
-    el.distance.value = record.value;
-    el.distance_unit.value = "m";
+    if (method === "distance") {
+      el.distance.value = record.value;
+      el.distance_unit.value = "m";
+    } else el.timed_reps.value = record.value;
   }
 }
 // Ouvre le formulaire de PR : vide pour une création, pré-rempli pour la modification d'un PR existant.
@@ -553,12 +579,14 @@ function openPrForm(record = null, category = "") {
     .map(m => '<option value="' + m.id + '">' + esc(m.name) + "</option>")
     .join("");
   f.elements.pr_id.value = record?.id || "";
+  f.dataset.untimedMovementId = record && !record.fixed_kind ? record.movement_id : "";
   if (record) {
+    const method = movementCatalog.find(m => m.id === record.movement_id)?.measurement_method;
     f.elements.movement_id.value = record.movement_id;
     f.elements.record_date.value = record.record_date;
     f.elements.value.value = record.value;
     if (record.rep_count) f.elements.rep_count.value = String(record.rep_count);
-    if (record.measurement_method === "distance") fillEnginePr(f, record);
+    if (isTimedPrMethod(method)) fillTimedPr(f, record, method);
   }
   $("#prformtitle").textContent = record ? "Modifier le PR" : "Nouveau PR";
   $("#prformsubmit").textContent = record ? "Enregistrer les modifications" : "Enregistrer le PR";
@@ -586,14 +614,16 @@ $("#prform").onsubmit = async e => {
     record_date: f.elements.record_date.value,
     value: Number(f.elements.value.value),
     rep_count: isLoadBased(movement.measurement_method) ? Number(f.elements.rep_count.value) : null,
+    fixed_kind: null,
+    fixed_value: null,
   };
-  if (movement.measurement_method === "distance") {
-    const engine = readEnginePr(f);
-    if (engine.error) {
-      $("#prformerror").textContent = engine.error;
+  if (isTimedPrMethod(movement.measurement_method) && f.elements.fixed_kind.value) {
+    const timed = readTimedPr(f, movement.measurement_method);
+    if (timed.error) {
+      $("#prformerror").textContent = timed.error;
       return;
     }
-    Object.assign(body, engine);
+    Object.assign(body, timed);
   }
   try {
     await api(f.elements.pr_id.value ? "/prs/" + f.elements.pr_id.value : "/prs", {

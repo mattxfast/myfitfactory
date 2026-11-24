@@ -188,3 +188,68 @@ test("PR Engine : temps sur une distance et distance dans un temps", async () =>
   assert.ok(engine.score > 0, "pilier Engine calculé à partir des PR de rameur");
   assert.equal((await bob.get("/prs")).data.records.length, 0, "chacun ses PR");
 });
+
+test("PR chronométrés : deux formats en répétitions et conservation des anciens PR", async () => {
+  const admin = client(worker.base);
+  await admin.post("/login", {email: ADMIN_EMAIL, password: "MotDePasse-Test-123"});
+  const rated = await admin.post("/admin/movements", {name: "Burpees", measurement_method: "reps_time"});
+  assert.equal(rated.status, 200);
+  const movement = {name: "Pull-up", measurement_method: "reps"};
+  const created = await admin.post("/admin/movements", movement);
+  assert.equal(created.status, 200);
+  const movementId = created.data.id,
+    route = "/admin/movements/" + movementId,
+    base = {movement_id: movementId, record_date: addDays(today(), -7)};
+  const pr = (offset, extra) => bob.post("/prs", {...base, record_date: addDays(today(), offset), ...extra});
+  const old = await pr(-7, {value: 15});
+  assert.equal(old.status, 200);
+  const score = async key => (await bob.get("/fitness-score")).data.pillars.find(p => p.key === key);
+  const gymBefore = await score("gym");
+
+  assert.equal((await admin.put(route, {...movement, measurement_method: "reps_time"})).status, 200);
+  const catalog = (await bob.get("/movement-catalog")).data.movements.find(m => m.id === movementId);
+  assert.equal(catalog.category, "gym");
+  for (const extra of [
+    {fixed_kind: "distance", fixed_value: 20, value: 50},
+    {fixed_kind: "reps", fixed_value: 15.5, value: 60},
+    {fixed_kind: "reps", fixed_value: 20, value: 50.5},
+    {fixed_kind: "time", fixed_value: 5, value: 22},
+    {fixed_kind: "time", fixed_value: 90, value: 22.5},
+  ]) {
+    assert.equal((await pr(0, extra)).status, 400);
+  }
+  assert.equal((await pr(-6, {fixed_kind: "reps", fixed_value: 20, value: 60})).status, 200);
+  assert.equal((await pr(-5, {fixed_kind: "reps", fixed_value: 20, value: 50})).status, 200);
+  assert.equal((await pr(-4, {fixed_kind: "reps", fixed_value: 20, value: 70})).status, 200);
+  assert.equal((await pr(-3, {fixed_kind: "time", fixed_value: 90, value: 22})).status, 200);
+  const timed = await pr(-2, {fixed_kind: "time", fixed_value: 90, value: 27});
+  assert.equal(timed.status, 200);
+  assert.equal(
+    (
+      await bob.put("/prs/" + timed.data.id, {
+        ...base,
+        record_date: addDays(today(), -2),
+        fixed_kind: "time",
+        fixed_value: 90,
+        value: 28,
+      })
+    ).status,
+    200
+  );
+  assert.equal((await bob.put("/prs/" + old.data.id, {...base, value: 15})).status, 200);
+  assert.equal((await admin.put(route, movement)).status, 409);
+  const records = (await bob.get("/prs")).data.records.filter(p => p.movement_id === movementId);
+  assert.deepEqual(
+    records.map(p => [p.measurement_method, p.fixed_kind, p.fixed_value, p.value, p.rep_count]),
+    [
+      ["reps_time", null, null, 15, null],
+      ["reps_time", "reps", 20, 60, null],
+      ["reps_time", "reps", 20, 50, null],
+      ["reps_time", "reps", 20, 70, null],
+      ["reps_time", "time", 90, 22, null],
+      ["reps_time", "time", 90, 28, null],
+    ]
+  );
+  assert.deepEqual(await score("gym"), gymBefore);
+  assert.match((await score("progression")).detail, /2 PR battus et 3 nouveaux PR/);
+});

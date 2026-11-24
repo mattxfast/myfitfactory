@@ -9,7 +9,7 @@ dire « fais l'idée 7 ».
 - Nouvelle idée : l'ajouter dans la bonne rubrique avec le **numéro suivant le plus grand existant**.
 - *En italique* : la décision de Matt quand il y en a une.
 
-Prochain numéro libre : **59**
+Prochain numéro libre : **60**
 
 ## Fiabilité et exploitation
 
@@ -61,6 +61,7 @@ Prochain numéro libre : **59**
 - [x] **56.** Suivi des tokens OpenAI, visible par l'administrateur uniquement : enregistrer pour chaque appel à l'IA les tokens envoyés, produits et de réflexion (renvoyés par l'API), puis afficher dans l'espace admin le total du jour et du mois, le coût estimé et la répartition par fonctionnalité (WOD, WOD du jour, WOD commun, repas, bilan mensuel). Réalisé avec une table dédiée `ai_usage` (migration v41) plutôt que dans `ai_generations` et `meal_analyses`, pour compter aussi le WOD commun, le bilan mensuel et les appels en échec. — fait le 22/11/2026
 - [x] **57.** « Choisir un WOD » ouvre directement le WOD du jour pour les abonnés depuis une carte aux couleurs du thème, aux côtés de l’IA, du WOD de référence et de la saisie manuelle. « Enregistrer le WOD » l’ajoute à la liste personnelle. — fait le 23/11/2026
 - [x] **58.** Ajouter « Core » et « Fonctionnel » au catalogue des mouvements et aux records, avec une catégorie indépendante de la mesure du PR et une seule option « Charge (kg) » pour toutes les catégories. — fait le 24/11/2026
+- [x] **59.** Ajouter la mesure « Nombre de répétitions / Temps » pour les records et renommer la mesure simple « Nombre de répétitions ». — fait le 24/11/2026
 
 ## Look and feel
 

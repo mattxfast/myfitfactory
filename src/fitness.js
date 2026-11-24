@@ -12,7 +12,7 @@
 // - Progression : PR battus (et premiers PR) des 90 derniers jours.
 // Un pilier sans données vaut null (« à compléter ») et n'entre pas dans le score global.
 import {movementKey} from "./ai.js";
-import {movementCategory} from "./movements.js";
+import {movementCategory, prMeasuresTime} from "./movements.js";
 
 export const FITNESS_VERSION = "forme-v1";
 const WEIGHTS = {
@@ -152,7 +152,7 @@ export function computeFitness(d) {
       const v = epley1RM(Number(r.value), Number(r.rep_count) || 1);
       if (!bestLift.has(key) || v > bestLift.get(key).value) bestLift.set(key, {value: v, name: r.name});
     }
-    if (GYM[key] && r.measurement_method === "reps") {
+    if (GYM[key] && (r.measurement_method === "reps" || (r.measurement_method === "reps_time" && !r.fixed_kind))) {
       const v = Number(r.value);
       if (!bestGym.has(key) || v > bestGym.get(key).value) bestGym.set(key, {value: v, name: r.name});
     }
@@ -285,8 +285,8 @@ export function computeFitness(d) {
           (r.measurement_method === "load" || r.measurement_method === "force"
             ? r.rep_count || 1
             : (r.fixed_kind || "") + (r.fixed_value ?? ""));
-        // Temps sur une distance : un temps plus court est un PR battu.
-        const better = (a, b) => (r.fixed_kind === "distance" ? a < b : a > b);
+        // À distance ou nombre de répétitions fixé, un temps plus court est un PR battu.
+        const better = (a, b) => (prMeasuresTime(r) ? a < b : a > b);
         const recent = days(today, r.record_date) <= 90,
           prev = best.get(key);
         if (recent) {

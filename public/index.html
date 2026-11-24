@@ -413,8 +413,9 @@
               >Mesure du record<select name="measurement_method" required>
                 <option value="">Choisir une mesure</option>
                 <option value="load">Charge (kg)</option>
-                <option value="reps">Répétitions</option>
-                <option value="distance">Distance et temps</option>
+                <option value="reps">Nombre de répétitions</option>
+                <option value="reps_time">Nombre de répétitions / Temps</option>
+                <option value="distance">Distance / Temps</option>
               </select></label
             ><button class="primary">Enregistrer</button>
             <div id="movementcatalogerror" class="error"></div>
@@ -1243,7 +1244,9 @@
             <label
               >Format<select name="fixed_kind">
                 <option value="distance">Temps sur une distance</option>
+                <option value="reps">Temps pour un nombre de répétitions</option>
                 <option value="time">Distance dans un temps</option>
+                <option value="">Nombre de répétitions</option>
               </select></label
             >
             <label id="prfixeddistancefield"
@@ -1265,7 +1268,7 @@
                 <option value="120">2 min</option>
                 <option value="300">5 min</option>
                 <option value="600">10 min</option>
-                <option value="720">12 min (Cooper)</option>
+                <option value="720">12 min</option>
                 <option value="1200">20 min</option>
                 <option value="1800">30 min</option>
                 <option value="3600">1 h</option>
@@ -1322,6 +1325,10 @@
                 /></label>
               </div>
             </div>
+            <label id="prtimedrepsfield" hidden
+              ><span id="prtimedrepslabel">Nombre de répétitions</span
+              ><input name="timed_reps" type="number" min="1" max="1000" step="1" inputmode="numeric"
+            /></label>
             <div id="prtimefield" class="pr-time-field">
               <span class="pr-time-legend">Temps réalisé</span>
               <div class="pr-time-inputs">
