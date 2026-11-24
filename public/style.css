@@ -5636,3 +5636,61 @@ button:active:not(:disabled) {
 .wod-block-5 {
   --block-color: #e5484d;
 }
+
+
+/* iOS Safari : neutraliser le rendu natif surdimensionné du champ type=time. */
+#sessionform .session-time-row{
+  display:flex!important;
+  align-items:flex-start!important;
+  justify-content:flex-start!important;
+  gap:16px!important;
+}
+#sessionform .session-time-row label{
+  display:flex!important;
+  flex:0 1 190px!important;
+  flex-direction:column!important;
+  width:190px!important;
+  max-width:190px!important;
+  min-width:0!important;
+  margin:10px 0!important;
+  overflow:visible!important;
+}
+#sessionform .session-time-row input{
+  display:block!important;
+  flex:0 0 48px!important;
+  width:100%!important;
+  min-width:0!important;
+  max-width:190px!important;
+  height:48px!important;
+  min-height:48px!important;
+  max-height:48px!important;
+  margin:7px 0 0!important;
+  padding:6px 10px!important;
+  box-sizing:border-box!important;
+  font:15px 'DM Sans',sans-serif!important;
+  line-height:normal!important;
+  appearance:none!important;
+  -webkit-appearance:none!important;
+  border:1px solid #dce2ec!important;
+  border-radius:10px!important;
+  background:#fff!important;
+}
+#sessionform .session-time-row input[type="time"]::-webkit-date-and-time-value{
+  text-align:left;
+  min-height:0;
+}
+@media(max-width:650px){
+  #sessionform .session-time-row{gap:12px!important}
+  #sessionform .session-time-row label{
+    flex-basis:160px!important;
+    width:160px!important;
+    max-width:160px!important;
+  }
+  #sessionform .session-time-row input{
+    max-width:160px!important;
+    height:44px!important;
+    min-height:44px!important;
+    max-height:44px!important;
+    flex-basis:44px!important;
+  }
+}
