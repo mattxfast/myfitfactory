@@ -640,13 +640,13 @@
             <div class="admin-group-body">
               <form id="apikeyform" class="profile-card" autocomplete="off">
                 <p class="muted">
-                  Une application qui possède cette clé peut consulter les données autorisées jusqu’à son expiration ou
-                  sa révocation. Elle peut conserver les données déjà reçues. Partage la clé uniquement avec une
-                  application en laquelle tu as confiance.
+                  Une application qui possède cette clé peut consulter les données ou enregistrer des entraînements
+                  selon les permissions choisies, jusqu’à l’expiration ou la révocation de la clé. Elle peut conserver
+                  les données déjà reçues. Partage la clé uniquement avec une application en laquelle tu as confiance.
                 </p>
                 <label>Nom de la clé<input name="name" maxlength="80" required /></label>
                 <label>Date d’expiration (fin de journée UTC)<input name="expires_on" type="date" required /></label>
-                <span id="apikeypermissions">Données accessibles en lecture</span>
+                <span id="apikeypermissions">Permissions de la clé</span>
                 <div role="group" aria-labelledby="apikeypermissions">
                   <label class="reminder-switch"
                     ><input type="checkbox" name="permissions" value="programs:read" />Programmes</label
@@ -657,6 +657,10 @@
                   >
                   <label class="reminder-switch"
                     ><input type="checkbox" name="permissions" value="prs:read" />Records personnels</label
+                  >
+                  <label class="reminder-switch"
+                    ><input type="checkbox" name="permissions" value="workouts:write" />Enregistrer des
+                    entraînements</label
                   >
                 </div>
                 <button class="primary">Créer la clé</button>
