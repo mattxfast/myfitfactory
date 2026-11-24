@@ -204,6 +204,7 @@ test("séances Bearer : permissions explicites, catalogues et cycle de vie des c
   }
   for (const method of ["GET", "PUT", "PATCH", "DELETE"]) {
     for (const path of ["/sessions", "/sessions/" + sessionId]) {
+      if (method === "PUT" && path !== "/sessions") continue;
       assert.equal((await bearer(writer.token, path, method, alice)).status, 403);
     }
   }
@@ -298,6 +299,271 @@ test("séances Bearer : rejeux concurrents et mouvements atomiques, collision en
     [{session_id: body.client_id, catalog_movement_id: catalogId}]
   );
   assert.ok(!(await bob.get("/sessions")).data.sessions.some(s => s.id === body.client_id));
+});
+
+const editSession = (token, id, version, body, extraHeaders = {}, actor = guest) =>
+  actor.call("PUT", "/sessions/" + id, body, {
+    Authorization: "Bearer " + token,
+    ...(version === undefined ? {} : {"If-Match": '"' + version + '"'}),
+    ...extraHeaders,
+  });
+
+const ownedSession = async (id, actor = alice) => (await actor.get("/sessions")).data.sessions.find(s => s.id === id);
+const sessionChecks = async id => {
+  const data = (await alice.get(weekPath)).data;
+  return {
+    program: data.checks
+      .filter(row => row.session_id === id)
+      .map(row => row.movement_id)
+      .sort(),
+    catalog: data.catalogChecks
+      .filter(row => row.session_id === id)
+      .map(row => row.catalog_movement_id)
+      .sort(),
+  };
+};
+
+test("V3.1 : propriété, permission, précondition et conservation des champs d’une séance personnelle", async () => {
+  const reader = await create(alice, "Lecture V3.1", ["workouts:read"]);
+  const writer = await create(alice, "Écriture V3.1", writeScope);
+  const other = await create(bob, "Autre compte V3.1", writeScope);
+  const original = await ownedSession(sessionId);
+  const apiWeek = await bearer(reader.token, weekPath);
+  assert.equal(apiWeek.data.sessions.find(s => s.id === sessionId).edit_version, original.edit_version);
+  assert.equal(
+    (await editSession(other.token, sessionId, original.edit_version, {duration_minutes: 20}, {}, alice)).status,
+    404
+  );
+  assert.equal((await editSession(reader.token, sessionId, original.edit_version, {duration_minutes: 20})).status, 403);
+  assert.equal((await editSession(writer.token, sessionId, undefined, {duration_minutes: 20})).status, 428);
+  assert.equal(
+    (await editSession(writer.token, sessionId, original.edit_version, {duration_minutes: 20}, {"If-Match": "*"}))
+      .status,
+    400
+  );
+  assert.equal(
+    (
+      await editSession(
+        writer.token,
+        sessionId,
+        original.edit_version,
+        {duration_minutes: 20},
+        {"Content-Type": "text/plain"}
+      )
+    ).status,
+    415
+  );
+  const response = await editSession(
+    writer.token,
+    sessionId,
+    original.edit_version,
+    {duration_minutes: 45, actual_comment: "Technique"},
+    {},
+    bob
+  );
+  assert.equal(response.status, 200, JSON.stringify(response.data));
+  assert.equal(response.headers.get("etag"), '"' + response.data.edit_version + '"');
+  const stored = await ownedSession(sessionId);
+  assert.deepEqual(
+    {...stored, updated_at: original.updated_at},
+    {...original, duration_minutes: 45, actual_comment: "Technique", edit_version: response.data.edit_version}
+  );
+  assert.notEqual(stored.edit_version, original.edit_version);
+
+  for (const invalid of [
+    [],
+    {},
+    {session_date: "2024-02-30"},
+    {session_date: addDays(date, 1)},
+    {session_date: addDays(mondayOf(date), -1)},
+    {duration_minutes: "40"},
+    {duration_minutes: 0},
+    {duration_minutes: 601},
+    {duration_minutes: 1.5},
+    {activity_id: crypto.randomUUID()},
+    {wod_id: crypto.randomUUID()},
+    {started_at: "invalide"},
+    {score_value: true},
+    {type_id: crypto.randomUUID()},
+    {actual_comment: 123},
+    {movement_ids: null},
+    {movement_ids: [crypto.randomUUID()]},
+    {box_wod_id: "autre"},
+    {daily_wod_id: null},
+    {tagged_user_ids: []},
+    {client_id: crypto.randomUUID()},
+  ]) {
+    const rejected = await editSession(writer.token, sessionId, stored.edit_version, invalid);
+    assert.equal(rejected.status, 400, JSON.stringify({invalid, returned: rejected.data}));
+  }
+  assert.equal(
+    (await editSession(writer.token, sessionId, stored.edit_version, {program_id: crypto.randomUUID()})).status,
+    404
+  );
+  assert.deepEqual(await ownedSession(sessionId), stored);
+});
+
+test("V3.1 : conservation des scores et des deux listes de mouvements, changements de WOD contrôlés", async () => {
+  const writer = await create(alice, "Écriture mouvements V3.1", writeScope);
+  const pid = programId;
+  const programCatalog = await admin.post("/admin/movements", {
+    name: "Front Squat test V3.1",
+    measurement_method: "load",
+  });
+  assert.equal(programCatalog.status, 200);
+  const first = await alice.post(`/programs/${pid}/movements`, {catalog_movement_id: programCatalog.data.id});
+  assert.equal(first.status, 200);
+  const movement = await admin.post("/admin/movements", {name: "Row test V3.1", measurement_method: "load"});
+  assert.equal(movement.status, 200);
+  const wod = await alice.post(`/programs/${pid}/wods`, {
+    name: "Force",
+    activity_id: sessionBody.activity_id,
+    duration_minutes: 60,
+    score_type: "load",
+    catalog_movement_ids: [movement.data.id],
+  });
+  assert.equal(wod.status, 200);
+  const anotherWod = await alice.post(`/programs/${pid}/wods`, {
+    name: "Tempo",
+    activity_id: sessionBody.activity_id,
+    duration_minutes: 60,
+    score_type: "time",
+  });
+  assert.equal(anotherWod.status, 200);
+  const result = await saveSession(writer.token, {
+    ...sessionBody,
+    program_id: pid,
+    wod_id: wod.data.id,
+    movement_ids: [first.data.id],
+    catalog_movement_ids: [movement.data.id],
+    score_value: 90,
+  });
+  assert.equal(result.status, 200, JSON.stringify(result.data));
+  const id = result.data.id;
+  const original = await ownedSession(id);
+  const removed = await editSession(writer.token, id, original.edit_version, {movement_ids: []});
+  assert.equal(removed.status, 200);
+  assert.deepEqual(await sessionChecks(id), {program: [], catalog: [movement.data.id]});
+  assert.equal((await ownedSession(id)).score_value, 90);
+  const added = await editSession(writer.token, id, removed.data.edit_version, {movement_ids: [first.data.id]});
+  assert.equal(added.status, 200);
+  assert.deepEqual(await sessionChecks(id), {program: [first.data.id], catalog: [movement.data.id]});
+
+  const wrongScore = {wod_id: anotherWod.data.id, catalog_movement_ids: []};
+  for (const fields of [wrongScore, {...wrongScore, score_value: null, catalog_movement_ids: [movement.data.id]}]) {
+    const rejected = await editSession(writer.token, id, added.data.edit_version, fields);
+    assert.equal(rejected.status, 400, JSON.stringify(rejected.data));
+  }
+  const moved = await editSession(writer.token, id, added.data.edit_version, {...wrongScore, score_value: null});
+  assert.equal(moved.status, 200, JSON.stringify(moved.data));
+  assert.deepEqual(await sessionChecks(id), {program: [first.data.id], catalog: []});
+  const stored = await ownedSession(id);
+  assert.equal(stored.wod_id, anotherWod.data.id);
+  assert.equal(stored.score_value, null);
+  assert.equal(stored.program_score_type, null);
+});
+
+test("V3.1 : concurrence, perte de réponse, rollback D1 et mise à jour Web", async () => {
+  const writer = await create(alice, "Écriture atomique V3.1", writeScope);
+  const created = await saveSession(writer.token, {
+    ...sessionBody,
+    program_id: "none",
+    wod_id: "other",
+    catalog_movement_ids: [catalogId],
+  });
+  assert.equal(created.status, 200);
+  const id = created.data.id;
+  const original = await ownedSession(id);
+  localD1(`CREATE TRIGGER test_reject_session_edit BEFORE UPDATE OF actual_comment ON training_sessions
+    WHEN NEW.actual_comment='Rollback V3.1' BEGIN SELECT RAISE(ABORT, 'test rollback'); END;`);
+  assert.equal(
+    (
+      await editSession(writer.token, id, original.edit_version, {
+        catalog_movement_ids: [],
+        actual_comment: "Rollback V3.1",
+      })
+    ).status,
+    500
+  );
+  assert.deepEqual(await sessionChecks(id), {program: [], catalog: [catalogId]});
+  assert.deepEqual(await ownedSession(id), original);
+
+  const bodies = [
+    {actual_comment: "A", catalog_movement_ids: []},
+    {actual_comment: "B", catalog_movement_ids: [catalogId]},
+  ];
+  const responses = await Promise.all(bodies.map(body => editSession(writer.token, id, original.edit_version, body)));
+  assert.deepEqual(responses.map(response => response.status).sort(), [200, 412]);
+  const winner = responses.findIndex(response => response.status === 200);
+  // Le client peut rejouer la requête initiale sans avoir reçu sa réponse.
+  const replay = await editSession(writer.token, id, original.edit_version, bodies[winner]);
+  assert.deepEqual(replay.data, responses[winner].data);
+  assert.equal(replay.headers.get("etag"), responses[winner].headers.get("etag"));
+  assert.equal((await ownedSession(id)).actual_comment, bodies[winner].actual_comment);
+  assert.deepEqual(await sessionChecks(id), {program: [], catalog: bodies[winner].catalog_movement_ids});
+
+  const interrupted = {duration_minutes: 35};
+  const connection = new AbortController();
+  const unread = await fetch(worker.base + "/api/sessions/" + id, {
+    method: "PUT",
+    headers: {
+      Authorization: "Bearer " + writer.token,
+      "If-Match": '"' + replay.data.edit_version + '"',
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(interrupted),
+    signal: connection.signal,
+  });
+  assert.equal(unread.status, 200);
+  connection.abort();
+  const afterInterruption = await ownedSession(id);
+  assert.equal(afterInterruption.duration_minutes, 35);
+  const retried = await editSession(writer.token, id, replay.data.edit_version, interrupted);
+  assert.equal(retried.status, 200);
+  assert.equal(retried.data.edit_version, afterInterruption.edit_version);
+  assert.deepEqual(await ownedSession(id), afterInterruption);
+
+  const cookieEdit = await alice.put("/sessions/" + id, {
+    ...sessionBody,
+    program_id: "none",
+    wod_id: "other",
+    actual_comment: "Web",
+    catalog_movement_ids: [catalogId],
+  });
+  assert.equal(cookieEdit.status, 200);
+  assert.equal((await ownedSession(id)).actual_comment, "Web");
+  assert.deepEqual(await sessionChecks(id), {program: [], catalog: [catalogId]});
+  assert.equal(
+    (await editSession(writer.token, id, retried.data.edit_version, {actual_comment: "Obsolète"})).status,
+    412
+  );
+  assert.equal((await editSession(writer.token, id, original.edit_version, bodies[winner])).status, 412);
+  assert.equal((await bearer(writer.token, "/sessions/" + id, "DELETE", alice)).status, 403);
+});
+
+test("V3.1 : séances envoyées, copies partagées et séances box ou WOD du jour hors périmètre", async () => {
+  const writer = await create(alice, "Écriture exclusions V3.1", writeScope);
+  const recipient = await create(bob, "Écriture invité V3.1", writeScope);
+  const bobId = (await bob.get("/me")).data.user.id;
+  const tagged = await alice.post("/sessions", {...sessionBody, tagged_user_ids: [bobId]});
+  assert.equal(tagged.status, 200);
+  const invite = (await bob.get("/session-tags")).data.tags[0];
+  assert.equal((await bob.post("/session-tags/" + invite.id + "/accept")).status, 200);
+  const daily = await alice.post("/daily-wods/manual", {wod_date: date, name: "V3.1", blocks: {metcon: "Row"}});
+  assert.equal(daily.status, 200);
+  const dailySession = await saveSession(writer.token, {...sessionBody, daily_wod_id: daily.data.wod.id});
+  assert.equal(dailySession.status, 200);
+  const boxSession = (await alice.get("/sessions")).data.sessions.find(s => s.box_wod_id);
+  assert.ok(boxSession);
+  for (const [token, session] of [
+    [writer.token, await ownedSession(tagged.data.id)],
+    [recipient.token, await ownedSession(invite.id, bob)],
+    [writer.token, await ownedSession(dailySession.data.id)],
+    [writer.token, boxSession],
+  ]) {
+    assert.ok(session);
+    assert.equal((await editSession(token, session.id, session.edit_version, {actual_comment: "Bloqué"})).status, 409);
+  }
 });
 
 test("quotas D1 atomiques par clé et par utilisateur, avec Retry-After", async () => {

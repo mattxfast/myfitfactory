@@ -180,7 +180,7 @@ const apiKeyForm = $("#apikeyform"),
     "programs:read": "Programmes",
     "workouts:read": "Entraînements et planification",
     "prs:read": "Records personnels",
-    "workouts:write": "Enregistrer des entraînements",
+    "workouts:write": "Créer et modifier des entraînements",
   };
 let apiKeyView = 0;
 
