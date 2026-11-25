@@ -566,6 +566,226 @@ test("V3.1 : séances envoyées, copies partagées et séances box ou WOD du jou
   }
 });
 
+test("V3.2 : planning personnel et opérations atomiques", async t => {
+  const planner = client(worker.base, "203.0.113.5");
+  const follower = client(worker.base, "203.0.113.6");
+  for (const [actor, email] of [
+    [planner, "planner@test.local"],
+    [follower, "follower@test.local"],
+  ]) {
+    assert.equal((await actor.post("/register", {email, password})).status, 200);
+  }
+  const week = mondayOf(date),
+    next = addDays(week, 7),
+    later = addDays(week, 14);
+  const end = addDays(week, 20);
+  const planProgram = await planner.post("/programs", {name: "Planning V3.2", start: week, end, is_public: true});
+  assert.equal(planProgram.status, 200);
+  const pid = planProgram.data.id;
+  const exercises = await Promise.all(
+    ["Tractions", "Squat", "Rameur", "Gainage"].map(async name => {
+      const res = await planner.post(`/programs/${pid}/wods`, {
+        name,
+        activity_id: sessionBody.activity_id,
+        duration_minutes: 30,
+      });
+      assert.equal(res.status, 200, JSON.stringify(res.data));
+      return res.data.id;
+    })
+  );
+  const [pull, squat, row, core] = exercises;
+  const full = (await create(planner, "Planning complet", ["plans:read", "plans:write"])).token;
+  const viewer = (await create(planner, "Planning lecture", ["plans:read"])).token;
+  const writer = (await create(planner, "Planning écriture", ["plans:write"])).token;
+  const old = (await create(planner, "Permissions V3.1", [...allPermissions, "workouts:write"])).token;
+  const other = (await create(follower, "Planning suivi", ["plans:read", "plans:write"])).token;
+  const path = "/weekly-plans",
+    movePath = path + "/move";
+  const range = path + `?from=${week}&to=${end}`;
+  const ref = (week_start, wod_id) => ({week_start, wod_id});
+  const keyAt = (seconds = Math.floor(Date.now() / 1000)) => seconds + "." + crypto.randomUUID();
+  const apply = (token, method, body, {path: route = path, key = keyAt(), actor = guest, headers = {}} = {}) =>
+    actor.call(method, route, body, {
+      Authorization: "Bearer " + token,
+      "Idempotency-Key": key,
+      ...headers,
+    });
+  const read = async (token = full) => {
+    const res = await bearer(token, range);
+    assert.equal(res.status, 200);
+    return res.data.plans;
+  };
+  const get = async (week_start, wod_id, token = full) =>
+    (await read(token)).find(p => p.week_start === week_start && p.wod_id === wod_id);
+  const source = ({week_start, wod_id, version}) => ({week_start, wod_id, version});
+
+  await t.test(
+    "permissions, dates strictes, accès au programme suivi et isolement en lecture et en écriture",
+    async () => {
+      assert.equal((await guest.get(range)).status, 401);
+      for (const token of [old, writer]) assert.equal((await bearer(token, range)).status, 403);
+      for (const token of [old, viewer]) {
+        assert.equal((await apply(token, "POST", ref(week, pull), {actor: planner})).status, 403);
+        assert.equal((await apply(token, "DELETE", ref(week, pull), {actor: planner})).status, 403);
+        assert.equal((await apply(token, "POST", {}, {path: movePath, actor: planner})).status, 403);
+      }
+      assert.equal((await planner.post(movePath, {})).status, 404);
+      assert.equal((await bearer(full, path + "?from=2026-02-30&to=2026-03-15")).status, 400);
+      assert.equal((await bearer(full, path + `?from=${next}&to=${week}`)).status, 400);
+      assert.equal((await apply(writer, "POST", ref(addDays(week, 1), pull))).status, 400);
+      assert.equal((await apply(writer, "POST", ref(addDays(week, -7), pull))).status, 400);
+      assert.equal((await apply(writer, "POST", ref(week, pull), {key: ""})).status, 400);
+      assert.equal(
+        (await apply(writer, "POST", ref(week, pull), {headers: {"Content-Type": "text/plain"}})).status,
+        415
+      );
+      assert.equal((await apply(writer, "POST", {...ref(week, pull), user_id: "autre"})).status, 400);
+      assert.equal((await apply(other, "POST", ref(week, pull), {actor: planner})).status, 404);
+      assert.equal((await apply(writer, "POST", ref(week, sessionBody.wod_id))).status, 404);
+
+      const internalSession = await planner.post("/sessions", {
+        ...sessionBody,
+        program_id: "none",
+        wod_id: "other",
+      });
+      assert.equal(internalSession.status, 200);
+      const internal = (await planner.get("/sessions")).data.sessions.find(s => s.id === internalSession.data.id);
+      assert.equal((await apply(writer, "POST", ref(week, internal.wod_id))).status, 404);
+
+      assert.equal((await apply(writer, "POST", ref(week, pull))).status, 200);
+      const origin = await get(week, pull, viewer);
+      assert.deepEqual(origin, {
+        ...ref(week, pull),
+        wod_name: "Tractions",
+        program_id: pid,
+        version: origin.version,
+        completed: false,
+      });
+      assert.match(origin.version, /^[a-f0-9]{32}$/);
+      assert.deepEqual(await read(other), []);
+      assert.equal((await follower.put("/program-follow", {program_id: pid, start: next})).status, 200);
+      assert.equal((await apply(other, "POST", ref(week, pull))).status, 400);
+      assert.equal((await apply(other, "POST", ref(next, pull))).status, 200);
+      assert.equal((await apply(writer, "POST", ref(next, pull))).status, 200);
+      const otherPlan = await get(next, pull, other);
+      const ownerPlan = await get(next, pull);
+      assert.notEqual(ownerPlan.version, otherPlan.version);
+      assert.equal((await apply(other, "DELETE", source(ownerPlan))).status, 412);
+      assert.equal((await apply(other, "DELETE", source(otherPlan))).status, 200);
+      assert.deepEqual(await get(next, pull), ownerPlan);
+      assert.equal((await apply(other, "POST", ref(next, pull))).status, 200);
+      assert.equal((await follower.del("/program-follow")).status, 200);
+      assert.deepEqual(await read(other), []);
+      assert.equal((await apply(other, "POST", ref(later, pull))).status, 404);
+    }
+  );
+
+  await t.test("doublons, déplacement, remplacement et rejeux avec intervention concurrente", async () => {
+    const versions = await Promise.all(Array.from({length: 4}, () => apply(full, "POST", ref(week, squat))));
+    assert.deepEqual(
+      versions.map(x => x.status),
+      [200, 200, 200, 200]
+    );
+    assert.equal((await read()).filter(p => p.week_start === week && p.wod_id === squat).length, 1);
+    const origin = source(await get(week, squat));
+    assert.equal((await apply(full, "POST", ref(week, squat))).status, 200);
+    assert.deepEqual(source(await get(week, squat)), origin);
+    const moving = {from: origin, to: ref(next, squat)};
+    const key = keyAt();
+    const repeated = await Promise.all([
+      apply(full, "POST", moving, {key, path: movePath}),
+      apply(full, "POST", moving, {key, path: movePath}),
+    ]);
+    assert.deepEqual(
+      repeated.map(x => x.status),
+      [200, 200]
+    );
+    assert.equal(await get(week, squat), undefined);
+    const moved = await get(next, squat);
+    assert.notEqual(moved.version, origin.version);
+    assert.equal((await apply(full, "POST", {from: source(moved), to: ref(next, pull)}, {path: movePath})).status, 409);
+    assert.equal((await apply(full, "POST", {from: source(moved), to: ref(later, row)}, {path: movePath})).status, 200);
+    assert.equal(await get(next, squat), undefined);
+    assert.ok(await get(later, row));
+    assert.equal((await apply(full, "POST", moving, {key, path: movePath})).status, 200);
+    assert.equal(await get(next, squat), undefined);
+    assert.equal((await apply(full, "POST", {...moving, to: ref(later, squat)}, {key, path: movePath})).status, 409);
+
+    const addition = keyAt();
+    assert.equal((await apply(full, "POST", ref(next, core), {key: addition})).status, 200);
+    const initial = await get(next, core);
+    const deletion = keyAt();
+    assert.equal((await apply(full, "DELETE", source(initial), {key: deletion})).status, 200);
+    assert.equal((await apply(full, "POST", ref(next, core), {key: addition})).status, 200);
+    assert.equal(await get(next, core), undefined);
+    assert.equal((await apply(full, "POST", ref(next, core))).status, 200);
+    const recreated = await get(next, core);
+    assert.equal((await apply(full, "DELETE", source(initial), {key: deletion})).status, 200);
+    assert.equal((await apply(full, "DELETE", source(initial))).status, 412);
+    assert.deepEqual(await get(next, core), recreated);
+    const expired = keyAt(Math.floor(Date.now() / 1000) - 86400);
+    assert.equal((await apply(full, "DELETE", source(recreated), {key: expired})).status, 409);
+  });
+
+  await t.test("conflits entre destinations, rollback D1 et rejeu après échec du lot", async () => {
+    const original = await get(next, core);
+    const moves = [ref(later, core), ref(later, squat)].map(to => ({from: source(original), to}));
+    const responses = await Promise.all(moves.map(body => apply(full, "POST", body, {path: movePath})));
+    assert.deepEqual(responses.map(x => x.status).sort(), [200, 404]);
+    assert.equal(await get(next, core), undefined);
+    const result = moves[responses.findIndex(x => x.status === 200)].to;
+    const winner = await get(result.week_start, result.wod_id);
+    assert.ok(winner);
+    const rollback = {from: source(winner), to: ref(next, core)};
+    const key = keyAt();
+    localD1(`CREATE TRIGGER test_reject_plan_move BEFORE UPDATE OF week_start ON weekly_plans
+      BEGIN SELECT RAISE(ABORT, 'test rollback planning'); END;`);
+    try {
+      assert.equal((await apply(full, "POST", rollback, {key, path: movePath})).status, 500);
+      assert.equal(await get(next, core), undefined);
+      assert.deepEqual(await get(result.week_start, result.wod_id), winner);
+    } finally {
+      localD1("DROP TRIGGER test_reject_plan_move;");
+    }
+    assert.equal((await apply(full, "POST", rollback, {key, path: movePath})).status, 200);
+    assert.ok(await get(next, core));
+    assert.equal(await get(result.week_start, result.wod_id), undefined);
+  });
+
+  await t.test("séance réalisée : protection du planning API et maintien du nettoyage Web", async () => {
+    const planned = await get(week, pull);
+    const completed = await planner.post("/sessions", {...sessionBody, program_id: pid, wod_id: pull});
+    assert.equal(completed.status, 200, JSON.stringify(completed.data));
+    const sessionsBefore = (await planner.get("/sessions")).data;
+    assert.equal((await get(week, pull)).completed, true);
+    assert.equal((await apply(full, "DELETE", source(planned))).status, 409);
+    assert.equal(
+      (await apply(full, "POST", {from: source(planned), to: ref(later, pull)}, {path: movePath})).status,
+      409
+    );
+    assert.equal((await apply(full, "POST", ref(week, pull))).status, 409);
+    const another = await get(next, pull);
+    assert.equal(
+      (await apply(full, "POST", {from: source(another), to: ref(week, pull)}, {path: movePath})).status,
+      409
+    );
+    assert.equal((await get(week, pull)).version, planned.version);
+    assert.equal((await planner.del(path, ref(week, pull))).status, 200);
+    assert.equal(await get(week, pull), undefined);
+    assert.deepEqual((await planner.get("/sessions")).data, sessionsBefore);
+    assert.equal((await planner.post(path, ref(week, core))).status, 200);
+    const web = await get(week, core);
+    assert.match(web.version, /^[a-f0-9]{32}$/);
+    assert.deepEqual(
+      (await planner.get(range)).data.plans.find(p => p.wod_id === core && p.week_start === week),
+      {
+        ...ref(week, core),
+        wod_name: "Gainage",
+      }
+    );
+  });
+});
+
 test("quotas D1 atomiques par clé et par utilisateur, avec Retry-After", async () => {
   const a = await create(alice, "Quota A", ["prs:read"]);
   const b = await create(alice, "Quota B", ["prs:read"]);

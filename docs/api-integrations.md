@@ -1,6 +1,6 @@
 # Intégrations IA et API
 
-Les clés API personnelles permettent à un service externe de lire les données d’un compte myFitFactory et d’y enregistrer ou modifier des entraînements selon les permissions accordées. Chaque clé est rattachée à son propriétaire. Utilisez une clé distincte pour chaque intégration et transmettez-la avec l’en-tête `Authorization: Bearer <clé>` sur HTTPS.
+Les clés API personnelles permettent à un service externe de lire les données d’un compte myFitFactory, y enregistrer ou modifier des entraînements et gérer son planning hebdomadaire selon les permissions accordées. Chaque clé est rattachée à son propriétaire. Utilisez une clé distincte pour chaque intégration et transmettez-la avec l’en-tête `Authorization: Bearer <clé>` sur HTTPS.
 
 ## Créer, renouveler et révoquer une clé
 
@@ -23,8 +23,12 @@ La liste montre le nom, le préfixe public, les permissions, l’expiration, le 
 | `POST /api/sessions`        | `workouts:write` | Objet JSON, voir ci-dessous                                               |
 | `PUT /api/sessions/{id}`    | `workouts:write` | Objet JSON partiel et en-tête `If-Match`, voir ci-dessous |
 | `GET /api/prs`              | `prs:read`       | Aucun                                                                     |
+| `GET /api/weekly-plans` | `plans:read` | `from` et `to`, dates inclusives |
+| `POST /api/weekly-plans` | `plans:write` | Objet JSON et en-tête `Idempotency-Key` |
+| `DELETE /api/weekly-plans` | `plans:write` | Objet JSON avec version et en-tête `Idempotency-Key` |
+| `POST /api/weekly-plans/move` | `plans:write` | Source avec version, destination et en-tête `Idempotency-Key` |
 
-Les réponses de lecture sont les mêmes qu’avec une session web du propriétaire. Elles incluent aussi les données partagées auxquelles ce compte a accès dans myFitFactory, comme les programmes suivis et les WOD des box dont il est membre validé. La liste ci-dessus couvre toutes les méthodes et routes Bearer. Les clés existantes gardent leurs permissions. Celles disposant déjà de `workouts:write` peuvent aussi modifier des séances avec la V3.1. Les clés avec `workouts:read` peuvent également consulter les trois référentiels communs ci-dessus. La permission `workouts:write` s’accorde explicitement à la création d’une clé. Les méthodes `PATCH` et `DELETE` sont interdites avec une clé API.
+Les réponses de lecture des programmes, entraînements et records sont les mêmes qu’avec une session web du propriétaire. Elles incluent aussi les données partagées auxquelles ce compte a accès dans myFitFactory, comme les programmes suivis et les WOD des box dont il est membre validé. La liste ci-dessus couvre toutes les méthodes et routes Bearer. Les clés existantes gardent leurs permissions. Celles disposant déjà de `workouts:write` peuvent aussi modifier des séances avec la V3.1. Les clés avec `workouts:read` peuvent également consulter les trois référentiels communs ci-dessus. La permission `workouts:write` s’accorde explicitement à la création d’une clé. La seule route `DELETE` ouverte aux clés est celle du planning. Les méthodes `PATCH` restent interdites.
 
 ### Programmes
 
@@ -154,7 +158,7 @@ Le corps contient au moins un des champs ci-dessous. Les champs omis gardent leu
 | `score_value`, `score_type` | Score numérique ou chaîne conforme aux formats de création. Pour retirer le score, envoyez `score_value: null` ou une chaîne vide, sans `score_type`. Avec un score, le type facultatif est `time`, `rounds` ou `load`. Un changement de WOD exige un score compatible, ou un retrait explicite du score existant. |
 | `movement_ids`, `catalog_movement_ids` | Chaque tableau fourni remplace uniquement sa propre liste, avec au plus 200 identifiants. Un tableau vide retire tous les mouvements de cette liste. Lors d’un changement de WOD ou de programme, les mouvements conservés doivent être compatibles avec la nouvelle association. |
 
-Seules les séances du propriétaire de la clé sont modifiables. Les séances liées à un WOD de box ou du jour, les séances avec des invitations encore enregistrées et les copies reçues via un partage sont refusées avec `409`. La modification par clé API refuse les champs de partage, de liaison box ou WOD du jour ainsi que `client_id`. La suppression par clé API est interdite.
+Seules les séances du propriétaire de la clé sont modifiables. Les séances liées à un WOD de box ou du jour, les séances avec des invitations encore enregistrées et les copies reçues via un partage sont refusées avec `409`. La modification par clé API refuse les champs de partage, de liaison box ou WOD du jour ainsi que `client_id`. La suppression de séances par clé API est interdite.
 
 Une modification réussie renvoie `200`, l’en-tête `ETag` avec la nouvelle version entre guillemets et le corps suivant.
 
@@ -172,6 +176,59 @@ curl -X PUT "${BASE_URL}/api/sessions/${SEANCE_ID}" \
   -H 'Content-Type: application/json' \
   --data '{"duration_minutes": 45, "actual_comment": "Séance technique"}'
 ```
+
+## Gérer son planning hebdomadaire (V3.2)
+
+Le planning est personnel. Une entrée correspond à un couple `week_start` et `wod_id` pour le propriétaire de la clé. Les nouvelles routes portent sur ses propres programmes et ceux qu’il suit actuellement, aux dates choisies pour leur suivi. Les WOD internes « Autres » et le programme technique « Hors programme » sont exclus. La lecture existante des plans dans `GET /api/week-data` reste comprise dans `workouts:read`. Les clés existantes ne reçoivent aucune des deux nouvelles permissions.
+
+### Lire les entrées
+
+`GET /api/weekly-plans?from=2026-11-23&to=2026-12-06` exige `plans:read`. Les bornes sont deux dates calendaires réelles `YYYY-MM-DD`, inclusives et ordonnées. Elles filtrent le lundi de chaque entrée. Les résultats sont triés par semaine puis identifiant du WOD.
+
+```json
+{
+  "plans": [
+    {
+      "week_start": "2026-11-23",
+      "wod_id": "wod-1",
+      "wod_name": "Force",
+      "program_id": "programme-1",
+      "version": "669f038157e34dd5b71d5df10902f6a0",
+      "completed": false
+    }
+  ]
+}
+```
+
+`completed` vaut `true` si le propriétaire a enregistré une séance pour ce WOD entre le lundi et le dimanche inclus. `version` est un jeton opaque de 32 caractères hexadécimaux. Elle change à chaque déplacement, remplacement ou recréation de l’entrée.
+
+### Ajouter, retirer, déplacer ou remplacer
+
+Les écritures exigent `plans:write`, `Content-Type: application/json` et un en-tête `Idempotency-Key`. Une intégration qui lit les versions et écrit avec une seule clé doit lui accorder `plans:read` et `plans:write`.
+
+| Méthode et chemin | Corps JSON | Effet |
+| --- | --- | --- |
+| `POST /api/weekly-plans` | `{"week_start":"2026-11-23","wod_id":"wod-1"}` | Ajoute le WOD. Une entrée non réalisée déjà présente conserve sa version. |
+| `DELETE /api/weekly-plans` | `{"week_start":"2026-11-23","wod_id":"wod-1","version":"669f038157e34dd5b71d5df10902f6a0"}` | Retire l’entrée non réalisée à la version indiquée. |
+| `POST /api/weekly-plans/move` | `{"from":{"week_start":"2026-11-23","wod_id":"wod-1","version":"669f038157e34dd5b71d5df10902f6a0"},"to":{"week_start":"2026-11-30","wod_id":"wod-2"}}` | Modifie la semaine, le WOD, ou les deux, en une transaction. La destination doit être libre. |
+
+Chaque `week_start` doit être un lundi réel `YYYY-MM-DD` situé dans la période du programme du WOD pour le propriétaire de la clé. Les identifiants sont des chaînes de 1 à 64 lettres ASCII, chiffres, tirets ou traits de soulignement. Les champs supplémentaires sont refusés. Le serveur renvoie `200` et `{"ok":true}` en cas de succès. Récupérez la nouvelle version avec une lecture.
+
+| Statut | Cas propre au planning |
+| --- | --- |
+| `400` | Dates, lundi, identifiant, version, corps ou clé d’idempotence mal formés. Semaine hors programme ou déplacement vers la même entrée. |
+| `404` | WOD absent, interne ou inaccessible, ou entrée source introuvable. Une entrée d’un autre compte reste invisible. |
+| `409` | Séance réalisée pour la source ou la destination, destination déjà planifiée pour un déplacement, clé d’idempotence expirée ou réutilisée avec une autre opération. |
+| `412` | Entrée source présente avec une version différente. Relisez le planning avant de préparer une autre opération. |
+| `415` | Type de contenu autre que `application/json`. |
+
+Le déplacement et le remplacement utilisent la même route. Les contrôles d’accès, de période, de version, de présence d’une séance et d’occupation de la destination sont effectués dans la transaction D1 qui enregistre le résultat. Deux déplacements concurrents d’une même source vers des destinations différentes ne peuvent pas réussir tous les deux. Une séance validée avant la transaction protège son entrée. Les écritures de planning ne modifient jamais les séances.
+
+### Réessayer après une interruption
+
+Le format de `Idempotency-Key` est `<horodatage Unix en secondes>.<UUID v4 minuscule>`, par exemple la valeur produite en JavaScript par `Math.floor(Date.now() / 1000) + "." + crypto.randomUUID()`. La clé est valable 24 heures après l’horodatage indiqué. Le serveur tolère jusqu’à cinq minutes d’avance sur son horloge.
+
+Après un timeout, renvoyez la même méthode, le même chemin, les mêmes champs et la même clé d’idempotence. L’ordre des champs JSON peut changer. Pour un même compte, le serveur restitue le résultat initial enregistré sans réexécuter l’écriture, même si le planning a changé depuis. Une erreur interne qui annule la transaction ne consomme pas la clé. Une fois la clé expirée, relisez le planning avant de décider d’une nouvelle opération. Les requêtes restent soumises aux quotas habituels.
 
 ## Erreurs et quotas
 
@@ -228,3 +285,5 @@ curl -X POST "${BASE_URL}/api/sessions" \
 Le Worker applique la migration applicative `v47-personal-api-keys` au premier appel API ou à la première exécution planifiée. La migration crée `api_keys`, un index de consultation par propriétaire, `api_user_rates` et un déclencheur SQLite qui associe l’incrément du compteur de clé à celui du compte dans la même écriture atomique. La migration est additive et réexécutable. Elle ne demande ni binding Cloudflare supplémentaire ni migration Wrangler distante distincte.
 
 L’enregistrement des entraînements réutilise la table des séances et sa clé primaire. La V3.1 ajoute la migration applicative `v48-session-edit-version`. Elle initialise la version des séances existantes et installe un déclencheur qui attribue une version aux nouvelles séances. Elle s’applique automatiquement et ne requiert ni binding ni commande Wrangler supplémentaire.
+
+La migration additive `v49-weekly-plan-versions` initialise la version des entrées existantes, installe un déclencheur pour les nouvelles entrées et crée la table des résultats d’idempotence. La tâche quotidienne supprime les résultats expirés. La table `weekly_plans` et sa clé primaire composée restent en place.
