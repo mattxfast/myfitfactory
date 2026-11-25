@@ -253,6 +253,10 @@ function maybeWelcomeBox() {
 let boxPage = "wods";
 function renderBoxNav() {
   const ids = boxIds("manager");
+  const membersTab = $("#managernav [data-box-page='members']"),
+    hasRequests = boxPending.members > 0;
+  membersTab.classList.toggle("has-alert", hasRequests);
+  membersTab.setAttribute("aria-label", hasRequests ? "Membres, demandes d’adhésion en attente" : "Membres");
   if (!ids.length && inManagerSpace()) switchView("sessions");
   if (!ids.includes(managedBoxId)) {
     managedBoxId = ids[0] || "";
@@ -637,7 +641,7 @@ async function boxAction(path, method, body, message) {
   try {
     await api(path, {method, body: body ? JSON.stringify(body) : undefined});
     await loadManagedBox();
-    loadBoxes().catch(() => {}); // met à jour l’alerte rouge de l’icône gestionnaire
+    loadBoxes().catch(() => {}); // met à jour les alertes du raccourci gestionnaire et de l’onglet Membres
     loadSessions().catch(() => {}); // WOD supprimé ou modifié : page Séances à jour
     if (message) toast(message);
   } catch (e) {

@@ -759,7 +759,7 @@ label > input[type="date"] {
 .navtabs[hidden] {
   display: none;
 }
-/* Séances partagées en attente : pastille rouge sur l'onglet Séances. */
+/* Pastille rouge sur les onglets avec des demandes ou invitations en attente. */
 .navtab.has-alert::after {
   content: "";
   position: absolute;

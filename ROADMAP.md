@@ -9,7 +9,7 @@ dire « fais l'idée 7 ».
 - Nouvelle idée : l'ajouter dans la bonne rubrique avec le **numéro suivant le plus grand existant**.
 - *En italique* : la décision de Matt quand il y en a une.
 
-Prochain numéro libre : **65**
+Prochain numéro libre : **66**
 
 ## Fiabilité et exploitation
 
@@ -68,6 +68,7 @@ Prochain numéro libre : **65**
 - [ ] **62.** Intégrations IA et API V3.1 : modifier ses propres séances avec une clé personnelle et une précondition de version. PR en attente de validation.
 - [ ] **63.** Intégrations IA et API V3.2 : consulter et modifier son planning hebdomadaire avec une clé personnelle. PR en attente de validation.
 - [ ] **64.** Intégrations IA et API V3.3 : gérer son historique de records personnels avec une clé personnelle. PR en attente de validation.
+- [x] **65.** Afficher une pastille rouge sur l’onglet Membres de l’espace gestionnaire tant qu’une demande d’adhésion attend une réponse. — fait le 25/11/2026
 
 ## Look and feel
 
