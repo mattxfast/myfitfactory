@@ -9,7 +9,7 @@ dire « fais l'idée 7 ».
 - Nouvelle idée : l'ajouter dans la bonne rubrique avec le **numéro suivant le plus grand existant**.
 - *En italique* : la décision de Matt quand il y en a une.
 
-Prochain numéro libre : **63**
+Prochain numéro libre : **64**
 
 ## Fiabilité et exploitation
 
@@ -66,6 +66,7 @@ Prochain numéro libre : **63**
 - [x] **60.** Intégrations IA et API : clés API personnelles révocables avec permissions de lecture par catégorie. — fait le 24/11/2026 ([documentation](docs/api-integrations.md))
 - [ ] **61.** Intégrations IA et API V3.0 : enregistrer des entraînements avec une clé personnelle. Évolution en attente de validation de la PR.
 - [ ] **62.** Intégrations IA et API V3.1 : modifier ses propres séances avec une clé personnelle et une précondition de version. PR en attente de validation.
+- [ ] **63.** Intégrations IA et API V3.2 : consulter et modifier son planning hebdomadaire avec une clé personnelle. PR en attente de validation.
 
 ## Look and feel
 

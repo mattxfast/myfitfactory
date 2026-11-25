@@ -181,6 +181,8 @@ const apiKeyForm = $("#apikeyform"),
     "workouts:read": "Entraînements et planification",
     "prs:read": "Records personnels",
     "workouts:write": "Créer et modifier des entraînements",
+    "plans:read": "Consulter le planning hebdomadaire",
+    "plans:write": "Modifier le planning hebdomadaire",
   };
 let apiKeyView = 0;
 

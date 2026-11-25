@@ -785,6 +785,35 @@ async function ensureV2Schema(env) {
         env.DB.prepare("UPDATE training_sessions SET edit_version=lower(hex(randomblob(16))) WHERE edit_version=''"),
       ]);
     });
+    await runMigration("v49-weekly-plan-versions", async () => {
+      const columns = await env.DB.prepare("PRAGMA table_info(weekly_plans)").all();
+      if (!columns.results.some(column => column.name === "plan_version")) {
+        try {
+          await env.DB.prepare("ALTER TABLE weekly_plans ADD COLUMN plan_version TEXT NOT NULL DEFAULT ''").run();
+        } catch (error) {
+          if (!String(error.message).includes("duplicate column name: plan_version")) throw error;
+        }
+      }
+      await env.DB.batch([
+        env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS weekly_plans_initial_version
+          AFTER INSERT ON weekly_plans WHEN NEW.plan_version=''
+          BEGIN
+            UPDATE weekly_plans SET plan_version=lower(hex(randomblob(16)))
+            WHERE user_id=NEW.user_id AND week_start=NEW.week_start AND wod_id=NEW.wod_id;
+          END`),
+        env.DB.prepare("UPDATE weekly_plans SET plan_version=lower(hex(randomblob(16))) WHERE plan_version=''"),
+        env.DB.prepare(`CREATE TABLE IF NOT EXISTS weekly_plan_requests (
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          request_id TEXT NOT NULL,
+          request_hash TEXT NOT NULL,
+          attempt_id TEXT NOT NULL,
+          expires_at INTEGER NOT NULL,
+          outcome TEXT NOT NULL,
+          PRIMARY KEY(user_id,request_id)
+        )`),
+        env.DB.prepare("CREATE INDEX IF NOT EXISTS weekly_plan_requests_expiry ON weekly_plan_requests(expires_at)"),
+      ]);
+    });
   })().catch(err => {
     schemaReady = null;
     throw err;
@@ -2112,6 +2141,172 @@ async function editApiSession(r, e, userId, id, adminEmail) {
   return current.edit_version === nextVersion ? success() : conflict();
 }
 
+const WEEKLY_PLAN_PATH = "/api/weekly-plans";
+const WEEKLY_PLAN_MOVE_PATH = WEEKLY_PLAN_PATH + "/move";
+const PLAN_REPLAY_SECONDS = 86400;
+const PLAN_WOD_JOIN = `
+  JOIN program_wods w ON w.id=wp.wod_id
+  JOIN programs p ON p.id=w.program_id
+  LEFT JOIN program_follows f ON f.program_id=p.id AND f.user_id=wp.user_id`;
+const PLAN_ACCESS = "w.name<>'__AUTRES__' AND p.is_default=0 AND (p.user_id=wp.user_id OR f.user_id IS NOT NULL)";
+const PLAN_COMPLETED = `EXISTS(
+  SELECT 1 FROM training_sessions s WHERE s.user_id=wp.user_id AND s.wod_id=wp.wod_id
+    AND s.session_date BETWEEN wp.week_start AND COALESCE(date(wp.week_start,'+6 days'),'9999-12-31')
+)`;
+const PLAN_STATE = `SELECT
+    wp.week_start BETWEEN CASE WHEN p.user_id=wp.user_id THEN p.start_monday ELSE f.start_monday END
+                      AND CASE WHEN p.user_id=wp.user_id THEN p.end_monday ELSE f.end_monday END AS in_period,
+    ${PLAN_COMPLETED} AS completed,
+    existing.plan_version AS version
+  FROM (SELECT ? AS user_id, ? AS week_start, ? AS wod_id) wp
+  ${PLAN_WOD_JOIN}
+  LEFT JOIN weekly_plans existing
+    ON existing.user_id=wp.user_id AND existing.week_start=wp.week_start AND existing.wod_id=wp.wod_id
+  WHERE ${PLAN_ACCESS}`;
+
+const PLAN_ERRORS = {
+  period: [400, "Ce WOD ne fait pas partie du programme de cette semaine."],
+  wod: [404, "WOD introuvable."],
+  missing: [404, "Planification introuvable."],
+  completed: [409, "Un WOD a déjà été réalisé pour cette semaine."],
+  occupied: [409, "Le WOD de destination est déjà planifié."],
+  stale: [412, "La planification a changé. Relis-la avant de réessayer."],
+};
+
+function exactCalendarDate(value) {
+  return typeof value === "string" && validDate(value) && new Date(value).toISOString().slice(0, 10) === value;
+}
+
+function planReference(value, withVersion = false) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    Object.keys(value).length !== (withVersion ? 3 : 2) ||
+    !exactCalendarDate(value.week_start) ||
+    mondayOfDate(value.week_start) !== value.week_start ||
+    typeof value.wod_id !== "string" ||
+    !/^[\w-]{1,64}$/.test(value.wod_id) ||
+    (withVersion && (typeof value.version !== "string" || !/^[a-f0-9]{32}$/.test(value.version)))
+  )
+    return null;
+  const {week_start, wod_id, version} = value;
+  return withVersion ? {week_start, wod_id, version} : {week_start, wod_id};
+}
+
+async function weeklyPlansForApi(r, e, userId, path) {
+  if (r.method === "GET") {
+    const q = new URL(r.url).searchParams,
+      from = q.get("from"),
+      to = q.get("to");
+    if (!exactCalendarDate(from) || !exactCalendarDate(to) || from > to) return json({error: "Période invalide."}, 400);
+    const {results} = await e.DB.prepare(
+      `SELECT wp.week_start, wp.wod_id, w.name AS wod_name, p.id AS program_id,
+              wp.plan_version AS version, ${PLAN_COMPLETED} AS completed
+       FROM weekly_plans wp ${PLAN_WOD_JOIN}
+       WHERE wp.user_id=? AND wp.week_start BETWEEN ? AND ? AND ${PLAN_ACCESS}
+       ORDER BY wp.week_start, wp.wod_id`
+    )
+      .bind(userId, from, to)
+      .all();
+    return json({plans: results.map(plan => ({...plan, completed: Boolean(plan.completed)}))});
+  }
+
+  if (r.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase() !== "application/json")
+    return json({error: "Un corps JSON est requis."}, 415);
+  const requestId = r.headers.get("Idempotency-Key") || "",
+    issuedAt = /^(\d{10})\.[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.exec(requestId),
+    now = Math.floor(Date.now() / 1000);
+  if (!issuedAt || Number(issuedAt[1]) > now + 300) return json({error: "Clé d’idempotence absente ou invalide."}, 400);
+  const expiresAt = Number(issuedAt[1]) + PLAN_REPLAY_SECONDS;
+  const expired = () => json({error: "Clé d’idempotence expirée."}, 409);
+  if (expiresAt <= now) return expired();
+
+  const body = await r.json().catch(() => null),
+    move = path === WEEKLY_PLAN_MOVE_PATH,
+    remove = r.method === "DELETE",
+    source = move ? planReference(body?.from, true) : remove ? planReference(body, true) : null,
+    target = move ? planReference(body?.to) : remove ? null : planReference(body);
+  if (
+    (move && (!source || !target || Object.keys(body).length !== 2)) ||
+    (remove && !source) ||
+    (!move && !remove && !target) ||
+    (move && source.week_start === target.week_start && source.wod_id === target.wod_id)
+  )
+    return json({error: "Planification invalide."}, 400);
+
+  const sourceChecks =
+    source &&
+    `
+    WHEN NOT EXISTS(SELECT 1 FROM original) THEN 'wod'
+    WHEN NOT (SELECT in_period IS TRUE FROM original) THEN 'period'
+    WHEN (SELECT version FROM original) IS NULL THEN 'missing'
+    WHEN (SELECT completed FROM original) THEN 'completed'
+    WHEN (SELECT version FROM original)<>? THEN 'stale'`;
+  const targetChecks =
+    target &&
+    `
+    WHEN NOT EXISTS(SELECT 1 FROM destination) THEN 'wod'
+    WHEN NOT (SELECT in_period IS TRUE FROM destination) THEN 'period'
+    WHEN (SELECT completed FROM destination) THEN 'completed'`;
+  const ctes = [
+    ...(source ? ["original AS (" + PLAN_STATE + ")"] : []),
+    ...(target ? ["destination AS (" + PLAN_STATE + ")"] : []),
+  ];
+  const values = [
+    ...(source ? [userId, source.week_start, source.wod_id] : []),
+    ...(target ? [userId, target.week_start, target.wod_id] : []),
+  ];
+  const attempt = uid().replaceAll("-", ""),
+    fingerprint = await sha(JSON.stringify([r.method, path, source, target])),
+    admitted =
+      "EXISTS(SELECT 1 FROM weekly_plan_requests WHERE user_id=? AND request_id=? AND attempt_id=? AND outcome='ok')",
+    gate = [userId, requestId, attempt];
+  const record = e.DB.prepare(
+    `WITH ${ctes.join(", ")}, decision AS (
+       SELECT CASE ${sourceChecks || ""} ${targetChecks || ""}
+       ${move ? "WHEN (SELECT version FROM destination) IS NOT NULL THEN 'occupied'" : ""} ELSE 'ok' END AS outcome
+     )
+     INSERT INTO weekly_plan_requests(user_id,request_id,request_hash,attempt_id,expires_at,outcome)
+     SELECT ?,?,?,?,?,outcome FROM decision WHERE unixepoch()<?
+     ON CONFLICT(user_id,request_id) DO NOTHING`
+  ).bind(...values, ...(source ? [source.version] : []), userId, requestId, fingerprint, attempt, expiresAt, expiresAt);
+
+  let change;
+  if (move) {
+    change = e.DB.prepare(
+      "UPDATE weekly_plans SET week_start=?,wod_id=?,plan_version=? WHERE user_id=? AND week_start=? AND wod_id=? AND " +
+        admitted
+    ).bind(target.week_start, target.wod_id, attempt, userId, source.week_start, source.wod_id, ...gate);
+  } else if (remove) {
+    change = e.DB.prepare(
+      "DELETE FROM weekly_plans WHERE user_id=? AND week_start=? AND wod_id=? AND " + admitted
+    ).bind(userId, source.week_start, source.wod_id, ...gate);
+  } else {
+    change = e.DB.prepare(
+      "INSERT INTO weekly_plans(user_id,week_start,wod_id) SELECT ?,?,? WHERE " +
+        admitted +
+        " ON CONFLICT(user_id,week_start,wod_id) DO NOTHING"
+    ).bind(userId, target.week_start, target.wod_id, ...gate);
+  }
+  // La décision et son effet utilisent le même instantané et sont validés ensemble.
+  const [, , receipt] = await e.DB.batch([
+    record,
+    change,
+    e.DB.prepare("SELECT request_hash,outcome FROM weekly_plan_requests WHERE user_id=? AND request_id=?").bind(
+      userId,
+      requestId
+    ),
+  ]);
+  const outcome = receipt.results[0];
+  if (!outcome) return expired();
+  if (outcome.request_hash !== fingerprint)
+    return json({error: "Cette clé d’idempotence est déjà associée à une autre opération."}, 409);
+  if (outcome.outcome === "ok") return json({ok: true});
+  const [status, error] = PLAN_ERRORS[outcome.outcome];
+  return json({error}, status);
+}
+
 const API_KEY_PERMISSIONS = new Map([
   ["GET /api/program-data", "programs:read"],
   ["GET /api/week-data", "workouts:read"],
@@ -2119,6 +2314,10 @@ const API_KEY_PERMISSIONS = new Map([
   ["GET /api/movement-catalog", "workouts:read"],
   ["GET /api/wod-types", "workouts:read"],
   ["POST /api/sessions", "workouts:write"],
+  ["GET " + WEEKLY_PLAN_PATH, "plans:read"],
+  ["POST " + WEEKLY_PLAN_PATH, "plans:write"],
+  ["DELETE " + WEEKLY_PLAN_PATH, "plans:write"],
+  ["POST " + WEEKLY_PLAN_MOVE_PATH, "plans:write"],
   ["GET /api/prs", "prs:read"],
 ]);
 const API_KEY_SCOPES = new Set(API_KEY_PERMISSIONS.values());
@@ -3615,6 +3814,7 @@ async function api(r, e, p, ctx = null, apiUser = null) {
       .run();
     return json({ok: true});
   }
+  if (apiUser && (p === WEEKLY_PLAN_PATH || p === WEEKLY_PLAN_MOVE_PATH)) return weeklyPlansForApi(r, e, u.id, p);
   if (r.method === "GET" && p === "/api/weekly-plans") {
     const q = new URL(r.url).searchParams,
       from = q.get("from"),
@@ -5346,6 +5546,7 @@ export default {
               e.DB.prepare("DELETE FROM sessions WHERE expires_at<=?").bind(now),
               e.DB.prepare("DELETE FROM login_attempts WHERE attempted_at<=?").bind(now - 86400),
               e.DB.prepare("DELETE FROM password_resets WHERE expires_at<=?").bind(now - 86400),
+              e.DB.prepare("DELETE FROM weekly_plan_requests WHERE expires_at<=?").bind(now),
             ])
           : Promise.all([sendReminders(e), sendMonthlyReportPushes(e), sendCommonWod(e)])
       )
