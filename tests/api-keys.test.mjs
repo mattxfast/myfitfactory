@@ -786,6 +786,199 @@ test("V3.2 : planning personnel et opérations atomiques", async t => {
   });
 });
 
+test("V3.3 : gestion de l’historique des PR avec une clé personnelle", async t => {
+  const owner = client(worker.base, "203.0.113.7");
+  const other = client(worker.base, "203.0.113.8");
+  assert.equal((await owner.post("/register", {email: "pr-owner@test.local", password})).status, 200);
+  assert.equal((await other.post("/register", {email: "pr-other@test.local", password})).status, 200);
+  const readToken = (await create(owner, "Lecture PR V3.3", ["prs:read"])).token;
+  const editToken = (await create(owner, "Écriture PR V3.3", ["prs:write"])).token;
+  const formatsToken = (await create(owner, "Formats PR V3.3", ["prs:write"])).token;
+  const otherToken = (await create(other, "Autre PR V3.3", ["prs:write", "prs:read"])).token;
+  const movements = {};
+  for (const method of ["load", "force", "reps", "distance", "reps_time"]) {
+    const created = await admin.post("/admin/movements", {name: "V3.3 " + method, measurement_method: method});
+    assert.equal(created.status, 200);
+    movements[method] = created.data.id;
+  }
+  const body = (method, value, fields = {}) => ({movement_id: movements[method], record_date: date, value, ...fields});
+  const requestId = (issued = Math.floor(Date.now() / 1000)) => issued + "." + crypto.randomUUID();
+  const write = (
+    method,
+    payload,
+    {token = editToken, id, version, key = requestId(), actor = guest, headers = {}} = {}
+  ) =>
+    actor.call(method, "/prs" + (id ? "/" + id : ""), payload, {
+      Authorization: "Bearer " + token,
+      "Idempotency-Key": key,
+      ...(version === undefined ? {} : {"If-Match": '"' + version + '"'}),
+      ...headers,
+    });
+  const records = async (token = readToken) => {
+    const result = await bearer(token, "/prs");
+    assert.equal(result.status, 200);
+    return result.data.records;
+  };
+  const find = async id => (await records()).find(record => record.id === id);
+  const base = body("load", 100, {rep_count: 1});
+
+  await t.test("permissions et catalogue, dates, champs et limites de tous les formats", async () => {
+    assert.equal((await bearer(editToken, "/prs")).status, 403);
+    assert.equal((await bearer(editToken, "/movement-catalog")).status, 403);
+    assert.equal((await bearer(readToken, "/activities")).status, 403);
+    assert.deepEqual((await bearer(readToken, "/movement-catalog")).data, (await owner.get("/movement-catalog")).data);
+    assert.equal((await write("POST", base, {token: readToken, actor: owner})).status, 403);
+    assert.equal((await write("POST", base, {token: "invalide", actor: owner})).status, 401);
+    assert.equal((await write("POST", base, {key: ""})).status, 400);
+    assert.equal((await write("POST", base, {key: requestId(Math.floor(Date.now() / 1000) - 86400)})).status, 409);
+    assert.equal((await write("POST", base, {headers: {"Content-Type": "text/plain"}})).status, 415);
+    for (const input of [
+      body("load", 10000, {rep_count: 20}),
+      body("force", 1.2, {rep_count: 1}),
+      body("reps", 1000),
+      body("distance", 100000),
+      body("distance", 360000, {fixed_kind: "distance", fixed_value: 100000}),
+      body("distance", 1, {fixed_kind: "distance", fixed_value: 10.29}),
+      body("distance", 1200, {fixed_kind: "time", fixed_value: 86400}),
+      body("reps_time", 1000),
+      body("reps_time", 360000, {fixed_kind: "reps", fixed_value: 1000}),
+      body("reps_time", 8, {fixed_kind: "time", fixed_value: 10}),
+    ]) {
+      const res = await write("POST", input, {token: formatsToken});
+      assert.equal(res.status, 201, JSON.stringify({input, result: res.data}));
+      assert.match(res.data.edit_version, /^[a-f0-9]{32}$/);
+      assert.equal(res.headers.get("etag"), '"' + res.data.edit_version + '"');
+      const stored = await find(res.data.id);
+      assert.equal(stored.value, input.value);
+      assert.equal(stored.rep_count, input.rep_count ?? null);
+      assert.equal(stored.fixed_kind, input.fixed_kind ?? null);
+      assert.equal(stored.fixed_value, input.fixed_value === 10.29 ? 10.3 : (input.fixed_value ?? null));
+    }
+    for (const invalid of [
+      [],
+      {},
+      {...base, record_date: "2026-02-29"},
+      {...base, record_date: "2026-2-01"},
+      {...base, record_date: addDays(date, 1)},
+      {...base, user_id: "autre"},
+      {...base, client_id: crypto.randomUUID()},
+      {...base, value: "100"},
+      {...base, rep_count: "1"},
+      {...base, rep_count: 0},
+      {...base, rep_count: 21},
+      body("load", 10001, {rep_count: 1}),
+      body("force", 0, {rep_count: 1}),
+      body("force", 100, {rep_count: 1, fixed_kind: "time", fixed_value: 10}),
+      body("reps", 1.5),
+      body("reps", 1001),
+      body("reps", 5, {rep_count: 1}),
+      body("distance", 100001),
+      body("distance", 360001, {fixed_kind: "distance", fixed_value: 100}),
+      body("distance", 1.5, {fixed_kind: "distance", fixed_value: 100}),
+      body("distance", 1, {fixed_kind: "distance", fixed_value: 9}),
+      body("distance", 1, {fixed_kind: "distance", fixed_value: 100001}),
+      body("distance", 1, {fixed_kind: "time", fixed_value: 86401}),
+      body("distance", 1, {fixed_kind: "time"}),
+      body("distance", 1, {fixed_value: 10}),
+      body("reps_time", 10, {fixed_kind: "reps", fixed_value: 1001}),
+      body("reps_time", 10, {fixed_kind: "reps", fixed_value: 0}),
+      body("reps_time", 8, {fixed_kind: "time", fixed_value: 9}),
+      body("reps_time", 8.2, {fixed_kind: "time", fixed_value: 10}),
+      body("reps_time", 8, {fixed_kind: "distance", fixed_value: 10}),
+    ]) {
+      const res = await write("POST", invalid, {token: formatsToken});
+      assert.equal(res.status, 400, JSON.stringify({invalid, result: res.data}));
+    }
+    assert.equal((await write("POST", {...base, movement_id: crypto.randomUUID()})).status, 404);
+    assert.equal((await records(otherToken)).length, 0);
+  });
+
+  await t.test("création concurrente, perte de réponse, historique et périmètre utilisateur", async () => {
+    const key = requestId();
+    const copies = await Promise.all(Array.from({length: 6}, () => write("POST", base, {key})));
+    for (const response of copies) {
+      assert.equal(response.status, 201);
+      assert.deepEqual(response.data, copies[0].data);
+    }
+    const created = copies[0].data;
+    assert.equal((await records()).filter(p => p.id === created.id).length, 1);
+    const {id, edit_version: version} = created;
+    const lower = await write("POST", {...base, value: 70});
+    assert.equal(lower.status, 201);
+    assert.ok(await find(lower.data.id));
+    assert.ok(await find(id));
+    assert.equal((await write("POST", {...base, value: 70}, {key})).status, 409);
+    assert.equal((await write("PUT", base, {id, version, token: otherToken, actor: owner})).status, 404);
+    assert.equal((await write("DELETE", undefined, {id, version, token: otherToken, actor: owner})).status, 404);
+    assert.equal((await write("PUT", base, {id, version, token: readToken})).status, 403);
+    assert.equal((await write("DELETE", undefined, {id, version, token: readToken})).status, 403);
+    assert.equal((await write("PUT", base, {id})).status, 428);
+    assert.equal((await write("DELETE", undefined, {id})).status, 428);
+    assert.equal((await write("PUT", base, {id, headers: {"If-Match": "*"}})).status, 400);
+    assert.equal((await write("DELETE", base, {id, version})).status, 400);
+
+    const connection = new AbortController(),
+      editKey = requestId();
+    const editedBody = {...base, value: 74};
+    const unread = await fetch(worker.base + "/api/prs/" + id, {
+      method: "PUT",
+      body: JSON.stringify(editedBody),
+      signal: connection.signal,
+      headers: {
+        Authorization: "Bearer " + editToken,
+        "If-Match": '"' + version + '"',
+        "Content-Type": "application/json",
+        "Idempotency-Key": editKey,
+      },
+    });
+    assert.equal(unread.status, 200);
+    connection.abort();
+    const changed = await find(id);
+    const replayed = await write("PUT", editedBody, {id, version, key: editKey});
+    assert.deepEqual(replayed.data, {ok: true, id, edit_version: changed.edit_version});
+    assert.equal(changed.value, 74);
+
+    const choices = [65, 67];
+    const competing = await Promise.all(
+      choices.map(value => write("PUT", {...base, value}, {id, version: changed.edit_version}))
+    );
+    assert.deepEqual(competing.map(r => r.status).sort(), [200, 412]);
+    assert.equal((await find(id)).value, choices[competing.findIndex(r => r.status === 200)]);
+    assert.deepEqual((await write("PUT", editedBody, {id, version, key: editKey})).data, replayed.data);
+    assert.deepEqual((await write("POST", {...base, rep_count: 1}, {key})).data, created);
+  });
+
+  await t.test("suppression, échec atomique et versions invalidées par le Web", async () => {
+    const web = await owner.post("/prs", base);
+    assert.equal(web.status, 200);
+    const id = web.data.id,
+      before = await find(id);
+    assert.match(before.edit_version, /^[a-f0-9]{32}$/);
+    assert.equal((await owner.put("/prs/" + id, {...base, value: 85})).status, 200);
+    const current = await find(id);
+    assert.notEqual(before.edit_version, current.edit_version);
+    assert.equal((await write("DELETE", undefined, {id, version: before.edit_version})).status, 412);
+
+    const key = requestId(),
+      options = {id, version: current.edit_version, key};
+    localD1(`CREATE TRIGGER test_pr_delete_rollback BEFORE DELETE ON personal_records
+      BEGIN SELECT RAISE(ABORT, 'test rollback pr'); END;`);
+    try {
+      assert.equal((await write("DELETE", undefined, options)).status, 500);
+      assert.deepEqual(await find(id), current);
+    } finally {
+      localD1("DROP TRIGGER test_pr_delete_rollback;");
+    }
+    const deleted = await write("DELETE", undefined, options);
+    assert.deepEqual(deleted.data, {ok: true, id});
+    assert.equal(deleted.status, 200);
+    assert.equal(await find(id), undefined);
+    assert.deepEqual((await write("DELETE", undefined, options)).data, deleted.data);
+    assert.equal((await write("DELETE", undefined, {...options, key: requestId()})).status, 404);
+    assert.ok((await records()).length > 0);
+  });
+});
+
 test("quotas D1 atomiques par clé et par utilisateur, avec Retry-After", async () => {
   const a = await create(alice, "Quota A", ["prs:read"]);
   const b = await create(alice, "Quota B", ["prs:read"]);

@@ -814,6 +814,36 @@ async function ensureV2Schema(env) {
         env.DB.prepare("CREATE INDEX IF NOT EXISTS weekly_plan_requests_expiry ON weekly_plan_requests(expires_at)"),
       ]);
     });
+    await runMigration("v50-pr-edit-versions", async () => {
+      const columns = await env.DB.prepare("PRAGMA table_info(personal_records)").all();
+      if (!columns.results.some(column => column.name === "edit_version")) {
+        try {
+          await env.DB.prepare("ALTER TABLE personal_records ADD COLUMN edit_version TEXT NOT NULL DEFAULT ''").run();
+        } catch (error) {
+          if (!String(error.message).includes("duplicate column name: edit_version")) throw error;
+        }
+      }
+      await env.DB.batch([
+        env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS personal_records_initial_edit_version
+          AFTER INSERT ON personal_records WHEN NEW.edit_version=''
+          BEGIN
+            UPDATE personal_records SET edit_version=lower(hex(randomblob(16))) WHERE id=NEW.id AND user_id=NEW.user_id;
+          END`),
+        env.DB.prepare("UPDATE personal_records SET edit_version=lower(hex(randomblob(16))) WHERE edit_version=''"),
+        env.DB.prepare(`CREATE TABLE IF NOT EXISTS pr_api_requests (
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          request_id TEXT NOT NULL,
+          request_hash TEXT NOT NULL,
+          attempt_id TEXT NOT NULL,
+          expires_at INTEGER NOT NULL,
+          outcome TEXT NOT NULL,
+          detail TEXT,
+          pr_id TEXT NOT NULL,
+          PRIMARY KEY(user_id,request_id)
+        )`),
+        env.DB.prepare("CREATE INDEX IF NOT EXISTS pr_api_requests_expiry ON pr_api_requests(expires_at)"),
+      ]);
+    });
   })().catch(err => {
     schemaReady = null;
     throw err;
@@ -2143,7 +2173,18 @@ async function editApiSession(r, e, userId, id, adminEmail) {
 
 const WEEKLY_PLAN_PATH = "/api/weekly-plans";
 const WEEKLY_PLAN_MOVE_PATH = WEEKLY_PLAN_PATH + "/move";
-const PLAN_REPLAY_SECONDS = 86400;
+const IDEMPOTENCY_WINDOW_SECONDS = 86400;
+const expiredIdempotencyKey = () => json({error: "Clé d’idempotence expirée."}, 409);
+function readIdempotencyKey(r) {
+  const requestId = r.headers.get("Idempotency-Key") || "",
+    issuedAt = /^(\d{10})\.[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.exec(requestId),
+    now = Math.floor(Date.now() / 1000);
+  if (!issuedAt || Number(issuedAt[1]) > now + 300)
+    return {error: json({error: "Clé d’idempotence absente ou invalide."}, 400)};
+  const expiresAt = Number(issuedAt[1]) + IDEMPOTENCY_WINDOW_SECONDS;
+  if (expiresAt <= now) return {error: expiredIdempotencyKey()};
+  return {requestId, expiresAt};
+}
 const PLAN_WOD_JOIN = `
   JOIN program_wods w ON w.id=wp.wod_id
   JOIN programs p ON p.id=w.program_id
@@ -2214,13 +2255,8 @@ async function weeklyPlansForApi(r, e, userId, path) {
 
   if (r.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase() !== "application/json")
     return json({error: "Un corps JSON est requis."}, 415);
-  const requestId = r.headers.get("Idempotency-Key") || "",
-    issuedAt = /^(\d{10})\.[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.exec(requestId),
-    now = Math.floor(Date.now() / 1000);
-  if (!issuedAt || Number(issuedAt[1]) > now + 300) return json({error: "Clé d’idempotence absente ou invalide."}, 400);
-  const expiresAt = Number(issuedAt[1]) + PLAN_REPLAY_SECONDS;
-  const expired = () => json({error: "Clé d’idempotence expirée."}, 409);
-  if (expiresAt <= now) return expired();
+  const {requestId, expiresAt, error: keyError} = readIdempotencyKey(r);
+  if (keyError) return keyError;
 
   const body = await r.json().catch(() => null),
     move = path === WEEKLY_PLAN_MOVE_PATH,
@@ -2299,7 +2335,7 @@ async function weeklyPlansForApi(r, e, userId, path) {
     ),
   ]);
   const outcome = receipt.results[0];
-  if (!outcome) return expired();
+  if (!outcome) return expiredIdempotencyKey();
   if (outcome.request_hash !== fingerprint)
     return json({error: "Cette clé d’idempotence est déjà associée à une autre opération."}, 409);
   if (outcome.outcome === "ok") return json({ok: true});
@@ -2307,11 +2343,163 @@ async function weeklyPlansForApi(r, e, userId, path) {
   return json({error}, status);
 }
 
+const PR_ID_PATH = /^\/api\/prs\/([\w-]+)$/;
+const PR_FIELDS = new Set(["movement_id", "record_date", "value", "rep_count", "fixed_kind", "fixed_value"]);
+const PR_ERRORS = {
+  missing: [404, "PR introuvable."],
+  stale: [412, "Le PR a changé. Relis-le avant de le modifier."],
+  movement: [404, "Mouvement introuvable dans le catalogue."],
+  measurement: [409, "La mesure du mouvement a changé. Relis le catalogue avant de réessayer."],
+};
+const movementForPr = (e, id) =>
+  e.DB.prepare("SELECT id,measurement_method FROM movement_catalog WHERE id=?").bind(id).first();
+
+function prApiBody(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).some(k => !PR_FIELDS.has(k)))
+    return null;
+  const {movement_id, record_date, value: result, rep_count = null, fixed_kind = null, fixed_value = null} = value;
+  if (
+    typeof movement_id !== "string" ||
+    !/^[\w-]{1,64}$/.test(movement_id) ||
+    !exactCalendarDate(record_date) ||
+    record_date > localToday() ||
+    typeof result !== "number" ||
+    !Number.isFinite(result) ||
+    (rep_count !== null && !Number.isInteger(rep_count)) ||
+    (fixed_kind !== null && !["distance", "reps", "time"].includes(fixed_kind)) ||
+    (fixed_value !== null && (typeof fixed_value !== "number" || !Number.isFinite(fixed_value))) ||
+    (fixed_kind === null) !== (fixed_value === null)
+  )
+    return null;
+  return {movement_id, record_date, value: result, rep_count, fixed_kind, fixed_value};
+}
+
+async function writePrByApi(r, e, userId, id) {
+  const remove = r.method === "DELETE";
+  let version = null;
+  if (id) {
+    const match = r.headers.get("If-Match");
+    if (match === null) return json({error: "L’en-tête If-Match est requis."}, 428);
+    version = /^"([a-f0-9]{32})"$/.exec(match)?.[1];
+    if (!version) return json({error: "Version de PR invalide."}, 400);
+  }
+  const {requestId, expiresAt, error} = readIdempotencyKey(r);
+  if (error) return error;
+  let body = null;
+  if (remove) {
+    if (await r.text()) return json({error: "La suppression ne prend aucun corps."}, 400);
+  } else {
+    if (r.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase() !== "application/json")
+      return json({error: "Un corps JSON est requis."}, 415);
+    body = prApiBody(await r.json().catch(() => null));
+    if (!body) return json({error: "Champs, types ou date de PR invalides."}, 400);
+  }
+  const recordId = id ?? uid(),
+    attempt = uid().replaceAll("-", ""),
+    fingerprint = await sha(JSON.stringify([r.method, id, version, body])),
+    movement = body && (await movementForPr(e, body.movement_id));
+  let validation = null;
+  if (movement) {
+    const usesRm = ["load", "force"].includes(movement.measurement_method);
+    validation =
+      (usesRm && body.fixed_kind !== null) || (!usesRm && body.rep_count !== null)
+        ? {error: "Champs incompatibles avec la méthode de mesure."}
+        : validatePr(movement, body.value, body.rep_count, body);
+  }
+
+  const checks = [
+    ...(id
+      ? [
+          "WHEN NOT EXISTS(SELECT 1 FROM personal_records WHERE id=? AND user_id=?) THEN 'missing'",
+          "WHEN NOT EXISTS(SELECT 1 FROM personal_records WHERE id=? AND user_id=? AND edit_version=?) THEN 'stale'",
+        ]
+      : []),
+    ...(body
+      ? [
+          "WHEN NOT EXISTS(SELECT 1 FROM movement_catalog WHERE id=?) THEN 'movement'",
+          "WHEN NOT EXISTS(SELECT 1 FROM movement_catalog WHERE id=? AND measurement_method=?) THEN 'measurement'",
+        ]
+      : []),
+  ];
+  const review = e.DB.prepare(
+    `WITH decision AS (SELECT CASE ${checks.join(" ")} ELSE ? END AS outcome)
+     INSERT INTO pr_api_requests(user_id,request_id,request_hash,attempt_id,expires_at,outcome,detail,pr_id)
+     SELECT ?,?,?,?,?,outcome,?,? FROM decision WHERE unixepoch()<?
+     ON CONFLICT(user_id,request_id) DO NOTHING`
+  ).bind(
+    ...(id ? [id, userId, id, userId, version] : []),
+    ...(body ? [body.movement_id, body.movement_id, movement?.measurement_method ?? null] : []),
+    validation?.error ? "invalid" : "ok",
+    userId,
+    requestId,
+    fingerprint,
+    attempt,
+    expiresAt,
+    validation?.error ?? null,
+    recordId,
+    expiresAt
+  );
+  const gate =
+    "EXISTS(SELECT 1 FROM pr_api_requests WHERE user_id=? AND request_id=? AND attempt_id=? AND outcome='ok')";
+  const guard = [userId, requestId, attempt];
+  const fields = body
+    ? [
+        body.movement_id,
+        body.record_date,
+        body.value,
+        validation?.repCount ?? null,
+        validation?.fixedKind ?? null,
+        validation?.fixedValue ?? null,
+        attempt,
+      ]
+    : [];
+  let change;
+  if (remove) {
+    change = e.DB.prepare("DELETE FROM personal_records WHERE id=? AND user_id=? AND edit_version=? AND " + gate).bind(
+      recordId,
+      userId,
+      version,
+      ...guard
+    );
+  } else if (id) {
+    change = e.DB.prepare(
+      "UPDATE personal_records SET movement_id=?,record_date=?,value=?,rep_count=?,fixed_kind=?,fixed_value=?,edit_version=? WHERE id=? AND user_id=? AND edit_version=? AND " +
+        gate
+    ).bind(...fields, recordId, userId, version, ...guard);
+  } else {
+    change = e.DB.prepare(
+      "INSERT INTO personal_records(id,user_id,movement_id,record_date,value,rep_count,fixed_kind,fixed_value,edit_version) SELECT ?,?,?,?,?,?,?,?,? WHERE " +
+        gate
+    ).bind(recordId, userId, ...fields, ...guard);
+  }
+  // Le reçu et sa mutation sont validés ensemble. Un rejeu lit le résultat de la première tentative.
+  const [, , receipt] = await e.DB.batch([
+    review,
+    change,
+    e.DB.prepare(
+      "SELECT request_hash,outcome,detail,pr_id,attempt_id FROM pr_api_requests WHERE user_id=? AND request_id=?"
+    ).bind(userId, requestId),
+  ]);
+  const result = receipt.results[0];
+  if (!result) return expiredIdempotencyKey();
+  if (result.request_hash !== fingerprint)
+    return json({error: "Cette clé d’idempotence est déjà associée à une autre opération."}, 409);
+  if (result.outcome === "ok") {
+    const response = {ok: true, id: result.pr_id};
+    return remove
+      ? json(response)
+      : json({...response, edit_version: result.attempt_id}, id ? 200 : 201, {ETag: '"' + result.attempt_id + '"'});
+  }
+  if (result.outcome === "invalid") return json({error: result.detail}, 400);
+  const [status, message] = PR_ERRORS[result.outcome];
+  return json({error: message}, status);
+}
+
 const API_KEY_PERMISSIONS = new Map([
   ["GET /api/program-data", "programs:read"],
   ["GET /api/week-data", "workouts:read"],
   ["GET /api/activities", "workouts:read"],
-  ["GET /api/movement-catalog", "workouts:read"],
+  ["GET /api/movement-catalog", ["workouts:read", "prs:read"]],
   ["GET /api/wod-types", "workouts:read"],
   ["POST /api/sessions", "workouts:write"],
   ["GET " + WEEKLY_PLAN_PATH, "plans:read"],
@@ -2319,8 +2507,9 @@ const API_KEY_PERMISSIONS = new Map([
   ["DELETE " + WEEKLY_PLAN_PATH, "plans:write"],
   ["POST " + WEEKLY_PLAN_MOVE_PATH, "plans:write"],
   ["GET /api/prs", "prs:read"],
+  ["POST /api/prs", "prs:write"],
 ]);
-const API_KEY_SCOPES = new Set(API_KEY_PERMISSIONS.values());
+const API_KEY_SCOPES = new Set([...API_KEY_PERMISSIONS.values()].flat());
 const API_KEY_LIMIT = 60,
   API_USER_LIMIT = 120;
 const API_KEY_METADATA = "id,name,prefix,permissions,created_at,last_used_at,expires_at,revoked_at";
@@ -2341,8 +2530,11 @@ async function authenticateApiKey(r, e, p, authorization) {
     return apiKeyUnauthorized();
 
   const scope =
-    r.method === "PUT" && SESSION_ID_PATH.test(p) ? "workouts:write" : API_KEY_PERMISSIONS.get(r.method + " " + p);
-  if (!scope || !JSON.parse(key.permissions).includes(scope))
+    (r.method === "PUT" && SESSION_ID_PATH.test(p) && "workouts:write") ||
+    (["PUT", "DELETE"].includes(r.method) && PR_ID_PATH.test(p) && "prs:write") ||
+    API_KEY_PERMISSIONS.get(r.method + " " + p);
+  const permissions = JSON.parse(key.permissions);
+  if (!scope || ![scope].flat().some(permission => permissions.includes(permission)))
     return json({error: "Accès interdit avec cette clé API."}, 403);
 
   // Une écriture atomique, contrôlée par D1 : le trigger incrémente aussi le compteur du compte.
@@ -3569,12 +3761,14 @@ async function api(r, e, p, ctx = null, apiUser = null) {
   }
   if (r.method === "GET" && p === "/api/prs") {
     const x = await e.DB.prepare(
-      "SELECT pr.id,pr.movement_id,mc.name AS movement_name,mc.measurement_method,mc.category,pr.record_date,pr.value,pr.rep_count,pr.fixed_kind,pr.fixed_value,pr.created_at FROM personal_records pr JOIN movement_catalog mc ON mc.id=pr.movement_id WHERE pr.user_id=? ORDER BY pr.record_date,pr.created_at"
+      "SELECT pr.id,pr.movement_id,mc.name AS movement_name,mc.measurement_method,mc.category,pr.record_date,pr.value,pr.rep_count,pr.fixed_kind,pr.fixed_value,pr.created_at,pr.edit_version FROM personal_records pr JOIN movement_catalog mc ON mc.id=pr.movement_id WHERE pr.user_id=? ORDER BY pr.record_date,pr.created_at"
     )
       .bind(u.id)
       .all();
     return json({records: x.results.map(withMovementCategory)});
   }
+  if (apiUser && r.method !== "GET" && (p === "/api/prs" || PR_ID_PATH.test(p)))
+    return writePrByApi(r, e, u.id, PR_ID_PATH.exec(p)?.[1] ?? null);
   if (r.method === "POST" && p === "/api/prs") {
     const b = await r.json(),
       cid = clientId(b.client_id);
@@ -3583,9 +3777,7 @@ async function api(r, e, p, ctx = null, apiUser = null) {
     const movementId = String(b.movement_id || ""),
       date = b.record_date,
       value = Number(b.value),
-      movement = await e.DB.prepare("SELECT id,measurement_method FROM movement_catalog WHERE id=?")
-        .bind(movementId)
-        .first();
+      movement = await movementForPr(e, movementId);
     if (!movement) return json({error: "Mouvement introuvable dans le catalogue."}, 404);
     if (!validDate(date) || date > localToday()) return json({error: "Date de PR invalide."}, 400);
     const validation = validatePr(movement, value, b.rep_count, b);
@@ -3607,14 +3799,12 @@ async function api(r, e, p, ctx = null, apiUser = null) {
       .run();
     return json({ok: true, id});
   }
-  if (r.method === "PUT" && (m = p.match(/^\/api\/prs\/([\w-]+)$/))) {
+  if (r.method === "PUT" && (m = p.match(PR_ID_PATH))) {
     const b = await r.json(),
       date = b.record_date,
       value = Number(b.value),
       movementId = String(b.movement_id || ""),
-      movement = await e.DB.prepare("SELECT id,measurement_method FROM movement_catalog WHERE id=?")
-        .bind(movementId)
-        .first();
+      movement = await movementForPr(e, movementId);
     if (!movement) return json({error: "Mouvement introuvable dans le catalogue."}, 404);
     const owned = await e.DB.prepare("SELECT id FROM personal_records WHERE id=? AND user_id=?")
       .bind(m[1], u.id)
@@ -3624,7 +3814,7 @@ async function api(r, e, p, ctx = null, apiUser = null) {
     const validation = validatePr(movement, value, b.rep_count, b);
     if (validation.error) return json({error: validation.error}, 400);
     await e.DB.prepare(
-      "UPDATE personal_records SET movement_id=?,record_date=?,value=?,rep_count=?,fixed_kind=?,fixed_value=? WHERE id=? AND user_id=?"
+      "UPDATE personal_records SET movement_id=?,record_date=?,value=?,rep_count=?,fixed_kind=?,fixed_value=?,edit_version=lower(hex(randomblob(16))) WHERE id=? AND user_id=?"
     )
       .bind(
         movementId,
@@ -3639,7 +3829,7 @@ async function api(r, e, p, ctx = null, apiUser = null) {
       .run();
     return json({ok: true});
   }
-  if (r.method === "DELETE" && (m = p.match(/^\/api\/prs\/([\w-]+)$/))) {
+  if (r.method === "DELETE" && (m = p.match(PR_ID_PATH))) {
     const result = await e.DB.prepare("DELETE FROM personal_records WHERE id=? AND user_id=?").bind(m[1], u.id).run();
     if (!result.meta?.changes) return json({error: "PR introuvable."}, 404);
     return json({ok: true});
@@ -5547,6 +5737,7 @@ export default {
               e.DB.prepare("DELETE FROM login_attempts WHERE attempted_at<=?").bind(now - 86400),
               e.DB.prepare("DELETE FROM password_resets WHERE expires_at<=?").bind(now - 86400),
               e.DB.prepare("DELETE FROM weekly_plan_requests WHERE expires_at<=?").bind(now),
+              e.DB.prepare("DELETE FROM pr_api_requests WHERE expires_at<=?").bind(now),
             ])
           : Promise.all([sendReminders(e), sendMonthlyReportPushes(e), sendCommonWod(e)])
       )

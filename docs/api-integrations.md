@@ -1,6 +1,6 @@
 # Intégrations IA et API
 
-Les clés API personnelles permettent à un service externe de lire les données d’un compte myFitFactory, y enregistrer ou modifier des entraînements et gérer son planning hebdomadaire selon les permissions accordées. Chaque clé est rattachée à son propriétaire. Utilisez une clé distincte pour chaque intégration et transmettez-la avec l’en-tête `Authorization: Bearer <clé>` sur HTTPS.
+Les clés API personnelles permettent à un service externe de lire les données d’un compte myFitFactory, y enregistrer ou modifier des entraînements et gérer son planning hebdomadaire et ses records personnels selon les permissions accordées. Chaque clé est rattachée à son propriétaire. Utilisez une clé distincte pour chaque intégration et transmettez-la avec l’en-tête `Authorization: Bearer <clé>` sur HTTPS.
 
 ## Créer, renouveler et révoquer une clé
 
@@ -18,17 +18,20 @@ La liste montre le nom, le préfixe public, les permissions, l’expiration, le 
 | `GET /api/program-data`     | `programs:read`  | Aucun                                                                     |
 | `GET /api/week-data`        | `workouts:read`  | `from` et `to`, dates inclusives au format `YYYY-MM-DD`, avec `from ≤ to` |
 | `GET /api/activities`       | `workouts:read`  | Aucun                                                                     |
-| `GET /api/movement-catalog` | `workouts:read`  | Aucun                                                                     |
+| `GET /api/movement-catalog` | `workouts:read` ou `prs:read` | Aucun                                                                     |
 | `GET /api/wod-types`        | `workouts:read`  | Aucun                                                                     |
 | `POST /api/sessions`        | `workouts:write` | Objet JSON, voir ci-dessous                                               |
 | `PUT /api/sessions/{id}`    | `workouts:write` | Objet JSON partiel et en-tête `If-Match`, voir ci-dessous |
 | `GET /api/prs`              | `prs:read`       | Aucun                                                                     |
+| `POST /api/prs` | `prs:write` | Objet JSON et en-tête `Idempotency-Key` |
+| `PUT /api/prs/{id}` | `prs:write` | Objet JSON, `If-Match` et `Idempotency-Key` |
+| `DELETE /api/prs/{id}` | `prs:write` | `If-Match` et `Idempotency-Key` |
 | `GET /api/weekly-plans` | `plans:read` | `from` et `to`, dates inclusives |
 | `POST /api/weekly-plans` | `plans:write` | Objet JSON et en-tête `Idempotency-Key` |
 | `DELETE /api/weekly-plans` | `plans:write` | Objet JSON avec version et en-tête `Idempotency-Key` |
 | `POST /api/weekly-plans/move` | `plans:write` | Source avec version, destination et en-tête `Idempotency-Key` |
 
-Les réponses de lecture des programmes, entraînements et records sont les mêmes qu’avec une session web du propriétaire. Elles incluent aussi les données partagées auxquelles ce compte a accès dans myFitFactory, comme les programmes suivis et les WOD des box dont il est membre validé. La liste ci-dessus couvre toutes les méthodes et routes Bearer. Les clés existantes gardent leurs permissions. Celles disposant déjà de `workouts:write` peuvent aussi modifier des séances avec la V3.1. Les clés avec `workouts:read` peuvent également consulter les trois référentiels communs ci-dessus. La permission `workouts:write` s’accorde explicitement à la création d’une clé. La seule route `DELETE` ouverte aux clés est celle du planning. Les méthodes `PATCH` restent interdites.
+Les réponses de lecture des programmes, entraînements et records sont les mêmes qu’avec une session web du propriétaire. Elles incluent aussi les données partagées auxquelles ce compte a accès dans myFitFactory, comme les programmes suivis et les WOD des box dont il est membre validé. La liste ci-dessus couvre toutes les méthodes et routes Bearer. Les clés existantes gardent leurs permissions. Celles disposant déjà de `workouts:write` peuvent aussi modifier des séances avec la V3.1. Les clés avec `workouts:read` peuvent également consulter les trois référentiels communs ci-dessus. La permission `workouts:write` s’accorde explicitement à la création d’une clé. Les routes `DELETE` ouvertes aux clés concernent le planning et les records personnels. Les méthodes `PATCH` restent interdites.
 
 ### Programmes
 
@@ -133,7 +136,8 @@ La création et le rejeu réussi renvoient `200 OK` et le même objet. Un rejeu 
       "rep_count": 1,
       "fixed_kind": null,
       "fixed_value": null,
-      "created_at": "2026-11-24 18:00:00"
+      "created_at": "2026-11-24 18:00:00",
+      "edit_version": "669f038157e34dd5b71d5df10902f6a0"
     }
   ]
 }
@@ -230,6 +234,54 @@ Le format de `Idempotency-Key` est `<horodatage Unix en secondes>.<UUID v4 minus
 
 Après un timeout, renvoyez la même méthode, le même chemin, les mêmes champs et la même clé d’idempotence. L’ordre des champs JSON peut changer. Pour un même compte, le serveur restitue le résultat initial enregistré sans réexécuter l’écriture, même si le planning a changé depuis. Une erreur interne qui annule la transaction ne consomme pas la clé. Une fois la clé expirée, relisez le planning avant de décider d’une nouvelle opération. Les requêtes restent soumises aux quotas habituels.
 
+## Gérer les records personnels (V3.3)
+
+`GET /api/prs` exige `prs:read` et renvoie l’historique du propriétaire de la clé dans `records`, avec `edit_version` pour chaque entrée. Ce jeton opaque contient 32 caractères hexadécimaux minuscules. Une modification par API ou depuis le Web attribue une nouvelle version. `GET /api/movement-catalog` accepte `prs:read` ou `workouts:read`. Le catalogue fournit l’identifiant, le nom, la méthode de mesure et la catégorie de chaque mouvement.
+
+| Méthode et route | Requête avec `prs:write` | Réponse |
+| --- | --- | --- |
+| `POST /api/prs` | Objet JSON complet et en-tête `Idempotency-Key`. | `201`, `{"ok":true,"id":"…","edit_version":"…"}` et `ETag`. |
+| `PUT /api/prs/{id}` | Même objet JSON complet, `Idempotency-Key` et `If-Match` avec la version entre guillemets. | `200`, `{"ok":true,"id":"…","edit_version":"…"}` et nouvel `ETag`. |
+| `DELETE /api/prs/{id}` | Aucun corps, `Idempotency-Key` et `If-Match` avec la version entre guillemets. | `200`, `{"ok":true,"id":"…"}`. |
+
+Une clé disposant de `prs:write` seul ne peut pas lire le catalogue ni les records. Sélectionnez les deux permissions pour un client qui lit puis modifie ses records. Les clés existantes ne reçoivent pas `prs:write` automatiquement.
+
+### Charges utiles et unités
+
+`POST` et `PUT` exigent `Content-Type: application/json`. Le client fournit `movement_id` (identifiant du catalogue, entre 1 et 64 lettres ASCII, chiffres, tirets ou traits de soulignement), `record_date` (date calendaire réelle `YYYY-MM-DD`, au plus aujourd’hui en Europe/Paris) et `value` (nombre JSON strictement positif). Les nombres transmis sous forme de chaînes et les champs inconnus sont refusés. Les champs facultatifs `rep_count`, `fixed_kind` et `fixed_value` non utilisés peuvent être omis ou valoir `null`. Pour un format fixé, `fixed_kind` et `fixed_value` sont requis ensemble.
+
+| Méthode du mouvement | `fixed_kind` | `value` | Autre champ requis |
+| --- | --- | --- | --- |
+| `load`, `force` | Aucun | Charge en kg, jusqu’à 10 000 | `rep_count`, entier de 1 à 20 RM |
+| `reps` | Aucun | Entier de 1 à 1 000 répétitions | Aucun |
+| `distance` | Aucun | Distance en m, jusqu’à 100 000 | Aucun |
+| `distance` | `distance` | Temps entier en s, jusqu’à 360 000 | `fixed_value`, de 10 à 100 000 m, arrondi au dixième |
+| `distance` | `time` | Distance en m, jusqu’à 100 000 | `fixed_value`, durée entière de 10 à 86 400 s |
+| `reps_time` | Aucun | Entier de 1 à 1 000 répétitions | Aucun |
+| `reps_time` | `reps` | Temps entier en s, jusqu’à 360 000 | `fixed_value`, entier de 1 à 1 000 répétitions |
+| `reps_time` | `time` | Entier de 1 à 1 000 répétitions | `fixed_value`, durée entière de 10 à 86 400 s |
+
+Exemple pour un 5 RM. Un résultat inférieur à un record précédent est accepté et conservé dans l’historique. Deux créations avec des clés d’idempotence différentes produisent deux entrées, même pour des performances identiques.
+
+```json
+{"movement_id":"mouvement-1","record_date":"2026-11-25","value":82.5,"rep_count":5}
+```
+
+### Rejeux, préconditions et erreurs
+
+L’en-tête `Idempotency-Key` suit le format du planning V3.2, soit `<horodatage Unix en secondes>.<UUID v4 minuscule>`. Il est valable 24 heures à partir de son horodatage avec une tolérance de cinq minutes d’avance. Le périmètre du reçu est le compte et l’ensemble des routes d’écriture de PR.
+
+Après une réponse perdue, renvoyez la même méthode, le même identifiant, le même corps, le même `If-Match` et la même clé. L’ordre des champs JSON peut changer. Le serveur renvoie le reçu original, avec le statut, l’identifiant et, le cas échéant, la version d’origine, même si le record a ensuite changé ou a été supprimé. La mutation et son reçu sont atomiques. Un échec D1 qui annule la transaction ne consomme pas la clé. Les requêtes restent soumises aux quotas habituels.
+
+| Statut | Cas propre aux PR |
+| --- | --- |
+| `400` | Corps, type de champ, date, format de mesure, version ou clé d’idempotence mal formés. |
+| `404` | Mouvement absent ou PR introuvable pour ce compte. |
+| `409` | Clé d’idempotence expirée ou réutilisée pour une autre opération, ou méthode de mesure changée pendant la requête. |
+| `412` | Le PR existe mais sa version est obsolète. Relisez-le et utilisez une nouvelle clé pour une nouvelle tentative. |
+| `415` | Corps de création ou de modification avec un type de contenu autre que `application/json`. |
+| `428` | En-tête `If-Match` absent pour une modification ou une suppression. |
+
 ## Erreurs et quotas
 
 Les erreurs renvoient un corps JSON avec un champ `error`.
@@ -287,3 +339,5 @@ Le Worker applique la migration applicative `v47-personal-api-keys` au premier a
 L’enregistrement des entraînements réutilise la table des séances et sa clé primaire. La V3.1 ajoute la migration applicative `v48-session-edit-version`. Elle initialise la version des séances existantes et installe un déclencheur qui attribue une version aux nouvelles séances. Elle s’applique automatiquement et ne requiert ni binding ni commande Wrangler supplémentaire.
 
 La migration additive `v49-weekly-plan-versions` initialise la version des entrées existantes, installe un déclencheur pour les nouvelles entrées et crée la table des résultats d’idempotence. La tâche quotidienne supprime les résultats expirés. La table `weekly_plans` et sa clé primaire composée restent en place.
+
+La migration additive `v50-pr-edit-versions` initialise la version des PR existants et leur attribution à la création. La table `pr_api_requests` conserve les reçus d’idempotence, purgés par la tâche quotidienne après expiration. Les mesures historiques sont conservées.
