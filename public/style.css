@@ -2811,7 +2811,7 @@ button:disabled {
 }
 /* Lignes à contenu (WOD de la programmation, du jour, de la box), comme dans la page Programmes : boutons en haut
    à droite, le titre à côté, la description dessous jusqu'au bout de la ligne. Les lignes d'une seule ligne de texte
-   (Focus mouvement, rubriques vides) gardent leur mise en page centrée. */
+   (Détail, rubriques vides) gardent leur mise en page centrée. */
 #view-sessions .weekwod {
   display: flow-root;
 }
@@ -3794,7 +3794,7 @@ button:disabled {
 #view-sessions #sessiontoolbar {
   margin: var(--section-content-gap) 0;
 }
-/* Espacement sous l’historique avant les mouvements ou les propositions. */
+/* Espacement sous l’historique avant le détail ou les propositions. */
 #view-sessions #weekafter > * {
   margin-top: var(--section-content-gap);
 }
@@ -3866,7 +3866,7 @@ button:disabled {
   margin: 0;
 }
 
-/* Lignes de liste unifiées : « Focus mouvement » (Séances, Programmes), historique des séances et des PR, en-têtes de programme et listes du paramétrage ont exactement
+/* Lignes de liste unifiées : détail des séances, mouvements des programmes, historique des séances et des PR, en-têtes de programme et listes du paramétrage ont exactement
    la même hauteur, le même texte, les mêmes boutons et le même écart entre boutons. */
 #view-sessions [data-session-fold="movements"] .weekwod,
 #view-sessions .weekwod.section-empty,
@@ -4360,58 +4360,47 @@ button:disabled {
   --cardio-mark: var(--muted);
 }
 [data-cardio-level="1"],
-.week-cardio-row[data-target-status="above"] {
+.week-cardio-program[data-target-status="above"] {
   --cardio-mark: var(--macro-protein);
 }
 [data-cardio-level="2"],
-.week-cardio-row[data-target-status="within"] {
+.week-cardio-program[data-target-status="within"] {
   --cardio-mark: var(--green);
 }
 [data-cardio-level="3"],
-.week-cardio-row[data-target-status="below"] {
+.week-cardio-program[data-target-status="below"] {
   --cardio-mark: var(--macro-fat);
 }
 [data-cardio-level="4"] {
   --cardio-mark: var(--danger);
 }
-.week-cardio {
-  padding: 10px 12px;
+#view-sessions .weekwod.week-cardio-row {
+  gap: 6px;
+  font-size: 13px;
 }
-.week-cardio h2 {
-  margin: 0;
-  font: 800 14px Manrope;
+.week-cardio-row > b {
+  flex: none;
 }
-.week-cardio-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 4px 12px;
-  margin-top: 8px;
+.week-cardio-values {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 6px;
+  color: var(--muted-strong);
   font-size: 12px;
 }
-.week-cardio-row + .week-cardio-row {
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
+.week-cardio-values strong {
+  color: var(--ink);
+  white-space: nowrap;
 }
-.week-cardio-row > strong {
-  font-size: 14px;
-}
-.week-cardio-row > small {
-  text-align: right;
-  color: var(--muted-strong);
-}
-.week-cardio-row[data-target-status]:not([data-target-status=""]) > small::before {
+.week-cardio-program[data-target-status]:not([data-target-status=""])::after {
   content: "";
   display: inline-block;
   width: 7px;
   height: 7px;
-  margin-inline-end: 5px;
+  margin-inline-start: 4px;
   border-radius: 50%;
   background: var(--cardio-mark);
-}
-.week-cardio-row .progress-track {
-  height: 5px;
-  background: var(--line);
 }
 /* Bilan mensuel : bandeau de la page Séances, liste des mois (page PR), fenêtre du bilan. */
 .report-banner[hidden] {

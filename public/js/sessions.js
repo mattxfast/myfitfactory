@@ -262,9 +262,8 @@ function programForDate(date) {
     null
   );
 }
-// Rubrique « Focus mouvement » de la semaine : mouvements du programme, ou à défaut (programme sans mouvement,
-// séances hors programme) les mouvements du catalogue cochés dans les séances de la semaine.
-function weekMovementsSection(week, programMovements, folded) {
+// Détail : cardio et mouvements du programme ou du catalogue cochés dans les séances.
+function weekDetailSection(week, programMovements, folded, cardio) {
   // Avec un programme : ses mouvements (y compris à 0×), plus tout autre mouvement coché dans les séances de la semaine.
   // Sans programme (ou programme sans mouvement) : uniquement les mouvements cochés dans les séances de la semaine.
   // Les mouvements sont regroupés par nom ; chaque séance compte une fois par mouvement.
@@ -299,8 +298,11 @@ function weekMovementsSection(week, programMovements, folded) {
     }
   }
   const movementCounts = [...items.values()],
-    baseItems = movementCounts.filter(x => x.base);
-  return `<section class="weekother session-fold ${folded.has("movements") ? "collapsed" : ""}" data-session-fold="movements"><div class="weekheading"><button class="smallbtn section-collapse" aria-label="Replier les mouvements" aria-expanded="${!folded.has("movements")}">${folded.has("movements") ? "＋" : "−"}</button><h2>Focus mouvement</h2><span>${programMovements.length ? baseItems.filter(x => x.count > 0).length + "/" + baseItems.length : movementCounts.length}</span></div><div class="session-fold-body"><div class="weekwodlist">${movementCounts.map(x => `<article class="weekwod card ${x.count ? "done" : ""}"><b>${esc(x.movement.name)}</b><div class="weekcount"><strong>${x.count}×</strong></div></article>`).join("") || sectionEmpty("Pas de mouvement travaillé cette semaine")}</div></div></section>`;
+    baseItems = movementCounts.filter(x => x.base),
+    total = baseItems.length || movementCounts.length,
+    count = baseItems.length ? baseItems.filter(x => x.count > 0).length + "/" + total : total,
+    collapsed = folded.has("movements");
+  return `<section class="weekother session-fold ${collapsed ? "collapsed" : ""}" data-session-fold="movements"><div class="weekheading"><button class="smallbtn section-collapse" aria-label="Afficher ou masquer le détail de la semaine" aria-expanded="${!collapsed}">${collapsed ? "＋" : "−"}</button><h2>Détail</h2><span title="Mouvements travaillés">${count} mouvement${total === 1 ? "" : "s"}</span></div><div class="session-fold-body"><div class="weekwodlist">${cardio}${movementCounts.map(x => `<article class="weekwod card ${x.count ? "done" : ""}"><b>${esc(x.movement.name)}</b><div class="weekcount"><strong>${x.count}×</strong></div></article>`).join("") || sectionEmpty("Pas de mouvement travaillé cette semaine")}</div></div></section>`;
 }
 // Rubrique « Mes WOD » en interface avancée : WOD de la programmation, puis WOD personnels du jour.
 function weekProgramSection(p, ws, week, folded) {
@@ -376,26 +378,24 @@ function weekSuggestions(simple, canCreateWod) {
 // programmation et WOD du jour hors prog).
 const persoStat = (doneProgram, totalProgram) =>
   `<div class="weekstat weekstat-program"><strong>${doneProgram + persoDailyWods().filter(dailyWodDone).length}/${totalProgram + persoDailyWods().length}</strong><span>Nombre de séances perso</span></div>`;
-function weekCardioRow(label, entries, program = null) {
-  const count = entries.filter(s => s.cardio_intensity >= 3).length,
-    min = program?.weekly_cardio_target_min,
-    max = program?.weekly_cardio_target_max,
-    target = program ? cardioTargetLabel(program) : "",
+function weekCardioProgram(program, count, label) {
+  const min = program.weekly_cardio_target_min,
+    max = program.weekly_cardio_target_max,
+    target = cardioTargetLabel(program),
     state = min != null && count < min ? "below" : max != null && count > max ? "above" : target ? "within" : "",
     stateText = {below: "Sous la cible", within: "Dans la cible", above: "Au-dessus de la cible"}[state] || "",
-    scale = Math.max(1, count, max ?? min ?? entries.length);
-  return `<div class="week-cardio-row" data-target-status="${state}"><span>${esc(label)}</span>
-    <strong>${count}${target ? " / " + esc(target) : ""}</strong>
-    <div class="progress-track" aria-hidden="true"><span class="progress-fill" style="width:${Math.round((count / scale) * 100)}%"></span></div>
-    <small>${stateText || (entries.length ? "sur " + entries.length + (entries.length === 1 ? " séance" : " séances") : "Aucune séance")}</small></div>`;
+    description = [program.name, stateText].filter(Boolean).join(" · ");
+  return `<span class="week-cardio-program" data-target-status="${state}" role="group" aria-label="${esc(description)}" title="${esc(description)}">${esc(label)} <strong>${count}${target ? " / " + esc(target) : ""}</strong></span>`;
 }
-function weekCardioSection(week, displayedProgram, from, to, simple) {
+function weekCardioLine(week, displayedProgram, from, to, simple) {
   const unique = [...new Map(week.map(s => [s.id, s])).values()],
     byProgram = new Map();
+  let total = 0;
   for (const s of unique) {
+    const intense = Number(s.cardio_intensity >= 3);
+    total += intense;
     if (s.box_wod_id || s.daily_wod_id) continue;
-    if (!byProgram.has(s.program_id)) byProgram.set(s.program_id, []);
-    byProgram.get(s.program_id).push(s);
+    byProgram.set(s.program_id, (byProgram.get(s.program_id) || 0) + intense);
   }
   const weeklyPrograms = simple
     ? []
@@ -406,9 +406,10 @@ function weekCardioSection(week, displayedProgram, from, to, simple) {
             p.id === displayedProgram?.id ||
             (isTrainingProgram(p) && p.start_monday <= to && p.end_monday >= from))
       );
-  return `<section class="week-cardio card" aria-labelledby="weekcardiotitle"><h2 id="weekcardiotitle">Expositions cardio intenses</h2>
-    ${weekCardioRow("Toutes les séances", unique)}
-    ${weeklyPrograms.map(p => weekCardioRow("Programme · " + p.name, byProgram.get(p.id) || [], p)).join("")}</section>`;
+  return `<div class="weekwod card week-cardio-row"><b>Cardio intense</b><div class="week-cardio-values">
+    <span>${weeklyPrograms.length ? "Total " : ""}<strong>${total}</strong></span>
+    ${weeklyPrograms.map(p => weekCardioProgram(p, byProgram.get(p.id) || 0, weeklyPrograms.length === 1 ? "Programme" : p.name)).join("")}
+  </div></div>`;
 }
 function renderWeek() {
   const now = today();
@@ -446,13 +447,11 @@ function renderWeek() {
     ? pendingWods &&
       `<section class="session-fold"><div class="weekheading"><h2>WOD à faire</h2></div><div class="weekwodlist">${pendingWods}</div></section>`
     : weekProgramSection(p, ws, week, folded) + weekBoxSection(week, folded, offerWod);
-  const cardio = future && (simple || !p) ? "" : weekCardioSection(week, p, from, to, simple);
-  $("#weekboard").innerHTML =
-    `<div class="weekbar card">${nav}</div>${invitations}${stats}${cardio}${emptyState}${wodSections}`;
+  $("#weekboard").innerHTML = `<div class="weekbar card">${nav}</div>${invitations}${stats}${emptyState}${wodSections}`;
   $("#weekafter").innerHTML = emptySimpleWeek
     ? weekSuggestions(true, canCreateWod)
     : !simple || week.length
-      ? weekMovementsSection(week, programMovements, folded)
+      ? weekDetailSection(week, programMovements, folded, future && !p ? "" : weekCardioLine(week, p, from, to, simple))
       : "";
   $('.navtab[data-view="sessions"]').classList.toggle("has-alert", pendingTags.length > 0);
   bindInvites();
