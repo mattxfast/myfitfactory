@@ -844,6 +844,43 @@ async function ensureV2Schema(env) {
         env.DB.prepare("CREATE INDEX IF NOT EXISTS pr_api_requests_expiry ON pr_api_requests(expires_at)"),
       ]);
     });
+    await runMigration("v51-cardio-intensity", async () => {
+      const tables = [
+        [
+          "training_sessions",
+          [
+            [
+              "cardio_intensity",
+              "cardio_intensity IS NULL OR (typeof(cardio_intensity)='integer' AND cardio_intensity BETWEEN 0 AND 4)",
+            ],
+          ],
+        ],
+        [
+          "programs",
+          [
+            [
+              "weekly_cardio_target_min",
+              "weekly_cardio_target_min IS NULL OR (typeof(weekly_cardio_target_min)='integer' AND weekly_cardio_target_min>=0)",
+            ],
+            [
+              "weekly_cardio_target_max",
+              "weekly_cardio_target_max IS NULL OR (typeof(weekly_cardio_target_max)='integer' AND weekly_cardio_target_max>=0 AND (weekly_cardio_target_min IS NULL OR weekly_cardio_target_min<=weekly_cardio_target_max))",
+            ],
+          ],
+        ],
+      ];
+      for (const [table, fields] of tables) {
+        const {results} = await env.DB.prepare(`PRAGMA table_info(${table})`).all();
+        for (const [field, check] of fields) {
+          if (results.some(column => column.name === field)) continue;
+          try {
+            await env.DB.prepare(`ALTER TABLE ${table} ADD COLUMN ${field} INTEGER CHECK (${check})`).run();
+          } catch (error) {
+            if (!String(error.message).includes("duplicate column name: " + field)) throw error;
+          }
+        }
+      }
+    });
   })().catch(err => {
     schemaReady = null;
     throw err;
@@ -1107,7 +1144,7 @@ async function trainingStats(e, userId, from, to) {
   const lowerBound = from ?? "0000-01-01";
   const [rows, moves] = await e.DB.batch([
     e.DB.prepare(
-      "SELECT s.session_date,CASE WHEN s.box_wod_id IS NOT NULL THEN 'box' WHEN s.daily_wod_id IS NOT NULL THEN 'daily' WHEN w.name='__AUTRES__' THEN 'libre' ELSE 'prog' END AS source,COUNT(*) AS n FROM training_sessions s JOIN program_wods w ON w.id=s.wod_id WHERE s.user_id=? AND s.session_date BETWEEN ? AND ? GROUP BY s.session_date,source ORDER BY s.session_date"
+      "SELECT s.session_date,s.cardio_intensity,CASE WHEN s.box_wod_id IS NOT NULL THEN 'box' WHEN s.daily_wod_id IS NOT NULL THEN 'daily' WHEN w.name='__AUTRES__' THEN 'libre' ELSE 'prog' END AS source,COUNT(*) AS n FROM training_sessions s JOIN program_wods w ON w.id=s.wod_id WHERE s.user_id=? AND s.session_date BETWEEN ? AND ? GROUP BY s.session_date,source,s.cardio_intensity ORDER BY s.session_date"
     ).bind(userId, lowerBound, to),
     e.DB.prepare(
       "SELECT name,COUNT(*) AS n FROM (SELECT DISTINCT s.id AS sid,LOWER(TRIM(COALESCE(mc.name,pm.name))) AS k,COALESCE(mc.name,pm.name) AS name FROM training_sessions s JOIN session_movement_checks c ON c.session_id=s.id JOIN program_movements pm ON pm.id=c.movement_id LEFT JOIN movement_catalog mc ON mc.id=pm.catalog_movement_id WHERE s.user_id=? AND s.session_date BETWEEN ? AND ? UNION SELECT DISTINCT s.id,LOWER(TRIM(mc.name)),mc.name FROM training_sessions s JOIN session_catalog_movement_checks c ON c.session_id=s.id JOIN movement_catalog mc ON mc.id=c.catalog_movement_id WHERE s.user_id=? AND s.session_date BETWEEN ? AND ?) GROUP BY k ORDER BY n DESC,name LIMIT 10"
@@ -1116,12 +1153,16 @@ async function trainingStats(e, userId, from, to) {
   const first = from ?? rows.results[0]?.session_date,
     days = new Set(),
     byWeek = new Map(),
+    intenseByWeek = new Map(),
+    intensityCounts = {unreported: 0, 0: 0, 1: 0, 2: 0, 3: 0, 4: 0},
     bySource = {prog: 0, box: 0, daily: 0, libre: 0},
     weeks = [];
   let total = 0;
-  for (const {session_date, source, n} of rows.results) {
+  for (const {session_date, source, n, cardio_intensity: intensity} of rows.results) {
     const week = mondayOfDate(session_date);
     byWeek.set(week, (byWeek.get(week) || 0) + n);
+    intensityCounts[intensity ?? "unreported"] += n;
+    if (intensity >= 3) intenseByWeek.set(week, (intenseByWeek.get(week) || 0) + n);
     bySource[source] += n;
     days.add(session_date);
     total += n;
@@ -1137,6 +1178,11 @@ async function trainingStats(e, userId, from, to) {
     active_weeks: byWeek.size,
     by_source: bySource,
     movements: moves.results.map(x => ({name: x.name, count: x.n})),
+    cardio: {
+      total: intensityCounts[3] + intensityCounts[4],
+      by_intensity: intensityCounts,
+      weeks: weeks.map(({week_start}) => ({week_start, count: intenseByWeek.get(week_start) || 0})),
+    },
   };
 }
 // La semaine en cours ne coupe la série qu’une fois terminée.
@@ -1201,6 +1247,7 @@ async function monthlyReport(e, userId, month) {
     active_weeks: stats.active_weeks,
     weeks: stats.weeks.length,
     by_source: stats.by_source,
+    cardio: stats.cardio,
     movements: stats.movements,
     to_resume: before.movements.filter(x => !worked.has(x.name.toLowerCase())).slice(0, 4),
     prs: prs.results,
@@ -1440,6 +1487,30 @@ function coachProgramInput(b) {
   if (dated && !validDate(b.start)) return {error: "Choisis la date de début du programme."};
   const start = dated ? mondayOfDate(b.start) : COACH_FREE_START;
   return {name, weeks, start, end: coachEnd(start, weeks), mode: dated ? "dated" : "free"};
+}
+const CARDIO_TARGET_FIELDS = ["weekly_cardio_target_min", "weekly_cardio_target_max"];
+// Une valeur absente garde l’objectif enregistré, tandis que null efface la borne.
+function programCardioTargets(body, previous = {}) {
+  const values = CARDIO_TARGET_FIELDS.map(
+    field => (Object.hasOwn(body, field) ? body[field] : previous[field]) ?? null
+  );
+  const [min, max] = values;
+  if (values.some(value => value !== null && (!Number.isSafeInteger(value) || value < 0)))
+    return {error: "Les objectifs cardio doivent être des nombres entiers positifs ou nuls."};
+  if (min !== null && max !== null && min > max)
+    return {error: "Le minimum cardio doit être inférieur ou égal au maximum cible."};
+  const changed = CARDIO_TARGET_FIELDS.filter(field => Object.hasOwn(body, field));
+  return {values, sql: changed.map(field => "," + field + "=?").join(""), args: changed.map(field => body[field])};
+}
+async function saveProgramChanges(db, statements) {
+  try {
+    await db.batch(statements);
+  } catch (error) {
+    if (/CHECK constraint failed:.*weekly_cardio_target/.test(String(error.message)))
+      return json({error: "L’objectif cardio a changé. Actualise le programme avant de le modifier."}, 409);
+    throw error;
+  }
+  return json({ok: true});
 }
 // Notification push des invitations pas encore annoncées (une seule par invitation), 10 envois au plus.
 async function notifyCoachInvites(e, coach, programId) {
@@ -1956,6 +2027,9 @@ const SESSION_AT_VERSION = "EXISTS(SELECT 1 FROM training_sessions WHERE id=? AN
 const SESSION_API_EDITABLE =
   "box_wod_id IS NULL AND daily_wod_id IS NULL AND shared_from_user_id IS NULL AND " +
   "NOT EXISTS(SELECT 1 FROM session_tags WHERE session_id=training_sessions.id OR id=training_sessions.id)";
+const validCardioIntensity = value => value == null || (Number.isInteger(value) && value >= 0 && value <= 4);
+const invalidCardioIntensity = () =>
+  json({error: "L’intensité cardiovasculaire doit aller de 0 à 4 ou rester non renseignée."}, 400);
 
 const activeSessionActivity = (e, activityId, adminEmail) =>
   e.DB.prepare("SELECT id FROM activities WHERE id=? AND user_id=(SELECT id FROM users WHERE email=?) AND is_active=1")
@@ -1980,6 +2054,7 @@ const SESSION_EDIT_FIELDS = new Set([
   "session_date",
   "activity_id",
   "duration_minutes",
+  "cardio_intensity",
   "actual_comment",
   "started_at",
   "type_id",
@@ -2039,6 +2114,7 @@ async function editApiSession(r, e, userId, id, adminEmail) {
     (!Number.isInteger(body.duration_minutes) || body.duration_minutes < 1 || body.duration_minutes > 600)
   )
     return json({error: "Sport ou durée invalide."}, 400);
+  if (!validCardioIntensity(body.cardio_intensity)) return invalidCardioIntensity();
   if (Object.hasOwn(body, "actual_comment") && typeof body.actual_comment !== "string")
     return json({error: "Commentaire invalide."}, 400);
   if (
@@ -2144,7 +2220,7 @@ async function editApiSession(r, e, userId, id, adminEmail) {
     ...checks,
     e.DB.prepare(
       "UPDATE training_sessions SET program_id=?,wod_id=?,session_date=?,activity_id=?,duration_minutes=?," +
-        "actual_comment=?,started_at=?,type_id=?,score_value=?,program_score_type=?,updated_at=CURRENT_TIMESTAMP,edit_version=? " +
+        "actual_comment=?,started_at=?,type_id=?,score_value=?,program_score_type=?,cardio_intensity=?,updated_at=CURRENT_TIMESTAMP,edit_version=? " +
         "WHERE id=? AND user_id=? AND edit_version=? AND " +
         SESSION_API_EDITABLE
     ).bind(
@@ -2158,6 +2234,7 @@ async function editApiSession(r, e, userId, id, adminEmail) {
       typeId,
       score.value,
       score.type,
+      body.cardio_intensity === undefined ? previous.cardio_intensity : body.cardio_intensity,
       nextVersion,
       id,
       userId,
@@ -4150,7 +4227,7 @@ async function api(r, e, p, ctx = null, apiUser = null) {
     const q = boxText(new URL(r.url).searchParams.get("q"), 60).replace(/[\\%_]/g, c => "\\" + c),
       like = "%" + q + "%";
     const x = await e.DB.prepare(
-      "SELECT p.id,p.name,p.start_monday,p.end_monday,a.first_name AS author_first_name,a.last_name AS author_last_name,(SELECT COUNT(*) FROM program_wods w WHERE w.program_id=p.id AND w.name<>'__AUTRES__') AS wods,(SELECT COUNT(*) FROM program_follows f WHERE f.program_id=p.id) AS followers FROM programs p JOIN users a ON a.id=p.user_id WHERE p.is_public=1 AND p.is_default=0 AND p.user_id<>? AND a.is_active=1 AND (p.name LIKE ? ESCAPE '\\' OR (a.first_name || ' ' || a.last_name) LIKE ? ESCAPE '\\') ORDER BY p.end_monday<? ,p.start_monday DESC,p.name LIMIT 50"
+      "SELECT p.id,p.name,p.start_monday,p.end_monday,p.weekly_cardio_target_min,p.weekly_cardio_target_max,a.first_name AS author_first_name,a.last_name AS author_last_name,(SELECT COUNT(*) FROM program_wods w WHERE w.program_id=p.id AND w.name<>'__AUTRES__') AS wods,(SELECT COUNT(*) FROM program_follows f WHERE f.program_id=p.id) AS followers FROM programs p JOIN users a ON a.id=p.user_id WHERE p.is_public=1 AND p.is_default=0 AND p.user_id<>? AND a.is_active=1 AND (p.name LIKE ? ESCAPE '\\' OR (a.first_name || ' ' || a.last_name) LIKE ? ESCAPE '\\') ORDER BY p.end_monday<? ,p.start_monday DESC,p.name LIMIT 50"
     )
       .bind(u.id, like, like, localToday())
       .all();
@@ -4280,7 +4357,7 @@ async function api(r, e, p, ctx = null, apiUser = null) {
   // Programmes de coach proposés à l'utilisateur, en attente de sa réponse (pastille rouge de l'onglet Programmes).
   if (r.method === "GET" && p === "/api/coach-invites") {
     const x = await e.DB.prepare(
-      "SELECT i.id,i.program_id,p.name,p.coach_mode,p.coach_weeks,CASE WHEN p.coach_mode='dated' THEN p.start_monday END AS start_monday,CASE WHEN p.coach_mode='dated' THEN p.end_monday END AS end_monday,c.first_name,c.last_name,(SELECT COUNT(*) FROM program_wods w WHERE w.program_id=p.id AND w.name<>'__AUTRES__') AS wods FROM coach_invites i JOIN programs p ON p.id=i.program_id JOIN users c ON c.id=i.coach_id WHERE i.user_id=? AND i.status='pending' ORDER BY i.created_at DESC LIMIT 20"
+      "SELECT i.id,i.program_id,p.name,p.coach_mode,p.coach_weeks,p.weekly_cardio_target_min,p.weekly_cardio_target_max,CASE WHEN p.coach_mode='dated' THEN p.start_monday END AS start_monday,CASE WHEN p.coach_mode='dated' THEN p.end_monday END AS end_monday,c.first_name,c.last_name,(SELECT COUNT(*) FROM program_wods w WHERE w.program_id=p.id AND w.name<>'__AUTRES__') AS wods FROM coach_invites i JOIN programs p ON p.id=i.program_id JOIN users c ON c.id=i.coach_id WHERE i.user_id=? AND i.status='pending' ORDER BY i.created_at DESC LIMIT 20"
     )
       .bind(u.id)
       .all();
@@ -4340,15 +4417,17 @@ async function api(r, e, p, ctx = null, apiUser = null) {
   }
   if (r.method === "POST" && p === "/api/programs") {
     const b = await r.json();
+    const cardio = programCardioTargets(b);
+    if (cardio.error) return json({error: cardio.error}, 400);
     if (b.coach) {
       if (u.coach_status !== "approved") return json({error: "Réservé aux coachs validés par un administrateur."}, 403);
       const v = coachProgramInput(b);
       if (v.error) return json({error: v.error}, 400);
       const id = uid();
       await e.DB.prepare(
-        "INSERT INTO programs(id,user_id,name,start_monday,end_monday,is_default,is_public,coach_mode,coach_weeks) VALUES(?,?,?,?,?,0,0,?,?)"
+        "INSERT INTO programs(id,user_id,name,start_monday,end_monday,is_default,is_public,coach_mode,coach_weeks,weekly_cardio_target_min,weekly_cardio_target_max) VALUES(?,?,?,?,?,0,0,?,?,?,?)"
       )
-        .bind(id, u.id, v.name, v.start, v.end, v.mode, v.weeks)
+        .bind(id, u.id, v.name, v.start, v.end, v.mode, v.weeks, ...cardio.values)
         .run();
       return json({ok: true, id});
     }
@@ -4375,14 +4454,14 @@ async function api(r, e, p, ctx = null, apiUser = null) {
       await e.DB.batch([
         e.DB.prepare("UPDATE programs SET is_default=0 WHERE user_id=? AND is_default=1").bind(u.id),
         e.DB.prepare(
-          "INSERT INTO programs(id,user_id,name,start_monday,end_monday,is_default) VALUES(?,?,?,?,?,1)"
-        ).bind(id, u.id, name, start, end),
+          "INSERT INTO programs(id,user_id,name,start_monday,end_monday,is_default,weekly_cardio_target_min,weekly_cardio_target_max) VALUES(?,?,?,?,?,1,?,?)"
+        ).bind(id, u.id, name, start, end, ...cardio.values),
       ]);
     else
       await e.DB.prepare(
-        "INSERT INTO programs(id,user_id,name,start_monday,end_monday,is_default,is_public) VALUES(?,?,?,?,?,0,?)"
+        "INSERT INTO programs(id,user_id,name,start_monday,end_monday,is_default,is_public,weekly_cardio_target_min,weekly_cardio_target_max) VALUES(?,?,?,?,?,0,?,?,?)"
       )
-        .bind(id, u.id, name, start, end, b.is_public ? 1 : 0)
+        .bind(id, u.id, name, start, end, b.is_public ? 1 : 0, ...cardio.values)
         .run();
     return json({ok: true, id});
   }
@@ -4483,24 +4562,32 @@ async function api(r, e, p, ctx = null, apiUser = null) {
     return json({ok: true});
   }
   m = p.match(/^\/api\/programs\/([\w-]+)$/);
-  // Programme de coach : nom, nombre de semaines et dates modifiables jusqu'à la publication ; ensuite, le nom seul.
+  // Après la publication d’un programme de coach, sa durée et ses dates sont figées.
   const coachRow =
     m && r.method !== "GET"
       ? await e.DB.prepare(
-          "SELECT id,coach_mode,coach_weeks,published_at,(SELECT COUNT(*) FROM program_follows f WHERE f.program_id=programs.id) AS followers FROM programs WHERE id=? AND user_id=? AND coach_mode IS NOT NULL"
+          "SELECT id,coach_mode,coach_weeks,published_at,weekly_cardio_target_min,weekly_cardio_target_max,(SELECT COUNT(*) FROM program_follows f WHERE f.program_id=programs.id) AS followers FROM programs WHERE id=? AND user_id=? AND coach_mode IS NOT NULL"
         )
           .bind(m[1], u.id)
           .first()
       : null;
   if (coachRow && r.method === "PUT") {
-    const b = await r.json();
+    const b = await r.json(),
+      cardio = programCardioTargets(b, coachRow);
+    if (cardio.error) return json({error: cardio.error}, 400);
     if (coachRow.published_at) {
       const name = String(b.name || "")
         .trim()
         .slice(0, 100);
       if (!name) return json({error: "Nom du programme requis."}, 400);
-      await e.DB.prepare("UPDATE programs SET name=? WHERE id=? AND user_id=?").bind(name, m[1], u.id).run();
-      return json({ok: true});
+      return saveProgramChanges(e.DB, [
+        e.DB.prepare("UPDATE programs SET name=?" + cardio.sql + " WHERE id=? AND user_id=?").bind(
+          name,
+          ...cardio.args,
+          m[1],
+          u.id
+        ),
+      ]);
     }
     const v = coachProgramInput(b);
     if (v.error) return json({error: v.error}, 400);
@@ -4517,10 +4604,12 @@ async function api(r, e, p, ctx = null, apiUser = null) {
               .all()
           ).results
         : [];
-    await e.DB.batch([
+    return saveProgramChanges(e.DB, [
       e.DB.prepare(
-        "UPDATE programs SET name=?,start_monday=?,end_monday=?,coach_mode=?,coach_weeks=? WHERE id=? AND user_id=?"
-      ).bind(v.name, v.start, v.end, v.mode, v.weeks, m[1], u.id),
+        "UPDATE programs SET name=?,start_monday=?,end_monday=?,coach_mode=?,coach_weeks=?" +
+          cardio.sql +
+          " WHERE id=? AND user_id=?"
+      ).bind(v.name, v.start, v.end, v.mode, v.weeks, ...cardio.args, m[1], u.id),
       ...(written.length
         ? [
             e.DB.prepare(
@@ -4534,7 +4623,6 @@ async function api(r, e, p, ctx = null, apiUser = null) {
           ]
         : []),
     ]);
-    return json({ok: true});
   }
   if (coachRow && r.method === "DELETE" && coachRow.followers)
     return json({error: "Ce programme est suivi : il ne peut plus être supprimé."}, 409);
@@ -4548,8 +4636,14 @@ async function api(r, e, p, ctx = null, apiUser = null) {
       end = isDefault ? "2100-12-31" : b.end;
     if (!name || !validDate(start) || !validDate(end) || start > end)
       return json({error: "Vérifie le nom et les dates."}, 400);
-    const exists = await e.DB.prepare("SELECT id FROM programs WHERE id=? AND user_id=?").bind(m[1], u.id).first();
+    const exists = await e.DB.prepare(
+      "SELECT weekly_cardio_target_min,weekly_cardio_target_max FROM programs WHERE id=? AND user_id=?"
+    )
+      .bind(m[1], u.id)
+      .first();
     if (!exists) return json({error: "Programme introuvable."}, 404);
+    const cardio = programCardioTargets(b, exists);
+    if (cardio.error) return json({error: cardio.error}, 400);
     if (!isDefault) {
       const overlap = await e.DB.prepare(
         "SELECT id FROM programs WHERE user_id=? AND id<>? AND is_default=0 AND coach_mode IS NULL AND NOT(end_monday<? OR start_monday>?)"
@@ -4562,15 +4656,16 @@ async function api(r, e, p, ctx = null, apiUser = null) {
     }
     // Le marqueur « par défaut » (programme technique « Hors programme ») n'est déplacé que si ce programme le demande :
     // modifier un programme ordinaire ne doit jamais retirer le marqueur du programme technique.
-    await e.DB.batch([
+    return saveProgramChanges(e.DB, [
       ...(isDefault
         ? [e.DB.prepare("UPDATE programs SET is_default=0 WHERE user_id=? AND is_default=1 AND id<>?").bind(u.id, m[1])]
         : []),
       e.DB.prepare(
-        "UPDATE programs SET name=?,start_monday=?,end_monday=?,is_default=?,is_public=? WHERE id=? AND user_id=?"
-      ).bind(name, start, end, isDefault ? 1 : 0, !isDefault && b.is_public ? 1 : 0, m[1], u.id),
+        "UPDATE programs SET name=?,start_monday=?,end_monday=?,is_default=?,is_public=?" +
+          cardio.sql +
+          " WHERE id=? AND user_id=?"
+      ).bind(name, start, end, isDefault ? 1 : 0, !isDefault && b.is_public ? 1 : 0, ...cardio.args, m[1], u.id),
     ]);
-    return json({ok: true});
   }
   if (m && r.method === "DELETE") {
     // Toutes les séances comptent, y compris celles des utilisateurs qui suivent ce programme.
@@ -5209,7 +5304,7 @@ async function api(r, e, p, ctx = null, apiUser = null) {
   if (r.method === "GET" && p === "/api/export-data") {
     const [programs, wods, movements, sessions, checks, catalogChecks] = await Promise.all([
       e.DB.prepare(
-        "SELECT p.id,p.name,COALESCE(f.start_monday,p.start_monday) AS start_monday,COALESCE(f.end_monday,p.end_monday) AS end_monday FROM programs p" +
+        "SELECT p.id,p.name,COALESCE(f.start_monday,p.start_monday) AS start_monday,COALESCE(f.end_monday,p.end_monday) AS end_monday,p.weekly_cardio_target_min,p.weekly_cardio_target_max FROM programs p" +
           FOLLOW_JOIN +
           "WHERE " +
           PROGRAM_ACCESS +
@@ -5232,7 +5327,7 @@ async function api(r, e, p, ctx = null, apiUser = null) {
         .bind(u.id, u.id, u.id)
         .all(),
       e.DB.prepare(
-        "SELECT s.id,s.program_id,s.wod_id,s.session_date FROM training_sessions s WHERE s.user_id=? ORDER BY s.session_date,s.id"
+        "SELECT s.id,s.program_id,s.wod_id,s.session_date,s.cardio_intensity FROM training_sessions s WHERE s.user_id=? ORDER BY s.session_date,s.id"
       )
         .bind(u.id)
         .all(),
@@ -5357,6 +5452,7 @@ async function api(r, e, p, ctx = null, apiUser = null) {
       existingSession = () =>
         e.DB.prepare("SELECT 1 FROM training_sessions WHERE id=? AND user_id=?").bind(cid, u.id).first();
     if (cid && (await existingSession())) return json({ok: true, id: cid});
+    if (!validCardioIntensity(b.cardio_intensity)) return invalidCardioIntensity();
     if (apiUser) {
       if (b.client_id != null && !cid) return json({error: "L’identifiant client doit être un UUID v4."}, 400);
       if (typeof b.activity_id !== "string" || !Number.isInteger(b.duration_minutes))
@@ -5460,7 +5556,7 @@ async function api(r, e, p, ctx = null, apiUser = null) {
     try {
       await e.DB.batch([
         e.DB.prepare(
-          "INSERT INTO training_sessions(id,program_id,wod_id,user_id,session_date,actual_comment,activity_id,duration_minutes,started_at,logged_at,box_wod_id,score_value,score_category_id,daily_wod_id,score_scaled,program_score_type,type_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+          "INSERT INTO training_sessions(id,program_id,wod_id,user_id,session_date,actual_comment,activity_id,duration_minutes,started_at,logged_at,box_wod_id,score_value,score_category_id,daily_wod_id,score_scaled,program_score_type,type_id,cardio_intensity) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
         ).bind(
           id,
           pid,
@@ -5480,7 +5576,8 @@ async function api(r, e, p, ctx = null, apiUser = null) {
           daily.id,
           daily.scaled,
           score.type,
-          sessionType.id
+          sessionType.id,
+          b.cardio_intensity ?? null
         ),
         ...checks,
         ...sessionTagStatements(e, u.id, id, sessionTagIds(b, u.id) || []),
@@ -5498,13 +5595,14 @@ async function api(r, e, p, ctx = null, apiUser = null) {
   if (m && r.method === "PUT") {
     if (apiUser) return editApiSession(r, e, u.id, m[1], adminEmail);
     const previous = await e.DB.prepare(
-      "SELECT wod_id,program_score_type,score_value,edit_version FROM training_sessions WHERE id=? AND user_id=?"
+      "SELECT wod_id,program_score_type,score_value,edit_version,cardio_intensity FROM training_sessions WHERE id=? AND user_id=?"
     )
       .bind(m[1], u.id)
       .first();
     if (!previous) return json({error: "Séance introuvable."}, 404);
-    const b = await r.json(),
-      box = await sessionBoxWod(e, u.id, b, m[1]);
+    const b = await r.json();
+    if (!validCardioIntensity(b.cardio_intensity)) return invalidCardioIntensity();
+    const box = await sessionBoxWod(e, u.id, b, m[1]);
     if (box.error) return json({error: box.error}, box.status);
     const daily = await sessionDailyWod(e, u.id, b);
     if (daily.error) return json({error: daily.error}, daily.status);
@@ -5572,7 +5670,7 @@ async function api(r, e, p, ctx = null, apiUser = null) {
     const tagIds = sessionTagIds(b, u.id);
     const [updated] = await e.DB.batch([
       e.DB.prepare(
-        "UPDATE training_sessions SET program_id=?,wod_id=?,session_date=?,actual_comment=?,activity_id=?,duration_minutes=?,started_at=?,logged_at=?,box_wod_id=?,score_value=?,score_category_id=?,daily_wod_id=?,score_scaled=?,program_score_type=?,type_id=?,updated_at=CURRENT_TIMESTAMP,edit_version=? WHERE id=? AND user_id=? AND edit_version=?"
+        "UPDATE training_sessions SET program_id=?,wod_id=?,session_date=?,actual_comment=?,activity_id=?,duration_minutes=?,started_at=?,logged_at=?,box_wod_id=?,score_value=?,score_category_id=?,daily_wod_id=?,score_scaled=?,program_score_type=?,type_id=?,cardio_intensity=?,updated_at=CURRENT_TIMESTAMP,edit_version=? WHERE id=? AND user_id=? AND edit_version=?"
       ).bind(
         b.program_id,
         wid,
@@ -5591,6 +5689,7 @@ async function api(r, e, p, ctx = null, apiUser = null) {
         daily.scaled,
         score.type,
         sessionType.id,
+        b.cardio_intensity === undefined ? previous.cardio_intensity : b.cardio_intensity,
         nextVersion,
         m[1],
         u.id,

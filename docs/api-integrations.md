@@ -43,6 +43,8 @@ Les réponses de lecture des programmes, entraînements et records sont les mêm
       "name": "Force",
       "start_monday": "2026-11-23",
       "end_monday": "2026-12-14",
+      "weekly_cardio_target_min": 3,
+      "weekly_cardio_target_max": 4,
       "followed": 0,
       "read_only": 0
     }
@@ -62,7 +64,7 @@ Exemple abrégé. Les objets `wods` et `movements` indexent les listes par ident
 ```json
 {
   "sessions": [
-    {"id": "seance-1", "session_date": "2026-11-24", "wod_id": "wod-1", "wod_name": "Squat", "duration_minutes": 60}
+    {"id": "seance-1", "session_date": "2026-11-24", "wod_id": "wod-1", "wod_name": "Squat", "duration_minutes": 60, "cardio_intensity": 3}
   ],
   "flags": [{"week_start": "2026-11-23", "competition": 0}],
   "plans": [{"week_start": "2026-11-23", "wod_id": "wod-1", "wod_name": "Squat"}],
@@ -92,6 +94,8 @@ Exemple abrégé. `boxWods` inclut les WOD visibles des box sur une période d�
 ### Enregistrer une séance
 
 Envoyez `POST /api/sessions` avec `Content-Type: application/json` et une clé ayant `workouts:write`. La séance est enregistrée pour le propriétaire de la clé. L’utilisateur ne se choisit pas dans le corps de la requête.
+
+`cardio_intensity` est facultatif. Les valeurs sont `null` (non renseignée), `0` (nulle), `1` (faible), `2` (modérée), `3` (élevée) et `4` (très élevée). Chaque séance de niveau 3 ou 4 compte pour une seule exposition.
 
 | Champ                        | Règles                                                                                                                                                                                                                                                                                                                                                     |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -155,6 +159,7 @@ Le corps contient au moins un des champs ci-dessous. Les champs omis gardent leu
 | --- | --- |
 | `session_date` | Date réelle `YYYY-MM-DD`, sans jour futur et dans la période du programme. |
 | `activity_id`, `duration_minutes` | Identifiant d’une activité active et durée entière de 1 à 600 minutes. |
+| `cardio_intensity` | Entier de 0 à 4, ou `null` pour effacer la valeur. Si le champ est absent, l’intensité est conservée. |
 | `actual_comment` | Chaîne tronquée à 3 000 caractères. Une chaîne vide efface le commentaire. |
 | `started_at` | Chaîne de date et heure interprétable, telle que `2026-11-24T17:30:00Z`, normalisée en UTC. |
 | `program_id`, `wod_id` | Identifiants réels du programme accessible et de son WOD. Pour une séance libre, conservez les identifiants existants ou utilisez des identifiants lus dans l’API. Les raccourcis `none` et `other` du POST ne sont pas acceptés ici. |

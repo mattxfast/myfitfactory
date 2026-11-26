@@ -53,7 +53,11 @@ test("coach : rôle demandé par l'utilisateur et validé par un administrateur"
 let freeId, freeWod, inviteBob;
 test("coach : programme sans dates écrit en entier avant de taguer", async () => {
   assert.equal((await coach.post("/programs", {name: "Sans semaines", coach: {weeks: 0}})).status, 400);
-  const created = await coach.post("/programs", {name: "Prépa été", coach: {weeks: 2, dated: false}});
+  const created = await coach.post("/programs", {
+    name: "Prépa été",
+    coach: {weeks: 2, dated: false},
+    weekly_cardio_target_min: 2,
+  });
   assert.equal(created.status, 200, JSON.stringify(created.data));
   freeId = created.data.id;
   freeWod = (await coach.post(`/programs/${freeId}/wods`, wod("Force"))).data.id;
@@ -69,10 +73,17 @@ test("coach : programme sans dates écrit en entier avant de taguer", async () =
   // Publié : plus d'ajout ni de suppression de WOD, ni de changement du nombre de semaines.
   assert.equal((await coach.post(`/programs/${freeId}/wods`, wod("Engine"))).status, 409);
   assert.equal((await coach.del(`/wods/${freeWod}`)).status, 409);
-  await coach.put(`/programs/${freeId}`, {name: "Prépa été 2", coach: {weeks: 5}});
+  assert.equal(
+    (await coach.put(`/programs/${freeId}`, {name: "Prépa été 2", coach: {weeks: 5}, weekly_cardio_target_max: 4}))
+      .status,
+    200
+  );
   const mine = (await coach.get("/program-data")).data.programs.find(p => p.id === freeId);
   assert.equal(mine.name, "Prépa été 2");
   assert.equal(mine.coach_weeks, 2);
+  assert.deepEqual([mine.weekly_cardio_target_min, mine.weekly_cardio_target_max], [2, 4]);
+  const shared = (await bob.get("/coach-invites")).data.invites.find(i => i.program_id === freeId);
+  assert.deepEqual([shared.weekly_cardio_target_min, shared.weekly_cardio_target_max], [2, 4]);
   const list = (await coach.get(`/coach-programs/${freeId}/invites`)).data.invites;
   assert.deepEqual(list.map(x => [x.first_name, x.status]).sort(), [
     ["Bob", "pending"],

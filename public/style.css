@@ -4353,7 +4353,65 @@ button:disabled {
   display: block;
   height: 100%;
   border-radius: 5px;
-  background: var(--chart-mark);
+  background: var(--cardio-mark, var(--chart-mark));
+}
+[data-cardio-level="0"],
+[data-cardio-level="unreported"] {
+  --cardio-mark: var(--muted);
+}
+[data-cardio-level="1"],
+.week-cardio-row[data-target-status="above"] {
+  --cardio-mark: var(--macro-protein);
+}
+[data-cardio-level="2"],
+.week-cardio-row[data-target-status="within"] {
+  --cardio-mark: var(--green);
+}
+[data-cardio-level="3"],
+.week-cardio-row[data-target-status="below"] {
+  --cardio-mark: var(--macro-fat);
+}
+[data-cardio-level="4"] {
+  --cardio-mark: var(--danger);
+}
+.week-cardio {
+  padding: 10px 12px;
+}
+.week-cardio h2 {
+  margin: 0;
+  font: 800 14px Manrope;
+}
+.week-cardio-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+.week-cardio-row + .week-cardio-row {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.week-cardio-row > strong {
+  font-size: 14px;
+}
+.week-cardio-row > small {
+  text-align: right;
+  color: var(--muted-strong);
+}
+.week-cardio-row[data-target-status]:not([data-target-status=""]) > small::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-inline-end: 5px;
+  border-radius: 50%;
+  background: var(--cardio-mark);
+}
+.week-cardio-row .progress-track {
+  height: 5px;
+  background: var(--line);
 }
 /* Bilan mensuel : bandeau de la page Séances, liste des mois (page PR), fenêtre du bilan. */
 .report-banner[hidden] {
@@ -4978,6 +5036,58 @@ button:active:not(:disabled) {
 /* Les champs portent leur marge du haut : la grille n'ajoute qu'un écart entre colonnes. */
 .form-block .two {
   gap: 0 10px;
+}
+.cardio-field {
+  min-inline-size: 0;
+}
+.cardio-field legend {
+  padding: 0 4px;
+  font: 700 14px Manrope;
+}
+.cardio-choices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.form-block .cardio-choices label {
+  position: relative;
+  margin: 0;
+}
+.cardio-choices input {
+  position: absolute;
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.cardio-choices span {
+  display: grid;
+  place-items: center;
+  min-height: 44px;
+  padding: 5px;
+  border: 1px solid var(--cardio-mark, var(--neutral-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 90%, var(--cardio-mark, var(--neutral-border)));
+  color: var(--ink);
+  font-size: 12px;
+  text-align: center;
+}
+.cardio-choices input:checked + span {
+  box-shadow: inset 0 0 0 2px var(--cardio-mark, var(--muted));
+  background: color-mix(in srgb, var(--surface) 78%, var(--cardio-mark, var(--neutral-border)));
+  font-weight: 700;
+}
+.cardio-choices input:focus-visible + span {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+.cardio-help {
+  margin-top: 8px;
+  font-size: 12px;
+}
+.cardio-help summary {
+  cursor: pointer;
 }
 /* Séance sur un WOD de box : score (catégorie + valeur). */
 .score-time {

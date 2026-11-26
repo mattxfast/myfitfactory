@@ -739,6 +739,33 @@
               ><label id="programendfield">Fin<input name="end" type="date" required /></label>
             </div>
           </section>
+          <section class="form-block">
+            <h3>Objectif cardio hebdomadaire</h3>
+            <div class="two">
+              <label
+                >Minimum<input
+                  name="weekly_cardio_target_min"
+                  type="number"
+                  min="0"
+                  step="1"
+                  inputmode="numeric"
+                  placeholder="Ex. 3"
+              /></label>
+              <label
+                >Maximum cible<input
+                  name="weekly_cardio_target_max"
+                  type="number"
+                  min="0"
+                  step="1"
+                  inputmode="numeric"
+                  placeholder="Ex. 4"
+              /></label>
+            </div>
+            <p class="hint">
+              Facultatif. Compte les séances d’intensité cardio élevée ou très élevée. Tu peux dépasser le maximum
+              cible.
+            </p>
+          </section>
           <section class="form-block" id="programcoachfield" hidden>
             <h3>Programme de coach</h3>
             <label class="checkbox-label"
@@ -1121,6 +1148,38 @@
               ></textarea>
             </label>
           </section>
+          <fieldset class="form-block cardio-field" aria-describedby="cardiohelp">
+            <legend>Intensité cardiovasculaire</legend>
+            <div class="cardio-choices">
+              <label><input type="radio" name="cardio_intensity" value="" checked /><span>Non renseignée</span></label>
+              <label data-cardio-level="0"
+                ><input type="radio" name="cardio_intensity" value="0" /><span>0 · Nulle</span></label
+              >
+              <label data-cardio-level="1"
+                ><input type="radio" name="cardio_intensity" value="1" /><span>1 · Faible</span></label
+              >
+              <label data-cardio-level="2"
+                ><input type="radio" name="cardio_intensity" value="2" /><span>2 · Modérée</span></label
+              >
+              <label data-cardio-level="3"
+                ><input type="radio" name="cardio_intensity" value="3" /><span>3 · Élevée</span></label
+              >
+              <label data-cardio-level="4"
+                ><input type="radio" name="cardio_intensity" value="4" /><span>4 · Très élevée</span></label
+              >
+            </div>
+            <details class="cardio-help" id="cardiohelp">
+              <summary>Comment choisir le niveau ?</summary>
+              <p class="hint">
+                Évalue l’effort cardio significatif de la séance. La fréquence cardiaque moyenne sur toute la séance
+                peut masquer cet effort. Évalue séparément la difficulté musculaire.
+              </p>
+              <p class="hint">
+                Par exemple, 40 minutes de force suivies de 15 minutes de Metcon intense peuvent correspondre au niveau
+                3, « Élevée ».
+              </p>
+            </details>
+          </fieldset>
           <section id="sessionscoresection" class="form-block session-score" hidden>
             <h3>Score</h3>
             <div class="two">

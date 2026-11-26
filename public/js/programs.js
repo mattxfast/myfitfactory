@@ -542,7 +542,7 @@ function syncProgramDateFields() {
   $("#programcoachhint").textContent = !coach
     ? ""
     : f.elements.coach.disabled && f.elements.coach_weeks.disabled
-      ? "Programme déjà proposé : seul son nom se modifie."
+      ? "Le nom et l’objectif cardio restent modifiables. Les dates et la durée sont fixées."
       : dated
         ? "Le programme commence la semaine de la date de début, pour tous ceux qui l’acceptent."
         : "Sans dates, chacun choisit sa date de début en acceptant le programme.";
@@ -568,6 +568,8 @@ function openProgram(p = null) {
   f.elements.name.value = p?.name || "";
   f.elements.is_default.checked = !!p?.is_default;
   f.elements.is_public.checked = !!p?.is_public;
+  f.elements.weekly_cardio_target_min.value = p?.weekly_cardio_target_min ?? "";
+  f.elements.weekly_cardio_target_max.value = p?.weekly_cardio_target_max ?? "";
   // L'option « programme par défaut » n'est plus proposée : elle n'apparaît que pour un ancien programme par défaut.
   $("#programdefaultfield").hidden = !p?.is_default;
   f.elements.start.value = p && !p.is_default && p.coach_mode !== "free" ? p.start_monday : "";
@@ -593,14 +595,22 @@ $("#programform").onsubmit = async e => {
   e.preventDefault();
   const f = new FormData(e.target),
     id = f.get("program_id"),
+    min = f.get("weekly_cardio_target_min"),
+    max = f.get("weekly_cardio_target_max"),
     body = {
       name: f.get("name"),
       start: f.get("start"),
       end: f.get("end"),
       is_default: $("#programform").elements.is_default.checked,
       is_public: $("#programform").elements.is_public.checked,
+      weekly_cardio_target_min: min === "" ? null : Number(min),
+      weekly_cardio_target_max: max === "" ? null : Number(max),
     },
     form = $("#programform").elements;
+  if (min !== "" && max !== "" && Number(min) > Number(max)) {
+    $("#programerror").textContent = "Le minimum cardio doit être inférieur ou égal au maximum cible.";
+    return;
+  }
   if (form.coach.checked) {
     body.coach = {weeks: Number(form.coach_weeks.value), dated: form.coach_dated.checked};
     body.start = form.start.value;

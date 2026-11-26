@@ -94,7 +94,8 @@ function renderMonthlyReport(r) {
     (r.complete ? "" : '<p class="hint">Mois en cours : le bilan évolue jusqu’à la fin du mois.</p>') +
     `<div class="progress-tiles"><div><strong>${r.total}</strong><span>séance${r.total > 1 ? "s" : ""}${deltaText ? " · " + esc(deltaText) : ""}</span></div><div><strong>${r.active_weeks}/${r.weeks}</strong><span>semaines actives</span></div><div><strong>${r.days}</strong><span>jour${r.days > 1 ? "s" : ""} d’entraînement</span></div></div>` +
     (r.total
-      ? `<h4 class="progress-title">Répartition</h4>${progressBars(PROGRESS_SOURCES.map(([keys, label]) => ({label, value: progressSourceCount(r.by_source, keys)})))}` +
+      ? renderCardioStats(r.cardio) +
+        `<h4 class="progress-title">Répartition</h4>${progressBars(PROGRESS_SOURCES.map(([keys, label]) => ({label, value: progressSourceCount(r.by_source, keys)})))}` +
         (r.movements.length
           ? `<h4 class="progress-title">Mouvements les plus travaillés</h4>${progressBars(r.movements.slice(0, 6).map(m => ({label: m.name, value: m.count})))}`
           : "")
@@ -131,6 +132,7 @@ function renderMonthlyReport(r) {
           ? ""
           : '<p class="muted">Pas de commentaire.</p>'
     }</div>`;
+  bindProgressChart($("#reportbody [data-progress-series='cardio']"), r.cardio?.weeks, true);
   const button = $("#reportcommentbtn");
   if (button)
     button.onclick = async () => {

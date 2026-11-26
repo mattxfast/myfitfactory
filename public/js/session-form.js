@@ -402,8 +402,10 @@ function openSession(s = null, presetWodId = "") {
   $("#sessionmovementchecks").dataset.presetWod = "";
   $("#sessionmovementdetails").open = false;
   $("#sessionpartnerdetails").open = false;
+  $("#cardiohelp").open = false;
   f.elements.session_date.max = today();
   f.elements.session_id.value = s?.id || "";
+  f.elements.cardio_intensity.value = String(s?.cardio_intensity ?? "");
   f.elements.actual_comment.value = s?.actual_comment || "";
   f.elements.actual_comment.dataset.plannedDefault = "";
   const weekEnd = addDays(selectedWeekStart, 6),
@@ -618,7 +620,9 @@ async function saveSession(event) {
     button = $("#savesession");
   if (button.disabled || form.elements.wod_id.disabled || !form.reportValidity()) return;
   const f = new FormData(form),
-    id = f.get("session_id");
+    id = f.get("session_id"),
+    cardio = f.get("cardio_intensity"),
+    intensity = cardio == null || cardio === "" ? null : Number(cardio);
   if (f.get("session_date") > today()) {
     $("#sessionerror").textContent = "Impossible d’enregistrer une séance à une date future.";
     return;
@@ -633,6 +637,9 @@ async function saveSession(event) {
     duration_minutes: Number(f.get("duration_minutes")),
     started_at: new Date(f.get("session_date") + "T" + f.get("start_time")).toISOString(),
     actual_comment: f.get("actual_comment"),
+    ...(!id || intensity !== null || editedSession?.cardio_intensity !== undefined
+      ? {cardio_intensity: intensity}
+      : {}),
     movement_ids: [...form.querySelectorAll('input[name="movement_ids"]:checked')].map(x => x.value),
     catalog_movement_ids: [...form.querySelectorAll('input[name="catalog_movement_ids"]:checked')].map(x => x.value),
     type_id: form.elements.type_id.value,

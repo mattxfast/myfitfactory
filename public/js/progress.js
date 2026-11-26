@@ -23,12 +23,12 @@ function progressBars(rows) {
   return rows
     .map(
       r =>
-        `<div class="progress-row"><span>${esc(r.label)}</span><span class="progress-track"><span class="progress-fill" style="width:${Math.max(r.value ? 3 : 0, Math.round((r.value / max) * 100))}%"></span></span><strong>${r.value}</strong></div>`
+        `<div class="progress-row"${r.level == null ? "" : ' data-cardio-level="' + r.level + '"'}><span>${esc(r.label)}</span><span class="progress-track"><span class="progress-fill" style="width:${Math.max(r.value ? 3 : 0, Math.round((r.value / max) * 100))}%"></span></span><strong>${r.value}</strong></div>`
     )
     .join("");
 }
 // Histogramme des séances par semaine (SVG) : un toucher ou le survol d’une colonne affiche son détail.
-function progressWeekChart(weeks) {
+function progressWeekChart(weeks, label) {
   const height = 132,
     left = 22,
     right = 4,
@@ -67,10 +67,27 @@ function progressWeekChart(weeks) {
     })
     .join("");
   const scroll = width > 340;
-  return `<div class="progress-chart-scroll"${scroll ? ' tabindex="0" role="region" aria-label="Histogramme des séances, défilement horizontal"' : ""}><svg class="progress-chart" viewBox="0 0 ${width} ${height}"${scroll ? ` style="min-width:${width}px"` : ""} role="img" aria-label="Séances par semaine sur la période">${grid}${bars}</svg></div>`;
+  return `<div class="progress-chart-scroll"${scroll ? ' tabindex="0" role="region" aria-label="' + esc(label) + ', défilement horizontal"' : ""}><svg class="progress-chart" viewBox="0 0 ${width} ${height}"${scroll ? ` style="min-width:${width}px"` : ""} role="img" aria-label="${esc(label)}">${grid}${bars}</svg></div>`;
 }
-const progressWeekCaption = (w, last) =>
-  (last ? "Cette semaine" : "Semaine du " + fmt(w.week_start)) + " : " + progressPlural(w.count, "séance");
+const progressWeekCaption = (w, cardio, last) =>
+  (last && !cardio ? "Cette semaine" : "Semaine du " + fmt(w.week_start)) +
+  (cardio
+    ? " · " + w.count + (w.count === 1 ? " exposition cardio intense" : " expositions cardio intenses")
+    : " : " + progressPlural(w.count, "séance"));
+function progressWeekSeries(weeks, cardio = false) {
+  const title = cardio ? "Expositions cardio intenses par semaine" : "Séances par semaine";
+  return `<div data-progress-series="${cardio ? "cardio" : "sessions"}"><h4 class="progress-title">${title}</h4>
+    <p class="progress-caption" aria-live="polite">${esc(progressWeekCaption(weeks[0], cardio, weeks.length === 1))}</p>${progressWeekChart(weeks, title)}</div>`;
+}
+function renderCardioStats(cardio) {
+  if (!cardio?.weeks?.length) return "";
+  const rows = CARDIO_INTENSITY_LABELS.map((label, level) => ({label, level, value: cardio.by_intensity[level]}));
+  rows.push({label: "Non renseignée", level: "unreported", value: cardio.by_intensity.unreported});
+  return (
+    progressWeekSeries(cardio.weeks, true) +
+    `<h4 class="progress-title">Séances par intensité cardiovasculaire</h4>${progressBars(rows)}`
+  );
+}
 function renderProgressSection() {
   const key = "records:progress",
     collapsed = !!window.cfPrCategorySections[key],
@@ -78,12 +95,12 @@ function renderProgressSection() {
   let body = `<div class="admin-row section-empty"><span>${d ? "Aucune séance enregistrée" : "Progression indisponible hors ligne pour l’instant"}</span></div>`;
   if (d?.weeks?.length) {
     const avg = (d.total / d.weeks.length).toLocaleString("fr-FR", {maximumFractionDigits: 1}),
-      first = d.weeks[0],
       period = d.from === d.to ? fmt(d.to) : `Du ${fmt(d.from)} au ${fmt(d.to)}`;
     body =
       `<p class="progress-period">${esc(period)}</p>` +
       `<div class="progress-tiles"><div><strong>${d.total}</strong><span>${d.total === 1 ? "séance" : "séances"} en ${progressPlural(d.weeks.length, "semaine")}</span></div><div><strong>${avg}</strong><span>par semaine en moyenne</span></div><div><strong>${d.streak_weeks}</strong><span>${d.streak_weeks > 1 ? "semaines actives d’affilée" : "semaine active d’affilée"}</span></div></div>` +
-      `<h4 class="progress-title">Séances par semaine</h4><p class="progress-caption" aria-live="polite">${esc(progressWeekCaption(first, d.weeks.length === 1))}</p>${progressWeekChart(d.weeks)}` +
+      progressWeekSeries(d.weeks) +
+      renderCardioStats(d.cardio) +
       `<h4 class="progress-title">Répartition</h4>${progressBars(PROGRESS_SOURCES.map(([keys, label]) => ({label, value: progressSourceCount(d.by_source, keys)})))}` +
       `<h4 class="progress-title">Mouvements les plus travaillés</h4>${
         d.movements?.length
@@ -94,16 +111,19 @@ function renderProgressSection() {
   return `<section class="admin-group pr-category-group ${collapsed ? "collapsed" : ""}" data-pr-category="${key}"><div class="admin-group-title" role="button" tabindex="0" data-toggle-pr-category="${key}" aria-expanded="${!collapsed}"><span class="admin-collapse-indicator">${collapsed ? "＋" : "−"}</span><span>PROGRESSION</span></div><div class="admin-group-body"><div class="progress-body">${body}</div></div></section>`;
 }
 function bindProgressSection(root) {
-  const chart = root.querySelector(".progress-chart"),
-    caption = root.querySelector(".progress-caption"),
-    weeks = progressData?.weeks || [];
+  bindProgressChart(root.querySelector('[data-progress-series="sessions"]'), progressData?.weeks);
+  bindProgressChart(root.querySelector('[data-progress-series="cardio"]'), progressData?.cardio?.weeks, true);
+}
+function bindProgressChart(series, weeks, cardio = false) {
+  const chart = series?.querySelector(".progress-chart"),
+    caption = series?.querySelector(".progress-caption");
   if (!chart || !caption) return;
   const show = g => {
     const i = Number(g.dataset.progressWeek);
     chart.querySelector(".active")?.classList.remove("active");
     g.classList.add("active");
     chart.classList.add("has-active");
-    caption.textContent = progressWeekCaption(weeks[i], i === weeks.length - 1);
+    caption.textContent = progressWeekCaption(weeks[i], cardio, i === weeks.length - 1);
   };
   chart.querySelectorAll("[data-progress-week]").forEach(g => {
     g.onpointerenter = () => show(g);
