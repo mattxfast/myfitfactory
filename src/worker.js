@@ -34,10 +34,24 @@ import {athleteProfileInput, computeFitness} from "./fitness.js";
 import {BENCHMARKS, benchmarkById, benchmarkOut, benchmarkMovementIds, benchmarkScore} from "./benchmarks.js";
 import {REPORT_PROMPT_VERSION, reportCoachComment} from "./report.js";
 import {MOVEMENT_CATEGORIES, movementCategory, validMeasurementMethod} from "./movements.js";
+import {
+  EXTERNAL_WOD_PATH,
+  WOD_VERSION,
+  WOD_ID,
+  LEGACY_WOD_VERSION,
+  externalWodInput,
+  programWodState,
+  generatedProgramStatements,
+  saveFreeWodStatement,
+  insertWodReceipt,
+  generatedFreeRow,
+} from "./external-wods.js";
 const SESSION_DAYS = 30,
   enc = new TextEncoder();
 const MOVEMENT_CATALOG_QUERY =
   "SELECT id,name,measurement_method,category FROM movement_catalog ORDER BY sort_order,name COLLATE NOCASE";
+const PR_SELECT =
+  "SELECT pr.id,pr.movement_id,mc.name AS movement_name,mc.measurement_method,mc.category,pr.record_date,pr.value,pr.rep_count,pr.fixed_kind,pr.fixed_value,pr.created_at,pr.edit_version FROM personal_records pr JOIN movement_catalog mc ON mc.id=pr.movement_id WHERE pr.user_id=?";
 const AI_RECORDS_QUERY = `SELECT mc.name,mc.measurement_method,pr.rep_count,pr.fixed_kind,pr.fixed_value,
   CASE WHEN pr.fixed_kind IN ('distance','reps') THEN MIN(pr.value) ELSE MAX(pr.value) END AS value
   FROM personal_records pr JOIN movement_catalog mc ON mc.id=pr.movement_id WHERE pr.user_id=?
@@ -169,16 +183,23 @@ function validatePr(movement, value, repCountInput, b = {}) {
   }
   return {error: "Méthode de mesure du mouvement invalide."};
 }
-const localToday = () => {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Paris",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date());
+const localToday = () => dateInTimeZone("Europe/Paris");
+function dateInTimeZone(timeZone) {
+  if (typeof timeZone !== "string" || timeZone.length > 80) return null;
+  let parts;
+  try {
+    parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date());
+  } catch {
+    return null;
+  }
   const v = Object.fromEntries(parts.map(p => [p.type, p.value]));
   return `${v.year}-${v.month}-${v.day}`;
-};
+}
 // Versioned, additive D1 migrations. Existing V2 databases already carry
 // the v2 marker; new databases apply it once, then apply later migrations.
 let schemaReady;
@@ -881,6 +902,47 @@ async function ensureV2Schema(env) {
         }
       }
     });
+    await runMigration("v52-external-wod-programming", async () => {
+      for (const [table, field, type] of [
+        ["programs", "coaching_instructions", "TEXT"],
+        ["weekly_wod_programming", "edit_version", "TEXT NOT NULL DEFAULT '" + LEGACY_WOD_VERSION + "'"],
+        ["daily_wods", "edit_version", "TEXT NOT NULL DEFAULT '" + LEGACY_WOD_VERSION + "'"],
+      ]) {
+        const {results} = await env.DB.prepare(`PRAGMA table_info(${table})`).all();
+        if (results.some(column => column.name === field)) continue;
+        try {
+          await env.DB.prepare(`ALTER TABLE ${table} ADD COLUMN ${field} ${type}`).run();
+        } catch (error) {
+          if (!String(error.message).includes("duplicate column name: " + field)) throw error;
+        }
+      }
+      const triggers = [
+        ["weekly_wod_programming", "wod_id=NEW.wod_id AND week_start=NEW.week_start", "content,blocks,week_start"],
+        ["daily_wods", "id=NEW.id", "wod_date,title,content,blocks,chrono,movement_ids,options,score_type"],
+      ].flatMap(([table, where, fields]) => [
+        env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS ${table}_initial_wod_version AFTER INSERT ON ${table}
+          WHEN NEW.edit_version='${LEGACY_WOD_VERSION}'
+          BEGIN UPDATE ${table} SET edit_version=lower(hex(randomblob(16))) WHERE ${where}; END`),
+        env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS ${table}_changed_wod_version AFTER UPDATE OF ${fields} ON ${table}
+          WHEN NEW.edit_version=OLD.edit_version
+          BEGIN UPDATE ${table} SET edit_version=lower(hex(randomblob(16))) WHERE ${where}; END`),
+      ]);
+      await env.DB.batch([
+        ...triggers,
+        env.DB.prepare(`CREATE TABLE IF NOT EXISTS wod_api_requests (
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          request_id TEXT NOT NULL,
+          request_hash TEXT NOT NULL,
+          version TEXT NOT NULL,
+          expires_at INTEGER NOT NULL,
+          PRIMARY KEY(user_id,request_id)
+        )`),
+        env.DB.prepare("CREATE INDEX IF NOT EXISTS wod_api_requests_expiry ON wod_api_requests(expires_at)"),
+        env.DB.prepare("INSERT OR IGNORE INTO app_settings(key,value) VALUES('wod_preview_signing',?)").bind(
+          b64(crypto.getRandomValues(new Uint8Array(32)))
+        ),
+      ]);
+    });
   })().catch(err => {
     schemaReady = null;
     throw err;
@@ -1488,6 +1550,8 @@ function coachProgramInput(b) {
   const start = dated ? mondayOfDate(b.start) : COACH_FREE_START;
   return {name, weeks, start, end: coachEnd(start, weeks), mode: dated ? "dated" : "free"};
 }
+const coachingInstructions = value =>
+  value == null ? null : typeof value === "string" && value.trim().length <= 4000 ? value.trim() || null : undefined;
 const CARDIO_TARGET_FIELDS = ["weekly_cardio_target_min", "weekly_cardio_target_max"];
 // Une valeur absente garde l’objectif enregistré, tandis que null efface la borne.
 function programCardioTargets(body, previous = {}) {
@@ -1499,8 +1563,20 @@ function programCardioTargets(body, previous = {}) {
     return {error: "Les objectifs cardio doivent être des nombres entiers positifs ou nuls."};
   if (min !== null && max !== null && min > max)
     return {error: "Le minimum cardio doit être inférieur ou égal au maximum cible."};
-  const changed = CARDIO_TARGET_FIELDS.filter(field => Object.hasOwn(body, field));
-  return {values, sql: changed.map(field => "," + field + "=?").join(""), args: changed.map(field => body[field])};
+  const changed = CARDIO_TARGET_FIELDS.filter(field => Object.hasOwn(body, field)),
+    instructions = coachingInstructions(body.coaching_instructions);
+  if (instructions === undefined) return {error: "Les consignes de coaching doivent faire au plus 4 000 caractères."};
+  return {
+    values,
+    instructions,
+    sql:
+      changed.map(field => "," + field + "=?").join("") +
+      (Object.hasOwn(body, "coaching_instructions") ? ",coaching_instructions=?" : ""),
+    args: [
+      ...changed.map(field => body[field]),
+      ...(Object.hasOwn(body, "coaching_instructions") ? [instructions] : []),
+    ],
+  };
 }
 async function saveProgramChanges(db, statements) {
   try {
@@ -1789,6 +1865,7 @@ const dailyWodOut = x => ({
   manual: manualOf(x),
   common_wod_id: x.common_wod_id || null,
   ...(x.session_ids !== undefined ? {session_ids: x.session_ids?.split(",") || []} : {}),
+  ...(x.edit_version !== undefined ? {edit_version: x.edit_version} : {}),
 });
 // WOD de box : nom facultatif (« WOD du JJ/MM/AAAA » par défaut), date, contenu et type de score.
 const SCORE_TYPES = ["time", "reps", "load", "none"];
@@ -2574,6 +2651,9 @@ async function writePrByApi(r, e, userId, id) {
 
 const API_KEY_PERMISSIONS = new Map([
   ["GET /api/program-data", "programs:read"],
+  ["GET /api/coaching-context", "coaching:read"],
+  ["POST " + EXTERNAL_WOD_PATH + "/preview", "wods:write"],
+  ["PUT " + EXTERNAL_WOD_PATH, "wods:write"],
   ["GET /api/week-data", "workouts:read"],
   ["GET /api/activities", "workouts:read"],
   ["GET /api/movement-catalog", ["workouts:read", "prs:read"]],
@@ -2713,6 +2793,521 @@ async function manageApiKeys(r, e, p, userId) {
   );
 }
 
+const AUTHOR_WEEK =
+  "date(?,printf('%+d days',CAST(COALESCE(julianday(date(p.start_monday,'-6 days','weekday 1'))-julianday(date(f.start_monday,'-6 days','weekday 1')),0) AS INTEGER)))";
+
+async function programData(e, userId, context = null) {
+  // Programmes accessibles calculés une seule fois (au lieu de répéter le filtre d'accès, qui relit tout l'historique
+  // des séances, dans chacune des 4 requêtes) ; seuls ces identifiants sont ensuite utilisés.
+  const accessIds = (
+      await e.DB.prepare(
+        context
+          ? `SELECT p.id FROM programs p LEFT JOIN program_follows f ON f.program_id=p.id AND f.user_id=?
+             WHERE p.is_default=0 AND (p.user_id=? OR f.user_id IS NOT NULL)
+               AND ((COALESCE(f.start_monday,p.start_monday)<=? AND COALESCE(f.end_monday,p.end_monday)>=?) OR p.id=?
+                 OR EXISTS(SELECT 1 FROM program_wods w WHERE w.id=? AND w.program_id=p.id))`
+          : "SELECT id FROM programs WHERE user_id=? UNION SELECT program_id FROM program_follows WHERE user_id=? UNION SELECT program_id FROM training_sessions WHERE user_id=?"
+      )
+        .bind(
+          ...(context
+            ? [userId, userId, context.end, context.week, context.programId, context.wodId]
+            : [userId, userId, userId])
+        )
+        .all()
+    ).results.map(r => r.id),
+    ACCESS = accessIds.length ? "p.id IN (" + accessIds.map(() => "?").join(",") + ")" : "0";
+  const [p, w, mv, wp] = await Promise.all([
+    e.DB.prepare(
+      // followed : programme suivi ; read_only : programme d'un autre auteur (suivi, ou suivi auparavant).
+      "SELECT p.*,EXISTS(SELECT 1 FROM training_sessions s WHERE s.program_id=p.id) AS has_sessions,(SELECT COUNT(*) FROM program_follows x WHERE x.program_id=p.id) AS followers,CASE WHEN p.user_id<>? AND f.user_id IS NOT NULL THEN 1 ELSE 0 END AS followed,CASE WHEN p.user_id=? THEN 0 ELSE 1 END AS read_only,a.first_name AS author_first_name,a.last_name AS author_last_name,f.start_monday AS follow_start,f.end_monday AS follow_end FROM programs p JOIN users a ON a.id=p.user_id" +
+        FOLLOW_JOIN +
+        "WHERE " +
+        ACCESS +
+        " ORDER BY p.is_default ASC,p.start_monday DESC"
+    )
+      .bind(userId, userId, userId, ...accessIds)
+      .all(),
+    e.DB.prepare(
+      "SELECT w.*,EXISTS(SELECT 1 FROM training_sessions s WHERE s.wod_id=w.id) AS has_sessions," +
+        PROGRAM_WOD_MOVEMENTS +
+        " FROM program_wods w JOIN programs p ON p.id=w.program_id WHERE " +
+        ACCESS +
+        " AND (w.name<>'__AUTRES__' OR p.user_id=?) ORDER BY w.program_id,w.sort_order,w.created_at"
+    )
+      .bind(...accessIds, userId)
+      .all(),
+    e.DB.prepare(
+      "SELECT pm.* FROM program_movements pm JOIN programs p ON p.id=pm.program_id WHERE " +
+        ACCESS +
+        " ORDER BY pm.program_id,pm.sort_order,pm.created_at"
+    )
+      .bind(...accessIds)
+      .all(),
+    e.DB.prepare(
+      "SELECT x.wod_id,x.week_start,x.content,x.blocks,x.edit_version FROM weekly_wod_programming x JOIN program_wods w ON w.id=x.wod_id JOIN programs p ON p.id=w.program_id " +
+        (context ? FOLLOW_JOIN : "") +
+        " WHERE " +
+        ACCESS +
+        (context ? " AND x.week_start=" + AUTHOR_WEEK : "") +
+        " ORDER BY x.week_start"
+    )
+      .bind(...(context ? [userId, ...accessIds, context.week] : accessIds))
+      .all(),
+  ]);
+  const wods = {},
+    movements = {},
+    shifts = new Map();
+  // Programme suivi : affiché aux dates de l'utilisateur, programmation hebdomadaire décalée d'autant.
+  for (const x of p.results)
+    if (x.followed && x.follow_start) {
+      shifts.set(x.id, weekShift(x.start_monday, x.follow_start));
+      Object.assign(x, {
+        author_start_monday: x.start_monday,
+        author_end_monday: x.end_monday,
+        start_monday: x.follow_start,
+        end_monday: x.follow_end,
+      });
+    }
+  const programOfWod = new Map();
+  for (const row of withMovementIds(w.results)) {
+    (wods[row.program_id] ??= []).push(row);
+    programOfWod.set(row.id, row.program_id);
+  }
+  for (const row of mv.results) (movements[row.program_id] ??= []).push(row);
+  // Programme de coach suivi : une semaine déjà passée (pour l'utilisateur) garde le contenu qu'elle avait à sa fin,
+  // même si le coach l'a modifié depuis (contenu remplacé gardé dans coach_wod_history, du plus ancien au plus récent).
+  const coachFollowed = p.results.filter(x => x.followed && x.coach_mode && x.published_at).map(x => x.id),
+    history = new Map(),
+    todayLocal = localToday();
+  const replaced = coachFollowed.length
+    ? (
+        await e.DB.prepare(
+          "SELECT h.wod_id,h.week_start,h.content,h.blocks,h.replaced_on FROM coach_wod_history h JOIN program_wods w ON w.id=h.wod_id " +
+            (context ? "JOIN programs p ON p.id=w.program_id " + FOLLOW_JOIN : "") +
+            " WHERE w.program_id IN (" +
+            coachFollowed.map(() => "?").join(",") +
+            ")" +
+            (context ? " AND h.week_start=" + AUTHOR_WEEK : "") +
+            " ORDER BY h.id"
+        )
+          .bind(...(context ? [userId, ...coachFollowed, context.week] : coachFollowed))
+          .all()
+      ).results
+    : [];
+  for (const h of replaced) {
+    const key = h.wod_id + "|" + h.week_start;
+    if (!history.has(key)) history.set(key, []);
+    history.get(key).push(h);
+  }
+  const weekly = wp.results.map(x => {
+    const shift = shifts.get(programOfWod.get(x.wod_id));
+    if (shift === undefined) return x;
+    const week = addDays(x.week_start, shift),
+      end = addDays(week, 6),
+      old = end < todayLocal && history.get(x.wod_id + "|" + x.week_start)?.find(h => h.replaced_on > end);
+    return {...x, week_start: week, edit_version: null, ...(old ? {content: old.content, blocks: old.blocks} : {})};
+  });
+  return {programs: p.results, wods, movements, weeklyWodPrograms: weekly};
+}
+
+const COACHING_CONTEXT_PATH = "/api/coaching-context";
+const WOD_PREVIEW_PATH = EXTERNAL_WOD_PATH + "/preview";
+const MOVEMENT_KEY = m => m.name.trim().toLowerCase();
+const intensityCount = sessions => sessions.filter(s => s.cardio_intensity >= 3).length;
+const WOD_CONFLICT = "Le WOD a changé. Relis son contenu et confirme de nouveau.";
+
+async function coachingContext(r, e, userId) {
+  const q = new URL(r.url).searchParams,
+    timeZone = q.get("time_zone") ?? "Europe/Paris",
+    date = q.get("date") ?? dateInTimeZone(timeZone),
+    historyDays =
+      q.has("history_days") && /^\d{1,2}$/.test(q.get("history_days"))
+        ? Number(q.get("history_days"))
+        : q.has("history_days")
+          ? 0
+          : 28,
+    programId = q.get("program_id"),
+    wodId = q.get("wod_id");
+  if (
+    !dateInTimeZone(timeZone) ||
+    !exactCalendarDate(date) ||
+    historyDays < 1 ||
+    historyDays > 84 ||
+    [programId, wodId].some(id => id !== null && !WOD_ID.test(id))
+  )
+    return json({error: "Filtres de contexte invalides."}, 400);
+
+  const week = mondayOfDate(date),
+    end = addDays(week, 6),
+    from = addDays(date, 1 - historyDays),
+    first = from < week ? from : week,
+    {programs, wods, movements, weeklyWodPrograms} = await programData(e, userId, {date, end, week, programId, wodId});
+  const accessible = programs.filter(p => !p.is_default && (!p.read_only || p.followed)),
+    active = accessible.filter(
+      p => p.start_monday <= date && p.end_monday >= date && !(p.coach_mode === "free" && !p.followed)
+    ),
+    chosen = programId
+      ? accessible.find(p => p.id === programId)
+      : wodId
+        ? accessible.find(p => wods[p.id]?.some(w => w.id === wodId && w.name !== "__AUTRES__"))
+        : null;
+  if (
+    ((programId || wodId) && !chosen) ||
+    (wodId && !wods[chosen.id]?.some(w => w.id === wodId && w.name !== "__AUTRES__"))
+  )
+    return json({error: "Programme ou modèle de WOD introuvable."}, 404);
+
+  const [sessionsResult, checks, plans, free, box, pr, catalog, sports, types, profile] = await Promise.all([
+    e.DB.prepare(
+      SESSION_SELECT.replace("SELECT s.*,", "SELECT s.*,w.name='__AUTRES__' AS is_other,") +
+        " AND s.session_date BETWEEN ? AND ? ORDER BY s.session_date DESC,s.created_at DESC,s.id"
+    )
+      .bind(userId, first, end)
+      .all(),
+    e.DB.prepare(
+      `SELECT c.session_id,pm.catalog_movement_id AS movement_id,COALESCE(mc.name,pm.name) AS name
+      FROM session_movement_checks c JOIN training_sessions s ON s.id=c.session_id
+      JOIN program_movements pm ON pm.id=c.movement_id LEFT JOIN movement_catalog mc ON mc.id=pm.catalog_movement_id
+      WHERE s.user_id=? AND s.session_date BETWEEN ? AND ?
+      UNION SELECT c.session_id,mc.id,mc.name FROM session_catalog_movement_checks c
+      JOIN training_sessions s ON s.id=c.session_id JOIN movement_catalog mc ON mc.id=c.catalog_movement_id
+      WHERE s.user_id=? AND s.session_date BETWEEN ? AND ?`
+    )
+      .bind(userId, first, end, userId, first, end)
+      .all(),
+    e.DB.prepare(
+      `SELECT wp.wod_id,wp.plan_version AS version FROM weekly_plans wp ${PLAN_WOD_JOIN}
+      WHERE wp.user_id=? AND wp.week_start=? AND ${PLAN_ACCESS}`
+    )
+      .bind(userId, week)
+      .all(),
+    e.DB.prepare(
+      `SELECT w.*,(SELECT group_concat(s.id) FROM training_sessions s WHERE s.daily_wod_id=w.id AND s.user_id=w.user_id) AS session_ids
+      FROM daily_wods w WHERE w.user_id=? AND w.wod_date BETWEEN ? AND ? ORDER BY w.wod_date,w.created_at,w.id`
+    )
+      .bind(userId, week, end)
+      .all(),
+    memberBoxWods(e, userId, week, end),
+    e.DB.prepare(PR_SELECT + " AND pr.record_date<=? ORDER BY pr.record_date DESC,pr.created_at DESC,pr.id")
+      .bind(userId, date)
+      .all(),
+    e.DB.prepare(MOVEMENT_CATALOG_QUERY).all(),
+    e.DB.prepare(
+      "SELECT id,name,duration_minutes,is_default,is_active FROM activities WHERE user_id=(SELECT id FROM users WHERE email=?) AND is_active=1 ORDER BY sort_order,name"
+    )
+      .bind(ownerEmail(e))
+      .all(),
+    e.DB.prepare("SELECT id,name FROM wod_types ORDER BY sort_order,name").all(),
+    e.DB.prepare("SELECT level,goals,equipment,constraints FROM ai_profiles WHERE user_id=?").bind(userId).first(),
+  ]);
+  const checked = new Map();
+  for (const {session_id, movement_id, name} of checks.results) {
+    if (!checked.has(session_id)) checked.set(session_id, new Map());
+    const key = MOVEMENT_KEY({name}),
+      list = checked.get(session_id);
+    if (movement_id || !list.has(key)) list.set(key, {movement_id, name});
+  }
+  const actual = sessionsResult.results.map(s => ({
+    id: s.id,
+    session_date: s.session_date,
+    duration_minutes: s.duration_minutes,
+    program_id: s.program_id,
+    wod_id: s.wod_id,
+    wod_name: s.wod_name,
+    activity_id: s.activity_id,
+    activity_name: s.activity_name,
+    type_id: s.type_id,
+    wod_type_name: s.wod_type_name,
+    source: s.common_wod_id
+      ? "common"
+      : s.daily_wod_id
+        ? "free"
+        : s.box_wod_id
+          ? "box"
+          : s.is_other
+            ? "other"
+            : "program",
+    daily_wod_id: s.daily_wod_id ?? null,
+    box_wod_id: s.box_wod_id ?? null,
+    actual_comment: s.actual_comment,
+    cardio_intensity: s.cardio_intensity ?? null,
+    worked_movements: [...(checked.get(s.id)?.values() || [])],
+  }));
+  const during = actual.filter(s => s.session_date >= week),
+    history = actual.filter(s => s.session_date >= from && s.session_date <= date),
+    frequency = new Map(),
+    plansById = new Map(plans.results.map(x => [x.wod_id, x.version])),
+    programming = new Map(weeklyWodPrograms.map(x => [x.wod_id, x])),
+    selected = chosen ? [chosen] : accessible.filter(p => p.start_monday <= end && p.end_monday >= week);
+  const movementFrequency = (sessions, counts) => {
+    for (const s of sessions) {
+      for (const movement of s.worked_movements) {
+        const key = MOVEMENT_KEY(movement);
+        if (!counts.has(key)) counts.set(key, {...movement, last_worked_on: s.session_date, sessions_count: 0});
+        counts.get(key).sessions_count++;
+      }
+    }
+    return [...counts.values()];
+  };
+  const recentFrequency = movementFrequency(history, frequency);
+  const visible = p => {
+    const models = (wods[p.id] || []).filter(w => w.name !== "__AUTRES__"),
+      worked = new Set(during.filter(s => s.program_id === p.id && s.source === "program").map(s => s.wod_id)),
+      programActual = during.filter(s => s.program_id === p.id && (s.source === "program" || s.source === "other")),
+      focus = (movements[p.id] || []).map(({id, catalog_movement_id, name}) => ({id, catalog_movement_id, name})),
+      counts = new Map();
+    for (const s of programActual) {
+      for (const movement of s.worked_movements) {
+        const key = MOVEMENT_KEY(movement);
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
+    }
+    const coverage = focus.map(m => ({...m, sessions_count: counts.get(MOVEMENT_KEY(m)) || 0}));
+    return {
+      id: p.id,
+      name: p.name,
+      start_monday: p.start_monday,
+      end_monday: p.end_monday,
+      active: active.some(x => x.id === p.id),
+      read_only: Boolean(p.read_only),
+      coach_mode: p.coach_mode ?? null,
+      coaching_instructions: p.coaching_instructions ?? null,
+      tracked_movements: focus,
+      weekly_workout_target: p.start_monday <= end && p.end_monday >= week ? models.length : null,
+      weekly_cardio_target_min: p.weekly_cardio_target_min ?? null,
+      weekly_cardio_target_max: p.weekly_cardio_target_max ?? null,
+      workout_models: models.map(w => {
+        const plan = programming.get(w.id);
+        return {
+          id: w.id,
+          name: w.name,
+          instructions: w.planned_comment,
+          activity_id: w.activity_id ?? null,
+          type_id: w.type_id ?? null,
+          duration_minutes: w.duration_minutes ?? null,
+          movement_ids: w.movement_ids,
+          is_tracked: Boolean(w.is_tracked),
+          score_type: w.score_type,
+          plan_version: plansById.get(w.id) ?? null,
+          completed: worked.has(w.id),
+          programming: plan
+            ? {
+                content: plan.content,
+                blocks: plan.blocks ? JSON.parse(plan.blocks) : null,
+                edit_version: plan.edit_version,
+              }
+            : null,
+        };
+      }),
+      week: {
+        sessions_count: programActual.length,
+        workouts_count_toward_target: models.filter(w => worked.has(w.id)).length,
+        intense_cardio_exposures: intensityCount(programActual),
+        movement_coverage: {
+          worked: coverage.filter(m => m.sessions_count > 0).length,
+          total: coverage.length,
+          movements: coverage,
+        },
+        remaining_wod_ids: models.filter(w => !worked.has(w.id)).map(w => w.id),
+      },
+    };
+  };
+  const records = pr.results.map(row => {
+    const x = withMovementCategory(row);
+    return {
+      ...x,
+      unit:
+        x.fixed_kind === "distance" || x.fixed_kind === "reps"
+          ? "s"
+          : ["load", "force"].includes(x.measurement_method)
+            ? "kg"
+            : x.measurement_method === "distance"
+              ? "m"
+              : "reps",
+      fixed_unit: {distance: "m", reps: "reps", time: "s"}[x.fixed_kind] ?? null,
+    };
+  });
+  return json({
+    reference_date: date,
+    time_zone: timeZone,
+    active_program_ids: active.map(p => p.id),
+    selected_program_id: chosen?.id ?? (active.length === 1 ? active[0].id : null),
+    selected_wod_id: wodId,
+    athlete_profile: profile,
+    programs: selected.map(visible),
+    week: {
+      week_start: week,
+      week_end: end,
+      completed_sessions: during,
+      worked_movements: movementFrequency(during, new Map()),
+      sessions_count: during.length,
+      intense_cardio_exposures: intensityCount(during),
+      free_wods: free.results.map(w => ({
+        ...dailyWodOut(w),
+        edit_version: w.edit_version,
+        can_replace: !w.benchmark_id && !w.common_wod_id && !w.session_ids,
+      })),
+      box_wods: box.map(w => ({...w, blocks: typeof w.blocks === "string" ? JSON.parse(w.blocks) : w.blocks})),
+    },
+    recent: {from, to: date, sessions: history, movement_frequency: recentFrequency},
+    performance: {records, workload_records: records.filter(x => x.unit === "kg").map(x => x.id)},
+    references: {
+      activities: sports.results,
+      wod_types: types.results,
+      movements: catalog.results.map(withMovementCategory),
+    },
+  });
+}
+
+async function readGeneratedWodBody(r) {
+  if (!r.body) return null;
+  const reader = r.body.getReader(),
+    decoder = new TextDecoder("utf-8", {fatal: true});
+  let size = 0,
+    source = "";
+  try {
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) return JSON.parse(source + decoder.decode());
+      size += value.byteLength;
+      if (size > 65536) {
+        await reader.cancel();
+        return null;
+      }
+      source += decoder.decode(value, {stream: true});
+    }
+  } catch {
+    return null;
+  }
+}
+
+async function generatedWodState(e, userId, target) {
+  if (target.kind === "program") {
+    const old = await programWodState(e.DB, userId, target.wod_id, target.week_start);
+    if (!old || old.program_id !== target.program_id) return {error: "WOD introuvable.", status: 404};
+    if (old.start_monday > addDays(target.week_start, 6) || old.end_monday < target.week_start)
+      return {error: "Cette semaine est hors période du programme.", status: 400};
+    return {version: old.edit_version, previous_content: old.content};
+  }
+  const old = await e.DB.prepare(
+    `SELECT edit_version,content,wod_date,common_wod_id,benchmark_id,
+    EXISTS(SELECT 1 FROM training_sessions s WHERE s.daily_wod_id=w.id) AS completed
+    FROM daily_wods w WHERE w.id=? AND w.user_id=?`
+  )
+    .bind(target.wod_id, userId)
+    .first();
+  if (old && (old.common_wod_id || old.benchmark_id || old.completed))
+    return {error: "Ce WOD personnel ne peut plus être remplacé.", status: 409};
+  const now = localToday();
+  if (old ? old.wod_date !== target.wod_date : target.wod_date < now || target.wod_date > addDays(now, 365))
+    return {error: "Date du WOD personnel non autorisée.", status: 400};
+  return {version: old?.edit_version ?? null, previous_content: old?.content ?? null};
+}
+
+async function wodConfirmationKey(e) {
+  const {value} = await e.DB.prepare("SELECT value FROM app_settings WHERE key='wod_preview_signing'").first();
+  return crypto.subtle.importKey("raw", unb64(value), {name: "HMAC", hash: "SHA-256"}, false, ["sign", "verify"]);
+}
+
+async function externalGeneratedWods(r, e, userId, preview) {
+  if (r.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase() !== "application/json")
+    return json({error: "Un corps JSON est requis."}, 415);
+  const body = await readGeneratedWodBody(r),
+    input = externalWodInput(body, exactCalendarDate, mondayOfDate);
+  if (!input) return json({error: "Contenu ou destination du WOD invalide."}, 400);
+  const {target} = input;
+  if (preview) {
+    const state = await generatedWodState(e, userId, target);
+    if (state.error) return json({error: state.error}, state.status);
+    if (JSON.parse(await catalogMovementIds(e, input.movement_ids)).length !== input.movement_ids.length)
+      return json({error: "Mouvement inconnu dans le catalogue."}, 400);
+    const expires = Math.floor(Date.now() / 1000) + 900,
+      fingerprint = await sha(JSON.stringify([userId, state.version, input])),
+      signature = b64(
+        await crypto.subtle.sign("HMAC", await wodConfirmationKey(e), enc.encode(expires + "." + fingerprint))
+      );
+    return json({
+      target,
+      operation: state.version ? "replace" : "create",
+      edit_version: state.version,
+      previous_content: state.previous_content,
+      title: input.title,
+      duration_minutes: input.duration_minutes,
+      content: input.content,
+      blocks: input.blocks,
+      confirmation: expires + "." + signature,
+      expires_at: new Date(expires * 1000).toISOString(),
+    });
+  }
+  const match = r.headers.get("If-Match"),
+    none = r.headers.get("If-None-Match"),
+    expected = match?.slice(1, -1) ?? null;
+  if (!match && none !== "*") return json({error: "Une précondition de version est requise."}, 428);
+  if (match && (none !== null || !WOD_VERSION.test(expected) || match !== '"' + expected + '"'))
+    return json({error: "Précondition de version invalide."}, 400);
+  const {requestId, expiresAt, error} = readIdempotencyKey(r);
+  if (error) return error;
+  const fingerprint = await sha(JSON.stringify([userId, expected, input]));
+  const proof = /^(\d{10})\.([a-zA-Z0-9_-]{43})$/.exec(r.headers.get("X-WOD-Confirmation") || "");
+  if (
+    !proof ||
+    !(await crypto.subtle.verify(
+      "HMAC",
+      await wodConfirmationKey(e),
+      unb64(proof[2]),
+      enc.encode(proof[1] + "." + fingerprint)
+    ))
+  )
+    return json({error: "Confirme une préparation correspondant à ce contenu et à cette version."}, 428);
+  const receiptSelect = e.DB.prepare(
+    "SELECT request_hash,version FROM wod_api_requests WHERE user_id=? AND request_id=?"
+  ).bind(userId, requestId);
+  const answer = receipt =>
+    receipt.request_hash === fingerprint
+      ? json({ok: true, target, edit_version: receipt.version}, 200, {ETag: '"' + receipt.version + '"'})
+      : json({error: "Cette clé d’idempotence est déjà associée à une autre opération."}, 409);
+  const already = await receiptSelect.first();
+  if (already) return answer(already);
+  if (Number(proof[1]) <= Date.now() / 1000)
+    return json({error: "Préparation expirée. Relis et confirme de nouveau."}, 428);
+  const state = await generatedWodState(e, userId, target);
+  if (state.error || state.version !== expected) {
+    const raced = await receiptSelect.first();
+    if (raced) return answer(raced);
+    return state.error ? json({error: state.error}, state.status) : json({error: WOD_CONFLICT}, 412);
+  }
+  if (JSON.parse(await catalogMovementIds(e, input.movement_ids)).length !== input.movement_ids.length)
+    return json({error: "Mouvement inconnu dans le catalogue."}, 400);
+  const version = uid().replaceAll("-", ""),
+    statements =
+      target.kind === "program"
+        ? generatedProgramStatements(e.DB, {
+            userId,
+            wodId: target.wod_id,
+            programId: target.program_id,
+            week: target.week_start,
+            end: addDays(target.week_start, 6),
+            today: localToday(),
+            content: input.content,
+            blocks: JSON.stringify(input.blocks),
+            expected,
+            version,
+            requestId,
+          })
+        : [saveFreeWodStatement(e.DB, generatedFreeRow(input), userId, version, expected, requestId)];
+  const result = await e.DB.batch([
+    ...statements,
+    insertWodReceipt(e.DB, {userId, requestId, expiresAt, fingerprint, version, target}),
+    receiptSelect,
+  ]);
+  const receipt = result.at(-1).results[0];
+  if (receipt) return answer(receipt);
+  const latest = await generatedWodState(e, userId, target);
+  if (latest.error) return json({error: latest.error}, latest.status);
+  if (latest.version !== expected) return json({error: WOD_CONFLICT}, 412);
+  return json({error: "Destination du WOD indisponible."}, 409);
+}
+
 async function api(r, e, p, ctx = null, apiUser = null) {
   const adminEmail = ownerEmail(e);
   if (r.method === "POST" && p === "/api/register") {
@@ -2839,6 +3434,11 @@ async function api(r, e, p, ctx = null, apiUser = null) {
   if (p === "/api/api-keys" || p.startsWith("/api/api-keys/")) {
     if (apiUser) return json({error: "Connexion par session requise."}, 403);
     return manageApiKeys(r, e, p, u.id);
+  }
+  if (r.method === "GET" && p === COACHING_CONTEXT_PATH) return coachingContext(r, e, u.id);
+  if ((r.method === "POST" && p === WOD_PREVIEW_PATH) || (r.method === "PUT" && p === EXTERNAL_WOD_PATH)) {
+    if (!apiUser) return json({error: "Une clé API est requise."}, 403);
+    return externalGeneratedWods(r, e, u.id, p === WOD_PREVIEW_PATH);
   }
   const admin = !apiUser && isAdminUser(e, u);
   let m;
@@ -3837,9 +4437,7 @@ async function api(r, e, p, ctx = null, apiUser = null) {
     return json({ok: true});
   }
   if (r.method === "GET" && p === "/api/prs") {
-    const x = await e.DB.prepare(
-      "SELECT pr.id,pr.movement_id,mc.name AS movement_name,mc.measurement_method,mc.category,pr.record_date,pr.value,pr.rep_count,pr.fixed_kind,pr.fixed_value,pr.created_at,pr.edit_version FROM personal_records pr JOIN movement_catalog mc ON mc.id=pr.movement_id WHERE pr.user_id=? ORDER BY pr.record_date,pr.created_at"
-    )
+    const x = await e.DB.prepare(PR_SELECT + " ORDER BY pr.record_date,pr.created_at")
       .bind(u.id)
       .all();
     return json({records: x.results.map(withMovementCategory)});
@@ -4125,103 +4723,7 @@ async function api(r, e, p, ctx = null, apiUser = null) {
       .run();
     return json({ok: true});
   }
-  if (r.method === "GET" && p === "/api/program-data") {
-    // Programmes accessibles calculés une seule fois (au lieu de répéter le filtre d'accès, qui relit tout l'historique
-    // des séances, dans chacune des 4 requêtes) ; seuls ces identifiants sont ensuite utilisés.
-    const accessIds = (
-        await e.DB.prepare(
-          "SELECT id FROM programs WHERE user_id=? UNION SELECT program_id FROM program_follows WHERE user_id=? UNION SELECT program_id FROM training_sessions WHERE user_id=?"
-        )
-          .bind(u.id, u.id, u.id)
-          .all()
-      ).results.map(r => r.id),
-      ACCESS = accessIds.length ? "p.id IN (" + accessIds.map(() => "?").join(",") + ")" : "0";
-    const [p, w, mv, wp] = await Promise.all([
-      e.DB.prepare(
-        // followed : programme suivi ; read_only : programme d'un autre auteur (suivi, ou suivi auparavant).
-        "SELECT p.*,EXISTS(SELECT 1 FROM training_sessions s WHERE s.program_id=p.id) AS has_sessions,(SELECT COUNT(*) FROM program_follows x WHERE x.program_id=p.id) AS followers,CASE WHEN p.user_id<>? AND f.user_id IS NOT NULL THEN 1 ELSE 0 END AS followed,CASE WHEN p.user_id=? THEN 0 ELSE 1 END AS read_only,a.first_name AS author_first_name,a.last_name AS author_last_name,f.start_monday AS follow_start,f.end_monday AS follow_end FROM programs p JOIN users a ON a.id=p.user_id" +
-          FOLLOW_JOIN +
-          "WHERE " +
-          ACCESS +
-          " ORDER BY p.is_default ASC,p.start_monday DESC"
-      )
-        .bind(u.id, u.id, u.id, ...accessIds)
-        .all(),
-      e.DB.prepare(
-        "SELECT w.*,EXISTS(SELECT 1 FROM training_sessions s WHERE s.wod_id=w.id) AS has_sessions," +
-          PROGRAM_WOD_MOVEMENTS +
-          " FROM program_wods w JOIN programs p ON p.id=w.program_id WHERE " +
-          ACCESS +
-          " AND (w.name<>'__AUTRES__' OR p.user_id=?) ORDER BY w.program_id,w.sort_order,w.created_at"
-      )
-        .bind(...accessIds, u.id)
-        .all(),
-      e.DB.prepare(
-        "SELECT pm.* FROM program_movements pm JOIN programs p ON p.id=pm.program_id WHERE " +
-          ACCESS +
-          " ORDER BY pm.program_id,pm.sort_order,pm.created_at"
-      )
-        .bind(...accessIds)
-        .all(),
-      e.DB.prepare(
-        "SELECT x.wod_id,x.week_start,x.content,x.blocks FROM weekly_wod_programming x JOIN program_wods w ON w.id=x.wod_id JOIN programs p ON p.id=w.program_id WHERE " +
-          ACCESS +
-          " ORDER BY x.week_start"
-      )
-        .bind(...accessIds)
-        .all(),
-    ]);
-    const wods = {},
-      movements = {},
-      shifts = new Map();
-    // Programme suivi : affiché aux dates de l'utilisateur, programmation hebdomadaire décalée d'autant.
-    for (const x of p.results)
-      if (x.followed && x.follow_start) {
-        shifts.set(x.id, weekShift(x.start_monday, x.follow_start));
-        Object.assign(x, {
-          author_start_monday: x.start_monday,
-          author_end_monday: x.end_monday,
-          start_monday: x.follow_start,
-          end_monday: x.follow_end,
-        });
-      }
-    const programOfWod = new Map();
-    for (const row of withMovementIds(w.results)) {
-      (wods[row.program_id] ??= []).push(row);
-      programOfWod.set(row.id, row.program_id);
-    }
-    for (const row of mv.results) (movements[row.program_id] ??= []).push(row);
-    // Programme de coach suivi : une semaine déjà passée (pour l'utilisateur) garde le contenu qu'elle avait à sa fin,
-    // même si le coach l'a modifié depuis (contenu remplacé gardé dans coach_wod_history, du plus ancien au plus récent).
-    const coachFollowed = p.results.filter(x => x.followed && x.coach_mode && x.published_at).map(x => x.id),
-      history = new Map(),
-      todayLocal = localToday();
-    const replaced = coachFollowed.length
-      ? (
-          await e.DB.prepare(
-            "SELECT h.wod_id,h.week_start,h.content,h.blocks,h.replaced_on FROM coach_wod_history h JOIN program_wods w ON w.id=h.wod_id WHERE w.program_id IN (" +
-              coachFollowed.map(() => "?").join(",") +
-              ") ORDER BY h.id"
-          )
-            .bind(...coachFollowed)
-            .all()
-        ).results
-      : [];
-    for (const h of replaced) {
-      const key = h.wod_id + "|" + h.week_start;
-      if (!history.has(key)) history.set(key, []);
-      history.get(key).push(h);
-    }
-    const weekly = wp.results.map(x => {
-      const shift = shifts.get(programOfWod.get(x.wod_id));
-      if (!shift && shift !== 0) return x;
-      const week = addDays(x.week_start, shift),
-        end = addDays(week, 6),
-        old = end < todayLocal && history.get(x.wod_id + "|" + x.week_start)?.find(h => h.replaced_on > end);
-      return {...x, week_start: week, ...(old ? {content: old.content, blocks: old.blocks} : {})};
-    });
-    return json({programs: p.results, wods, movements, weeklyWodPrograms: weekly});
-  }
+  if (r.method === "GET" && p === "/api/program-data") return json(await programData(e, u.id));
   // Programmes publics des autres utilisateurs : recherche par nom du programme ou de l'auteur.
   if (r.method === "GET" && p === "/api/public-programs") {
     const q = boxText(new URL(r.url).searchParams.get("q"), 60).replace(/[\\%_]/g, c => "\\" + c),
@@ -4425,9 +4927,9 @@ async function api(r, e, p, ctx = null, apiUser = null) {
       if (v.error) return json({error: v.error}, 400);
       const id = uid();
       await e.DB.prepare(
-        "INSERT INTO programs(id,user_id,name,start_monday,end_monday,is_default,is_public,coach_mode,coach_weeks,weekly_cardio_target_min,weekly_cardio_target_max) VALUES(?,?,?,?,?,0,0,?,?,?,?)"
+        "INSERT INTO programs(id,user_id,name,start_monday,end_monday,is_default,is_public,coach_mode,coach_weeks,weekly_cardio_target_min,weekly_cardio_target_max,coaching_instructions) VALUES(?,?,?,?,?,0,0,?,?,?,?,?)"
       )
-        .bind(id, u.id, v.name, v.start, v.end, v.mode, v.weeks, ...cardio.values)
+        .bind(id, u.id, v.name, v.start, v.end, v.mode, v.weeks, ...cardio.values, cardio.instructions)
         .run();
       return json({ok: true, id});
     }
@@ -4454,14 +4956,14 @@ async function api(r, e, p, ctx = null, apiUser = null) {
       await e.DB.batch([
         e.DB.prepare("UPDATE programs SET is_default=0 WHERE user_id=? AND is_default=1").bind(u.id),
         e.DB.prepare(
-          "INSERT INTO programs(id,user_id,name,start_monday,end_monday,is_default,weekly_cardio_target_min,weekly_cardio_target_max) VALUES(?,?,?,?,?,1,?,?)"
-        ).bind(id, u.id, name, start, end, ...cardio.values),
+          "INSERT INTO programs(id,user_id,name,start_monday,end_monday,is_default,weekly_cardio_target_min,weekly_cardio_target_max,coaching_instructions) VALUES(?,?,?,?,?,1,?,?,?)"
+        ).bind(id, u.id, name, start, end, ...cardio.values, cardio.instructions),
       ]);
     else
       await e.DB.prepare(
-        "INSERT INTO programs(id,user_id,name,start_monday,end_monday,is_default,is_public,weekly_cardio_target_min,weekly_cardio_target_max) VALUES(?,?,?,?,?,0,?,?,?)"
+        "INSERT INTO programs(id,user_id,name,start_monday,end_monday,is_default,is_public,weekly_cardio_target_min,weekly_cardio_target_max,coaching_instructions) VALUES(?,?,?,?,?,0,?,?,?,?)"
       )
-        .bind(id, u.id, name, start, end, b.is_public ? 1 : 0, ...cardio.values)
+        .bind(id, u.id, name, start, end, b.is_public ? 1 : 0, ...cardio.values, cardio.instructions)
         .run();
     return json({ok: true, id});
   }
@@ -4782,15 +5284,11 @@ async function api(r, e, p, ctx = null, apiUser = null) {
     if (options.error) return json({error: options.error}, 400);
     if (!validDate(week) || new Date(week + "T12:00:00Z").getUTCDay() !== 1)
       return json({error: "La semaine doit commencer un lundi."}, 400);
-    // Uniquement ses propres programmes (pas un programme suivi, ni le programme technique « Hors programme »).
-    const wod = await e.DB.prepare(
-      "SELECT w.id,w.name,w.planned_comment,w.program_id,p.name AS program_name,p.start_monday,p.end_monday,(SELECT group_concat(mc.name,', ') FROM program_wod_movements x JOIN movement_catalog mc ON mc.id=x.catalog_movement_id WHERE x.wod_id=w.id) AS movement_names FROM program_wods w JOIN programs p ON p.id=w.program_id WHERE w.id=? AND w.user_id=? AND p.user_id=? AND p.is_default=0 AND w.name<>'__AUTRES__'"
-    )
-      .bind(m[1], u.id, u.id)
-      .first();
+    const wod = await programWodState(e.DB, u.id, m[1], week);
     if (!wod) return json({error: "WOD introuvable."}, 404);
     if (addDays(week, 6) < wod.start_monday || week > wod.end_monday)
       return json({error: "Cette semaine est hors période du programme."}, 400);
+    if (b.edit_version !== undefined && b.edit_version !== wod.edit_version) return json({error: WOD_CONFLICT}, 412);
     const used = await e.DB.prepare(
       "SELECT COUNT(*) AS n FROM ai_generations WHERE user_id=? AND created_at>datetime('now','-1 day')"
     )
@@ -4823,7 +5321,7 @@ async function api(r, e, p, ctx = null, apiUser = null) {
       records: records.results,
       catalog: catalog.results,
       focus: focus.results.map(x => x.name),
-      program: {name: wod.program_name},
+      program: {name: wod.program_name, coaching_instructions: wod.coaching_instructions},
       wod,
       weekIndex: daysBetween(first, week) / 7 + 1,
       weekCount: daysBetween(first, mondayOfDate(wod.end_monday)) / 7 + 1,
@@ -4835,17 +5333,37 @@ async function api(r, e, p, ctx = null, apiUser = null) {
     if (out.error) return json({error: out.error}, 502);
     const content = wodToText(out.wod, 2000, false),
       blocks = JSON.stringify(wodBlocks(out.wod));
-    await e.DB.batch([
-      coachHistoryStatement(e, wod.id, week, content),
-      e.DB.prepare(
-        "INSERT INTO weekly_wod_programming(wod_id,user_id,week_start,content,blocks,updated_at) VALUES(?,?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(wod_id,week_start) DO UPDATE SET content=excluded.content,blocks=excluded.blocks,updated_at=CURRENT_TIMESTAMP"
-      ).bind(wod.id, u.id, week, content, blocks),
-      // Le contenu semaine par semaine n'existe que pour un WOD « suivi » : il le devient.
-      e.DB.prepare("UPDATE program_wods SET is_tracked=1 WHERE id=? AND user_id=?").bind(wod.id, u.id),
-      e.DB.prepare(
-        "INSERT INTO ai_generations(id,user_id,wod_id,week_start,options,result,prompt_version,model) VALUES(?,?,?,?,?,?,?,?)"
-      ).bind(uid(), u.id, wod.id, week, JSON.stringify(options), JSON.stringify(out.wod), AI_PROMPT_VERSION, out.model),
-    ]);
+    const version = uid().replaceAll("-", ""),
+      statements = generatedProgramStatements(e.DB, {
+        userId: u.id,
+        wodId: wod.id,
+        programId: wod.program_id,
+        week,
+        end: addDays(week, 6),
+        today: localToday(),
+        content,
+        blocks,
+        expected: wod.edit_version,
+        version,
+      }),
+      [, saved] = await e.DB.batch([
+        ...statements,
+        e.DB.prepare(
+          "INSERT INTO ai_generations(id,user_id,wod_id,week_start,options,result,prompt_version,model) VALUES(?,?,(SELECT id FROM program_wods WHERE id=? AND user_id=?),?,?,?,?,?)"
+        ).bind(
+          uid(),
+          u.id,
+          wod.id,
+          u.id,
+          week,
+          JSON.stringify(options),
+          JSON.stringify(out.wod),
+          AI_PROMPT_VERSION,
+          out.model
+        ),
+      ]);
+    if (!saved.meta.changes)
+      return json({error: "La programmation a changé. Actualise le WOD avant de le régénérer."}, 412);
     return json({ok: true, content, wod: out.wod});
   }
   // WOD du jour : génération par IA (aujourd'hui ou demain, heure de Paris), remplacement (« Autre WOD ») tant
@@ -4858,14 +5376,22 @@ async function api(r, e, p, ctx = null, apiUser = null) {
       options = dailyOptionsInput(b),
       now = localToday();
     if (options.error) return json({error: options.error}, 400);
-    if (!validDate(date) || date < now || date > addDays(now, 1))
-      return json({error: "Le WOD du jour se génère pour aujourd'hui ou demain."}, 400);
     const replaceId = b.replace_id ? String(b.replace_id) : null;
+    if (!exactCalendarDate(date) || ((!b.draft || !replaceId) && (date < now || date > addDays(now, 1))))
+      return json({error: "Le WOD du jour se génère pour aujourd'hui ou demain."}, 400);
+    let replaceVersion = null,
+      replaceScore = null;
     if (replaceId) {
-      const old = await e.DB.prepare("SELECT id FROM daily_wods WHERE id=? AND user_id=?")
+      const old = await e.DB.prepare(
+        "SELECT id,edit_version,score_type,wod_date FROM daily_wods WHERE id=? AND user_id=? AND common_wod_id IS NULL AND benchmark_id IS NULL"
+      )
         .bind(replaceId, u.id)
         .first();
       if (!old) return json({error: "WOD du jour introuvable."}, 404);
+      if (b.draft && old.wod_date !== date && (date < now || date > addDays(now, 1)))
+        return json({error: "Date du WOD personnel non autorisée."}, 400);
+      replaceVersion = old.edit_version;
+      replaceScore = old.score_type;
       if (await e.DB.prepare("SELECT 1 FROM training_sessions WHERE daily_wod_id=? LIMIT 1").bind(replaceId).first())
         return json({error: "Une séance est déjà enregistrée sur ce WOD."}, 409);
     }
@@ -4955,19 +5481,13 @@ async function api(r, e, p, ctx = null, apiUser = null) {
       movement_ids: JSON.stringify(dailyMovementIds(wod, catalog.results)),
       blocks: JSON.stringify(wodBlocks(wod)),
     };
-    await e.DB.batch([
-      e.DB.prepare(
-        "INSERT INTO daily_wods(id,user_id,wod_date,title,content,chrono,movement_ids,options,blocks) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET wod_date=excluded.wod_date,title=excluded.title,content=excluded.content,chrono=excluded.chrono,blocks=excluded.blocks,movement_ids=excluded.movement_ids,options=excluded.options,created_at=CURRENT_TIMESTAMP WHERE daily_wods.user_id=excluded.user_id"
-      ).bind(
-        row.id,
+    const [saved] = await e.DB.batch([
+      saveFreeWodStatement(
+        e.DB,
+        {...row, options: JSON.stringify(options), score_type: replaceScore},
         u.id,
-        row.wod_date,
-        row.title,
-        row.content,
-        row.chrono,
-        row.movement_ids,
-        JSON.stringify(options),
-        row.blocks
+        uid().replaceAll("-", ""),
+        replaceVersion
       ),
       e.DB.prepare(
         "INSERT INTO ai_generations(id,user_id,wod_id,week_start,options,result,prompt_version,model) VALUES(?,?,NULL,?,?,?,?,?)"
@@ -4981,6 +5501,7 @@ async function api(r, e, p, ctx = null, apiUser = null) {
         out.model
       ),
     ]);
+    if (!saved.meta.changes) return json({error: WOD_CONFLICT}, 412);
     return json({ok: true, wod: dailyWodOut(row)});
   }
   // WOD de référence (benchmarks) : liste (gardée sur le téléphone pour le tirage hors ligne), WOD du jour tiré de
@@ -5182,7 +5703,7 @@ async function api(r, e, p, ctx = null, apiUser = null) {
   m = p.match(/^\/api\/daily-wods\/([\w-]+)$/);
   // Modification d'un WOD saisi à la main, tant qu'aucune séance n'y est rattachée.
   if (m && r.method === "PUT") {
-    const row = await e.DB.prepare("SELECT id,wod_date,options FROM daily_wods WHERE id=? AND user_id=?")
+    const row = await e.DB.prepare("SELECT id,wod_date,options,edit_version FROM daily_wods WHERE id=? AND user_id=?")
       .bind(m[1], u.id)
       .first();
     if (!row) return json({error: "WOD introuvable."}, 404);
@@ -5195,14 +5716,14 @@ async function api(r, e, p, ctx = null, apiUser = null) {
       return json({error: "Une séance est enregistrée sur ce WOD : il ne peut plus être modifié."}, 409);
     const b = await r.json(),
       x = manualDailyInput(b, row.wod_date);
+    if (b.edit_version !== undefined && b.edit_version !== row.edit_version) return json({error: WOD_CONFLICT}, 412);
     if (x.error) return json({error: x.error}, 400);
     const movementIds = await catalogMovementIds(e, b.movement_ids);
-    await e.DB.prepare(
-      "UPDATE daily_wods SET wod_date=?,title=?,content=?,blocks=?,score_type=?,options=?,movement_ids=? WHERE id=? AND user_id=?"
-    )
-      .bind(x.wod_date, x.title, x.content, x.blocks, x.score_type, x.options, movementIds, m[1], u.id)
-      .run();
-    return json({ok: true, wod: dailyWodOut({id: m[1], chrono: null, movement_ids: movementIds, ...x})});
+    const version = uid().replaceAll("-", ""),
+      updated = {id: m[1], chrono: null, movement_ids: movementIds, ...x, edit_version: version},
+      saved = await saveFreeWodStatement(e.DB, updated, u.id, version, row.edit_version).run();
+    if (!saved.meta.changes) return json({error: WOD_CONFLICT}, 412);
+    return json({ok: true, wod: dailyWodOut(updated)});
   }
   if (m && r.method === "DELETE") {
     if (
@@ -5231,13 +5752,14 @@ async function api(r, e, p, ctx = null, apiUser = null) {
     if (addDays(week, 6) < wod.start_monday || week > wod.end_monday)
       return json({error: "Cette semaine est hors période du programme."}, 400);
     // Texte modifié à la main : les blocs générés par l'IA ne correspondent plus, ils sont oubliés.
+    const version = uid().replaceAll("-", "");
     await e.DB.batch([
       coachHistoryStatement(e, m[1], week, content),
       e.DB.prepare(
-        "INSERT INTO weekly_wod_programming(wod_id,user_id,week_start,content,updated_at) VALUES(?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(wod_id,week_start) DO UPDATE SET blocks=CASE WHEN weekly_wod_programming.content=excluded.content THEN weekly_wod_programming.blocks ELSE NULL END,content=excluded.content,updated_at=CURRENT_TIMESTAMP"
-      ).bind(m[1], u.id, week, content),
+        "INSERT INTO weekly_wod_programming(wod_id,user_id,week_start,content,edit_version,updated_at) VALUES(?,?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(wod_id,week_start) DO UPDATE SET blocks=CASE WHEN weekly_wod_programming.content=excluded.content THEN weekly_wod_programming.blocks ELSE NULL END,content=excluded.content,edit_version=excluded.edit_version,updated_at=CURRENT_TIMESTAMP"
+      ).bind(m[1], u.id, week, content, version),
     ]);
-    return json({ok: true});
+    return json({ok: true, edit_version: version});
   }
   m = p.match(/^\/api\/wods\/([\w-]+)$/);
   if (m && r.method === "PUT") {
@@ -5384,7 +5906,7 @@ async function api(r, e, p, ctx = null, apiUser = null) {
         .all(),
       daysBetween(from, to) <= 92 ? memberBoxWods(e, u.id, from, to) : [],
       e.DB.prepare(
-        "SELECT w.id,w.wod_date,w.title,w.content,w.chrono,w.movement_ids,w.benchmark_id,w.score_type,w.blocks,w.options,w.common_wod_id,(SELECT group_concat(s.id) FROM training_sessions s WHERE s.daily_wod_id=w.id AND s.user_id=w.user_id) AS session_ids FROM daily_wods w WHERE w.user_id=? AND w.wod_date>=? AND w.wod_date<=? ORDER BY w.wod_date,w.created_at LIMIT 60"
+        "SELECT w.id,w.wod_date,w.title,w.content,w.chrono,w.movement_ids,w.benchmark_id,w.score_type,w.blocks,w.options,w.common_wod_id,w.edit_version,(SELECT group_concat(s.id) FROM training_sessions s WHERE s.daily_wod_id=w.id AND s.user_id=w.user_id) AS session_ids FROM daily_wods w WHERE w.user_id=? AND w.wod_date>=? AND w.wod_date<=? ORDER BY w.wod_date,w.created_at LIMIT 60"
       )
         .bind(u.id, from, to)
         .all(),
@@ -5837,6 +6359,7 @@ export default {
               e.DB.prepare("DELETE FROM password_resets WHERE expires_at<=?").bind(now - 86400),
               e.DB.prepare("DELETE FROM weekly_plan_requests WHERE expires_at<=?").bind(now),
               e.DB.prepare("DELETE FROM pr_api_requests WHERE expires_at<=?").bind(now),
+              e.DB.prepare("DELETE FROM wod_api_requests WHERE expires_at<=?").bind(now),
             ])
           : Promise.all([sendReminders(e), sendMonthlyReportPushes(e), sendCommonWod(e)])
       )

@@ -71,7 +71,7 @@ function renderPrograms() {
       ? shown
           .map(
             p =>
-              `<article class="program card ${collapsed.has(p.id) ? "collapsed" : ""}"><div class="programhead"><div class="program-title"><button class="smallbtn collapse-program" data-toggle-program="${p.id}" aria-expanded="${!collapsed.has(p.id)}">${collapsed.has(p.id) ? "＋" : "−"}</button><div><h3>${esc(p.name)}${p.coach_mode ? ` <span class="tracked-tag">Coach</span>` : ""}</h3><small>${programSubtitle(p)}</small></div></div><div class="entryactions">${p.coach_mode ? `<button class="smallbtn" data-coach-invite="${p.id}" aria-label="Proposer à des inscrits" title="Proposer à des inscrits"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0"/><path d="M19 8v6"/><path d="M16 11h6"/></svg></button>` : ""}<button class="smallbtn" data-edit-program="${p.id}" aria-label="Modifier" title="Modifier">${PROGRAM_EDIT_ICON}</button><button class="smallbtn delete ${p.has_sessions ? "is-disabled" : ""}" data-del-program="${p.id}" aria-label="Supprimer le programme" title="${p.has_sessions ? "Ce programme a déjà une séance réalisée et ne peut pas être supprimé" : "Supprimer le programme"}" ${p.has_sessions ? 'aria-disabled="true"' : ""}>${PROGRAM_DELETE_ICON}</button></div></div><div class="programbody"><div class="program-section program-subsection ${folded.has(p.id + ":wods") ? "collapsed" : ""}"><div class="program-section-heading program-section-toolbar"><button class="smallbtn section-collapse program-section-toggle" data-toggle-program-section="${p.id}:wods" aria-label="Replier les WOD" aria-expanded="${!folded.has(p.id + ":wods")}">${folded.has(p.id + ":wods") ? "＋" : "−"}</button><span>WOD</span>${reorderToggle(p.id + ":wods", visibleWods(p.id).length, "Réorganiser les WOD")}<button type="button" class="smallbtn" data-ai-program="${p.id}" aria-label="Générer le programme avec l’IA" title="Générer le programme avec l’IA">${AI_ICON}</button>${p.published_at ? "" : `<button class="primary addsession-compact addwod" data-add-wod="${p.id}" aria-label="Ajouter un WOD" title="Ajouter un WOD">＋</button>`}</div><div class="program-subsection-body"><div class="wodlist">${
+              `<article class="program card ${collapsed.has(p.id) ? "collapsed" : ""}"><div class="programhead"><div class="program-title"><button class="smallbtn collapse-program" data-toggle-program="${p.id}" aria-expanded="${!collapsed.has(p.id)}">${collapsed.has(p.id) ? "＋" : "−"}</button><div><h3>${esc(p.name)}${p.coach_mode ? ` <span class="tracked-tag">Coach</span>` : ""}</h3><small>${programSubtitle(p)}</small></div></div><div class="entryactions">${p.coach_mode ? `<button class="smallbtn" data-coach-invite="${p.id}" aria-label="Proposer à des inscrits" title="Proposer à des inscrits"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0"/><path d="M19 8v6"/><path d="M16 11h6"/></svg></button>` : ""}<button class="smallbtn" data-edit-program="${p.id}" aria-label="Modifier" title="Modifier">${PROGRAM_EDIT_ICON}</button><button class="smallbtn delete ${p.has_sessions ? "is-disabled" : ""}" data-del-program="${p.id}" aria-label="Supprimer le programme" title="${p.has_sessions ? "Ce programme a déjà une séance réalisée et ne peut pas être supprimé" : "Supprimer le programme"}" ${p.has_sessions ? 'aria-disabled="true"' : ""}>${PROGRAM_DELETE_ICON}</button></div></div><div class="programbody">${programCoachingNotes(p)}<div class="program-section program-subsection ${folded.has(p.id + ":wods") ? "collapsed" : ""}"><div class="program-section-heading program-section-toolbar"><button class="smallbtn section-collapse program-section-toggle" data-toggle-program-section="${p.id}:wods" aria-label="Replier les WOD" aria-expanded="${!folded.has(p.id + ":wods")}">${folded.has(p.id + ":wods") ? "＋" : "−"}</button><span>WOD</span>${reorderToggle(p.id + ":wods", visibleWods(p.id).length, "Réorganiser les WOD")}<button type="button" class="smallbtn" data-ai-program="${p.id}" aria-label="Générer le programme avec l’IA" title="Générer le programme avec l’IA">${AI_ICON}</button>${p.published_at ? "" : `<button class="primary addsession-compact addwod" data-add-wod="${p.id}" aria-label="Ajouter un WOD" title="Ajouter un WOD">＋</button>`}</div><div class="program-subsection-body"><div class="wodlist">${
                 visibleWods(p.id)
                   .map(
                     (w, i) =>
@@ -146,13 +146,15 @@ function renderPrograms() {
             content = field?.value || "";
           b.disabled = true;
           try {
-            await api("/wods/" + wod + "/weekly-programming", {
+            const {edit_version} = await api("/wods/" + wod + "/weekly-programming", {
               method: "PUT",
               body: JSON.stringify({week_start: week, content}),
             });
             const old = weeklyWodPrograms.find(x => x.wod_id === wod && x.week_start === week);
-            if (old) old.content = content;
-            else weeklyWodPrograms.push({wod_id: wod, week_start: week, content});
+            if (old) {
+              if (old.content !== content) old.blocks = null;
+              Object.assign(old, {content, edit_version: edit_version ?? old.edit_version});
+            } else weeklyWodPrograms.push({wod_id: wod, week_start: week, content, edit_version});
             toast("Programmation hebdomadaire enregistrée.");
           } catch (e) {
             toast(e.message);
@@ -322,6 +324,10 @@ function programSubtitle(p) {
     (p.is_public ? " · public" + (p.followers ? ", suivi par " + people(p.followers) : "") : "")
   );
 }
+function programCoachingNotes(p) {
+  if (!p.coaching_instructions) return "";
+  return `<section class="program-section"><div class="program-section-heading">Consignes de coaching</div><p class="program-coaching-notes">${esc(p.coaching_instructions)}</p></section>`;
+}
 // Programme suivi (programme public d’un autre utilisateur, ou programme de coach accepté), en lecture seule et mis à
 // jour en direct par son auteur.
 function followedProgramCard(p) {
@@ -333,7 +339,7 @@ function followedProgramCard(p) {
     folded = window.cfProgramSections || (window.cfProgramSections = new Set()),
     fold = (key, label) =>
       `<button class="smallbtn section-collapse program-section-toggle" data-toggle-program-section="${p.id}:${key}" aria-label="${label}" aria-expanded="${!folded.has(p.id + ":" + key)}">${folded.has(p.id + ":" + key) ? "＋" : "−"}</button>`;
-  return `<article class="program card program-followed ${collapsed.has(p.id) ? "collapsed" : ""}"><div class="programhead"><div class="program-title"><button class="smallbtn collapse-program" data-toggle-program="${p.id}" aria-expanded="${!collapsed.has(p.id)}">${collapsed.has(p.id) ? "＋" : "−"}</button><div><h3>${esc(p.name)} <span class="tracked-tag">${p.coach_mode ? "Coach" : "Suivi"}</span></h3><small>${author ? (p.coach_mode ? "coach : " : "par ") + esc(author) + " · " : ""}mes dates : ${fmt(p.start_monday)} → ${fmt(p.end_monday)}</small></div></div><div class="entryactions">${p.coach_mode === "dated" ? "" : `<button type="button" class="smallbtn" data-follow-dates="${p.id}" aria-label="Modifier mes dates" title="Modifier mes dates">${PROGRAM_EDIT_ICON}</button>`}<button type="button" class="smallbtn delete" data-unfollow-program="${p.id}" aria-label="Arrêter de suivre" title="Arrêter de suivre">${PROGRAM_DELETE_ICON}</button></div></div><div class="programbody"><div class="program-section program-subsection ${folded.has(p.id + ":wods") ? "collapsed" : ""}"><div class="program-section-heading program-section-toolbar">${fold("wods", "Replier les WOD")}<span>WOD</span></div><div class="program-subsection-body"><div class="wodlist">${
+  return `<article class="program card program-followed ${collapsed.has(p.id) ? "collapsed" : ""}"><div class="programhead"><div class="program-title"><button class="smallbtn collapse-program" data-toggle-program="${p.id}" aria-expanded="${!collapsed.has(p.id)}">${collapsed.has(p.id) ? "＋" : "−"}</button><div><h3>${esc(p.name)} <span class="tracked-tag">${p.coach_mode ? "Coach" : "Suivi"}</span></h3><small>${author ? (p.coach_mode ? "coach : " : "par ") + esc(author) + " · " : ""}mes dates : ${fmt(p.start_monday)} → ${fmt(p.end_monday)}</small></div></div><div class="entryactions">${p.coach_mode === "dated" ? "" : `<button type="button" class="smallbtn" data-follow-dates="${p.id}" aria-label="Modifier mes dates" title="Modifier mes dates">${PROGRAM_EDIT_ICON}</button>`}<button type="button" class="smallbtn delete" data-unfollow-program="${p.id}" aria-label="Arrêter de suivre" title="Arrêter de suivre">${PROGRAM_DELETE_ICON}</button></div></div><div class="programbody">${programCoachingNotes(p)}<div class="program-section program-subsection ${folded.has(p.id + ":wods") ? "collapsed" : ""}"><div class="program-section-heading program-section-toolbar">${fold("wods", "Replier les WOD")}<span>WOD</span></div><div class="program-subsection-body"><div class="wodlist">${
     visibleWods(p.id)
       .map(w => {
         const description = w.is_tracked ? w.planned_comment : weeklyWodContent(w.id, week) || w.planned_comment;
@@ -568,6 +574,7 @@ function openProgram(p = null) {
   f.elements.name.value = p?.name || "";
   f.elements.is_default.checked = !!p?.is_default;
   f.elements.is_public.checked = !!p?.is_public;
+  f.elements.coaching_instructions.value = p?.coaching_instructions ?? "";
   f.elements.weekly_cardio_target_min.value = p?.weekly_cardio_target_min ?? "";
   f.elements.weekly_cardio_target_max.value = p?.weekly_cardio_target_max ?? "";
   // L'option « programme par défaut » n'est plus proposée : elle n'apparaît que pour un ancien programme par défaut.
@@ -603,6 +610,7 @@ $("#programform").onsubmit = async e => {
       end: f.get("end"),
       is_default: $("#programform").elements.is_default.checked,
       is_public: $("#programform").elements.is_public.checked,
+      coaching_instructions: f.get("coaching_instructions").trim() || null,
       weekly_cardio_target_min: min === "" ? null : Number(min),
       weekly_cardio_target_max: max === "" ? null : Number(max),
     },

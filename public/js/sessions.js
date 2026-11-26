@@ -383,10 +383,9 @@ function weekSuggestions(simple, canCreateWod) {
     ${join ? '<button type="button" class="smallbtn" data-week-action="join"><span aria-hidden="true">🤝</span>Rejoindre une box</button>' : ""}
   </div>${simple ? '<p class="muted">Créer ou suivre un programme active l’interface avancée.</p>' : ""}</section>`;
 }
-// Carte du haut : séances perso faites / prévues, comme le compteur de la rubrique « Mes WOD » (WOD de la
-// programmation et WOD du jour hors prog).
-const persoStat = (doneProgram, totalProgram) =>
-  `<div class="weekstat weekstat-program"><strong>${doneProgram + persoDailyWods().filter(dailyWodDone).length}/${totalProgram + persoDailyWods().length}</strong><span>Nombre de séances perso</span></div>`;
+// La cible d’un programme se calcule sur ses modèles. Les WOD libres restent visibles dans « Mes WOD ».
+const persoStat = (done, total, label) =>
+  `<div class="weekstat weekstat-program"><strong>${done}/${total}</strong><span>${label}</span></div>`;
 function renderWeek() {
   const now = today();
   if (!selectedWeekStart) selectedWeekStart = mondayOf(now);
@@ -411,7 +410,9 @@ function renderWeek() {
   const nav = `<div class="weeknav"><button class="smallbtn" id="prevweek" aria-label="Semaine précédente" title="Semaine précédente">‹</button><div class="weekdate-label"><button type="button" class="week-current" id="thisweek" title="Revenir à la semaine en cours">Semaine du</button><input id="weekdate" type="date" value="${dateInput}" max="${now}" aria-label="Semaine du"></div><button class="smallbtn" id="nextweek" aria-label="Semaine suivante" title="Semaine suivante">›</button></div>`;
   const personalStats =
     !simple && (ws.length || personal)
-      ? persoStat(ws.filter(w => week.some(s => s.wod_id === w.id)).length, ws.length)
+      ? ws.length
+        ? persoStat(ws.filter(w => week.some(s => s.wod_id === w.id)).length, ws.length, "Objectif du programme")
+        : persoStat(persoDailyWods().filter(dailyWodDone).length, personal, "Nombre de séances perso")
       : "";
   const stats =
     future && (simple || !p)

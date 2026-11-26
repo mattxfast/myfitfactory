@@ -184,6 +184,8 @@ const apiKeyForm = $("#apikeyform"),
     "workouts:write": "Créer et modifier des entraînements",
     "plans:read": "Consulter le planning hebdomadaire",
     "plans:write": "Modifier le planning hebdomadaire",
+    "coaching:read": "Consulter le contexte de coaching",
+    "wods:write": "Enregistrer des WOD prévus",
   };
 let apiKeyView = 0;
 

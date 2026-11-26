@@ -128,6 +128,7 @@ export function buildPrompt(c) {
     "",
     "## Programme",
     `${c.program.name} — semaine ${c.weekIndex}/${c.weekCount} (du ${c.weekLabel})`,
+    ...(c.program.coaching_instructions ? ["Consignes générales : " + c.program.coaching_instructions] : []),
     // La thématique / structure du WOD arrive par la consigne particulière (pré-remplie et modifiable dans la fenêtre).
     "WOD à écrire : " + c.wod.name,
     "Mouvements à travailler dans ce WOD : " + (c.wod.movement_names || "aucun en particulier"),

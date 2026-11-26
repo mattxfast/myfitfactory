@@ -1,0 +1,2035 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "myFitFactory — Contexte de coaching et WOD prévus",
+    "version": "1.0.0",
+    "description": "API de lecture, validation et persistance. La génération du contenu appartient à l’assistant externe.",
+    "x-permissions": {
+      "coaching:read": "Lire le contexte agrégé, y compris séances et PR",
+      "wods:write": "Préparer et enregistrer les WOD prévus"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://myfitfactory.mattxfast.workers.dev"
+    }
+  ],
+  "paths": {
+    "/api/coaching-context": {
+      "get": {
+        "operationId": "readCoachingContext",
+        "description": "Retourner le contexte sportif du compte authentifié.",
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "x-myfitfactory-permission": "coaching:read",
+        "responses": {
+          "200": {
+            "description": "Contexte",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Contexte"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erreur"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Clé absente, expirée ou invalide",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erreur"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission insuffisante",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erreur"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Programme ou WOD introuvable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erreur"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Limite de requêtes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erreur"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "description": "Date de référence. Par défaut, le jour dans time_zone.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "time_zone",
+            "in": "query",
+            "required": false,
+            "description": "Fuseau horaire IANA.",
+            "schema": {
+              "type": "string",
+              "maxLength": 80,
+              "default": "Europe/Paris"
+            }
+          },
+          {
+            "name": "history_days",
+            "in": "query",
+            "required": false,
+            "description": "Nombre de jours de l’historique récent, date de référence comprise.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 84,
+              "default": 28
+            }
+          },
+          {
+            "name": "program_id",
+            "in": "query",
+            "required": false,
+            "description": "Programme accessible.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$"
+            }
+          },
+          {
+            "name": "wod_id",
+            "in": "query",
+            "required": false,
+            "description": "Modèle accessible du programme.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$"
+            }
+          }
+        ]
+      }
+    },
+    "/api/generated-wods/preview": {
+      "post": {
+        "operationId": "prepareGeneratedWod",
+        "description": "Valider et présenter la proposition sans modifier la programmation.",
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "x-myfitfactory-permission": "wods:write",
+        "responses": {
+          "200": {
+            "description": "Aperçu",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Aperçu"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erreur"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Clé absente, expirée ou invalide",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erreur"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission insuffisante",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erreur"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Programme ou WOD introuvable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erreur"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Destination protégée ou conflit d’idempotence",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erreur"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type différent de application/json",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erreur"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Limite de requêtes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erreur"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WODProposé"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/generated-wods": {
+      "put": {
+        "operationId": "saveGeneratedWod",
+        "description": "Appliquer après confirmation explicite de l’utilisateur. Réutiliser le même corps et les mêmes en-têtes en cas de perte de réponse.",
+        "security": [
+          {
+            "Bearer": []
+          }
+        ],
+        "x-myfitfactory-permission": "wods:write",
+        "responses": {
+          "200": {
+            "description": "Écriture",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Écriture"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "description": "Nouvelle version entre guillemets.",
+                "schema": {
+                  "type": "string",
+                  "pattern": "^\"[a-f0-9]{32}\"$"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Requête invalide",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erreur"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Clé absente, expirée ou invalide",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erreur"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission insuffisante",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erreur"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Programme ou WOD introuvable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erreur"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Destination protégée ou conflit d’idempotence",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erreur"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Version modifiée",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erreur"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type différent de application/json",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erreur"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Version ou confirmation requise",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erreur"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Limite de requêtes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erreur"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "description": "Requis pour une création. Exclusif avec If-Match.",
+            "schema": {
+              "const": "*"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "description": "Version entre guillemets. Requise pour un remplacement. Exclusive avec If-None-Match.",
+            "schema": {
+              "type": "string",
+              "pattern": "^\"[a-f0-9]{32}\"$"
+            }
+          },
+          {
+            "name": "X-WOD-Confirmation",
+            "in": "header",
+            "required": true,
+            "description": "Confirmation signée de l’aperçu.",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{10}\\.[a-zA-Z0-9_-]{43}$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Horodatage Unix en secondes et UUID v4. Valable 24 h.",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{10}\\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WODProposé"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "Bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Clé API personnelle myFitFactory. Ne jamais la mettre dans le corps d’un appel."
+      }
+    },
+    "schemas": {
+      "Erreur": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": ["error"],
+        "additionalProperties": false
+      },
+      "DestinationProgramme": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "program"
+          },
+          "program_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "wod_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "week_start": {
+            "type": "string",
+            "format": "date",
+            "description": "Un lundi dans la période du programme."
+          }
+        },
+        "required": ["kind", "program_id", "wod_id", "week_start"],
+        "additionalProperties": false
+      },
+      "DestinationLibre": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "free"
+          },
+          "wod_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+          },
+          "wod_date": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        "required": ["kind", "wod_id", "wod_date"],
+        "additionalProperties": false
+      },
+      "Destination": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/DestinationProgramme"
+          },
+          {
+            "$ref": "#/components/schemas/DestinationLibre"
+          }
+        ]
+      },
+      "MouvementProposé": {
+        "type": "object",
+        "properties": {
+          "nom": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "movement_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reps": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "charge": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scaling": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": ["nom"],
+        "additionalProperties": false
+      },
+      "BlocProposé": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["echauffement", "technique", "force", "metcon", "retour_au_calme"]
+          },
+          "duree_min": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 600
+          },
+          "format": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "time_cap_min": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 600
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 400
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mouvements": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MouvementProposé"
+            },
+            "maxItems": 12
+          }
+        },
+        "required": ["type", "duree_min", "mouvements"],
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": ["description"],
+            "properties": {
+              "description": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          {
+            "properties": {
+              "mouvements": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MouvementProposé"
+                },
+                "minItems": 1
+              }
+            }
+          }
+        ]
+      },
+      "WODProgramme": {
+        "type": "object",
+        "properties": {
+          "titre": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "duree_estimee_min": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 600
+          },
+          "blocs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BlocProposé"
+            },
+            "minItems": 1,
+            "maxItems": 10
+          },
+          "objectif_score": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notes_coach": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": ["titre", "duree_estimee_min", "blocs"],
+        "additionalProperties": false
+      },
+      "WODLibre": {
+        "type": "object",
+        "properties": {
+          "titre": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "duree_estimee_min": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 600
+          },
+          "blocs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BlocProposé"
+            },
+            "minItems": 1,
+            "maxItems": 10
+          },
+          "objectif_score": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notes_coach": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "score_type": {
+            "type": "string",
+            "enum": ["none", "time", "reps", "load"]
+          }
+        },
+        "required": ["titre", "duree_estimee_min", "blocs"],
+        "additionalProperties": false
+      },
+      "WODProposé": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "target": {
+                "$ref": "#/components/schemas/DestinationProgramme"
+              },
+              "wod": {
+                "$ref": "#/components/schemas/WODProgramme"
+              }
+            },
+            "required": ["target", "wod"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "target": {
+                "$ref": "#/components/schemas/DestinationLibre"
+              },
+              "wod": {
+                "$ref": "#/components/schemas/WODLibre"
+              }
+            },
+            "required": ["target", "wod"],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "Bloc": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "movement_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$"
+            }
+          }
+        },
+        "required": ["type", "label", "text"],
+        "additionalProperties": false
+      },
+      "Aperçu": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "$ref": "#/components/schemas/Destination"
+          },
+          "operation": {
+            "type": "string",
+            "enum": ["create", "replace"]
+          },
+          "edit_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{32}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "previous_content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "duration_minutes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 600
+          },
+          "content": {
+            "type": "string"
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Bloc"
+            }
+          },
+          "confirmation": {
+            "type": "string",
+            "pattern": "^\\d{10}\\.[a-zA-Z0-9_-]{43}$"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "target",
+          "operation",
+          "edit_version",
+          "previous_content",
+          "title",
+          "duration_minutes",
+          "content",
+          "blocks",
+          "confirmation",
+          "expires_at"
+        ],
+        "additionalProperties": false
+      },
+      "Écriture": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "const": true
+          },
+          "target": {
+            "$ref": "#/components/schemas/Destination"
+          },
+          "edit_version": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$"
+          }
+        },
+        "required": ["ok", "target", "edit_version"],
+        "additionalProperties": false
+      },
+      "Modèle": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "activity_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 600
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "movement_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$"
+            }
+          },
+          "is_tracked": {
+            "type": "boolean"
+          },
+          "score_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": ["none", "time", "rounds", "load"]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "plan_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{32}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "completed": {
+            "type": "boolean"
+          },
+          "programming": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "blocks": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/components/schemas/Bloc"
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "edit_version": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{32}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": ["content", "blocks", "edit_version"],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "instructions",
+          "activity_id",
+          "type_id",
+          "duration_minutes",
+          "movement_ids",
+          "is_tracked",
+          "score_type",
+          "plan_version",
+          "completed",
+          "programming"
+        ],
+        "additionalProperties": false
+      },
+      "MouvementSuivi": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "catalog_movement_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": ["id", "catalog_movement_id", "name"],
+        "additionalProperties": false
+      },
+      "Couverture": {
+        "type": "object",
+        "properties": {
+          "worked": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "movements": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                },
+                "catalog_movement_id": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "sessions_count": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": ["id", "catalog_movement_id", "name", "sessions_count"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["worked", "total", "movements"],
+        "additionalProperties": false
+      },
+      "Programme": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "start_monday": {
+            "type": "string",
+            "format": "date"
+          },
+          "end_monday": {
+            "type": "string",
+            "format": "date"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "coach_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": ["free", "dated"]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "coaching_instructions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tracked_movements": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MouvementSuivi"
+            }
+          },
+          "weekly_workout_target": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "weekly_cardio_target_min": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "weekly_cardio_target_max": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workout_models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Modèle"
+            }
+          },
+          "week": {
+            "type": "object",
+            "properties": {
+              "sessions_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "workouts_count_toward_target": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "intense_cardio_exposures": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "movement_coverage": {
+                "$ref": "#/components/schemas/Couverture"
+              },
+              "remaining_wod_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                }
+              }
+            },
+            "required": [
+              "sessions_count",
+              "workouts_count_toward_target",
+              "intense_cardio_exposures",
+              "movement_coverage",
+              "remaining_wod_ids"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "start_monday",
+          "end_monday",
+          "active",
+          "read_only",
+          "coach_mode",
+          "coaching_instructions",
+          "tracked_movements",
+          "weekly_workout_target",
+          "weekly_cardio_target_min",
+          "weekly_cardio_target_max",
+          "workout_models",
+          "week"
+        ],
+        "additionalProperties": false
+      },
+      "MouvementRéalisé": {
+        "type": "object",
+        "properties": {
+          "movement_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": ["movement_id", "name"],
+        "additionalProperties": false
+      },
+      "Fréquence": {
+        "type": "object",
+        "properties": {
+          "movement_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "last_worked_on": {
+            "type": "string",
+            "format": "date"
+          },
+          "sessions_count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": ["movement_id", "name", "last_worked_on", "sessions_count"],
+        "additionalProperties": false
+      },
+      "SéanceRéalisée": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "session_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 600
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "program_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "wod_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "wod_name": {
+            "type": "string"
+          },
+          "activity_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "activity_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "wod_type_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": ["program", "other", "box", "free", "common"]
+          },
+          "daily_wod_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "box_wod_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "actual_comment": {
+            "type": "string"
+          },
+          "cardio_intensity": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "worked_movements": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MouvementRéalisé"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "session_date",
+          "duration_minutes",
+          "program_id",
+          "wod_id",
+          "wod_name",
+          "activity_id",
+          "activity_name",
+          "type_id",
+          "wod_type_name",
+          "source",
+          "daily_wod_id",
+          "box_wod_id",
+          "actual_comment",
+          "cardio_intensity",
+          "worked_movements"
+        ],
+        "additionalProperties": false
+      },
+      "WODPersonnel": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "wod_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "title": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "chrono": {
+            "anyOf": [
+              {
+                "type": "object",
+                "description": "Réglage de chrono existant pour un WOD personnel."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "movement_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$"
+            }
+          },
+          "blocks": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Bloc"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "benchmark_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "score_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": ["time", "reps", "load"]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "manual": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "blocks": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": ["name", "blocks"],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "common_wod_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "session_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$"
+            }
+          },
+          "edit_version": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$"
+          },
+          "can_replace": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "wod_date",
+          "title",
+          "content",
+          "chrono",
+          "movement_ids",
+          "blocks",
+          "benchmark_id",
+          "score_type",
+          "manual",
+          "common_wod_id",
+          "session_ids",
+          "edit_version",
+          "can_replace"
+        ],
+        "additionalProperties": false
+      },
+      "WODBox": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "box_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "box_name": {
+            "type": "string"
+          },
+          "wod_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "name": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "blocks": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "score_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": ["none", "time", "reps", "load"]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "session_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$"
+            }
+          },
+          "movement_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "box_id",
+          "box_name",
+          "wod_date",
+          "name",
+          "content",
+          "blocks",
+          "score_type",
+          "type_id",
+          "type_name",
+          "session_ids",
+          "movement_ids"
+        ],
+        "additionalProperties": false
+      },
+      "Activité": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "duration_minutes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 600
+          },
+          "is_default": {
+            "enum": [0, 1]
+          },
+          "is_active": {
+            "const": 1
+          }
+        },
+        "required": ["id", "name", "duration_minutes", "is_default", "is_active"],
+        "additionalProperties": false
+      },
+      "MouvementCatalogue": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "measurement_method": {
+            "type": "string",
+            "enum": ["load", "force", "reps", "distance", "reps_time"]
+          },
+          "category": {
+            "type": "string",
+            "enum": ["lift", "force", "gym", "engine", "core", "functional"]
+          }
+        },
+        "required": ["id", "name", "measurement_method", "category"],
+        "additionalProperties": false
+      },
+      "Record": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "movement_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "movement_name": {
+            "type": "string"
+          },
+          "measurement_method": {
+            "type": "string",
+            "enum": ["load", "force", "reps", "distance", "reps_time"]
+          },
+          "category": {
+            "type": "string",
+            "enum": ["lift", "force", "gym", "engine", "core", "functional"]
+          },
+          "record_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "value": {
+            "type": "number"
+          },
+          "rep_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fixed_kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": ["distance", "reps", "time"]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fixed_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "edit_version": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$"
+          },
+          "unit": {
+            "type": "string",
+            "enum": ["kg", "s", "m", "reps"]
+          },
+          "fixed_unit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": ["s", "m", "reps"]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "movement_id",
+          "movement_name",
+          "measurement_method",
+          "category",
+          "record_date",
+          "value",
+          "rep_count",
+          "fixed_kind",
+          "fixed_value",
+          "created_at",
+          "edit_version",
+          "unit",
+          "fixed_unit"
+        ],
+        "additionalProperties": false
+      },
+      "Contexte": {
+        "type": "object",
+        "properties": {
+          "reference_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "time_zone": {
+            "type": "string"
+          },
+          "active_program_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$"
+            }
+          },
+          "selected_program_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "selected_wod_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "athlete_profile": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "level": {
+                    "type": "string"
+                  },
+                  "goals": {
+                    "type": "string"
+                  },
+                  "equipment": {
+                    "type": "string"
+                  },
+                  "constraints": {
+                    "type": "string"
+                  }
+                },
+                "required": ["level", "goals", "equipment", "constraints"],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "programs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Programme"
+            }
+          },
+          "week": {
+            "type": "object",
+            "properties": {
+              "week_start": {
+                "type": "string",
+                "format": "date"
+              },
+              "week_end": {
+                "type": "string",
+                "format": "date"
+              },
+              "completed_sessions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/SéanceRéalisée"
+                }
+              },
+              "worked_movements": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Fréquence"
+                }
+              },
+              "sessions_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "intense_cardio_exposures": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "free_wods": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/WODPersonnel"
+                }
+              },
+              "box_wods": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/WODBox"
+                }
+              }
+            },
+            "required": [
+              "week_start",
+              "week_end",
+              "completed_sessions",
+              "worked_movements",
+              "sessions_count",
+              "intense_cardio_exposures",
+              "free_wods",
+              "box_wods"
+            ],
+            "additionalProperties": false
+          },
+          "recent": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "string",
+                "format": "date"
+              },
+              "to": {
+                "type": "string",
+                "format": "date"
+              },
+              "sessions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/SéanceRéalisée"
+                }
+              },
+              "movement_frequency": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Fréquence"
+                }
+              }
+            },
+            "required": ["from", "to", "sessions", "movement_frequency"],
+            "additionalProperties": false
+          },
+          "performance": {
+            "type": "object",
+            "properties": {
+              "records": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Record"
+                }
+              },
+              "workload_records": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                }
+              }
+            },
+            "required": ["records", "workload_records"],
+            "additionalProperties": false
+          },
+          "references": {
+            "type": "object",
+            "properties": {
+              "activities": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Activité"
+                }
+              },
+              "wod_types": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["id", "name"],
+                  "additionalProperties": false
+                }
+              },
+              "movements": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MouvementCatalogue"
+                }
+              }
+            },
+            "required": ["activities", "wod_types", "movements"],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "reference_date",
+          "time_zone",
+          "active_program_ids",
+          "selected_program_id",
+          "selected_wod_id",
+          "athlete_profile",
+          "programs",
+          "week",
+          "recent",
+          "performance",
+          "references"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}

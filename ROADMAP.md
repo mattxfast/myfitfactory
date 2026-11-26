@@ -70,6 +70,7 @@ Prochain numéro libre : **67**
 - [ ] **64.** Intégrations IA et API V3.3 : gérer son historique de records personnels avec une clé personnelle. PR en attente de validation.
 - [x] **65.** Afficher une pastille rouge sur l’onglet Membres de l’espace gestionnaire tant qu’une demande d’adhésion attend une réponse. — fait le 25/11/2026
 - [x] **66.** Suivre l’intensité cardiovasculaire des séances, fixer une cible d’expositions intenses par programme et afficher les statistiques. Le compteur « Cardio intense » figure dans « Détail », avec une bordure verte de chaque côté dès la première exposition. — fait le 26/11/2026
+- [x] **67.** Ouvrir le contexte sportif et l’enregistrement de WOD prévus depuis un assistant externe, avec aperçu et contrôle de version. — fait le 26/11/2026 ([contrat et intégration](docs/external-wods.md))
 
 ## Look and feel
 

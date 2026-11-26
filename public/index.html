@@ -675,6 +675,13 @@
                     ><input type="checkbox" name="permissions" value="prs:write" />Créer, modifier et supprimer des
                     records</label
                   >
+                  <label class="reminder-switch"
+                    ><input type="checkbox" name="permissions" value="coaching:read" />Consulter le contexte de
+                    coaching</label
+                  >
+                  <label class="reminder-switch"
+                    ><input type="checkbox" name="permissions" value="wods:write" />Enregistrer des WOD prévus</label
+                  >
                 </div>
                 <button class="primary">Créer la clé</button>
                 <div id="apikeyerror" class="error" role="status"></div>
@@ -738,6 +745,17 @@
               <label id="programstartfield">Début<input name="start" type="date" required /></label
               ><label id="programendfield">Fin<input name="end" type="date" required /></label>
             </div>
+          </section>
+          <section class="form-block">
+            <h3>Consignes de coaching</h3>
+            <label
+              >Consignes générales (facultatif)<textarea
+                name="coaching_instructions"
+                rows="4"
+                maxlength="4000"
+                placeholder="Objectifs, priorités, durée et règles de progression"
+              ></textarea>
+            </label>
           </section>
           <section class="form-block">
             <h3>Objectif cardio hebdomadaire</h3>

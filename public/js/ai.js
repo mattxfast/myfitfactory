@@ -126,7 +126,16 @@ function aiRequest(f) {
   };
 }
 const aiGenerate = (wodId, week, request) =>
-  sendApi("/wods/" + wodId + "/generate", "POST", {...request, week_start: week}, AI_TIMEOUT);
+  sendApi(
+    "/wods/" + wodId + "/generate",
+    "POST",
+    {
+      ...request,
+      week_start: week,
+      edit_version: weeklyWodPrograms.find(x => x.wod_id === wodId && x.week_start === week)?.edit_version ?? null,
+    },
+    AI_TIMEOUT
+  );
 function aiProgress(t) {
   aiWaitStart($("#aiprogress"), t);
 }

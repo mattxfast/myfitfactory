@@ -45,7 +45,7 @@ function dailyWodCards(wods = persoDailyWods()) {
         future = w.wod_date > today(),
         title = w.common_wod_id ? wodDateTitle(w.wod_date) : w.title,
         label = w.common_wod_id ? "WOD du jour" : "Hors prog · " + fmt(w.wod_date);
-      return `<article class="weekwod card ${n ? "done" : ""}"><div class="weekcount">${n ? "" : `<button type="button" class="smallbtn" data-daily-log="${w.id}" ${future ? "disabled" : ""} aria-label="${future ? "Prévu pour demain" : "Enregistrer la séance"}" title="${future ? "Prévu pour demain" : "Enregistrer la séance"}"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button><button type="button" class="smallbtn delete" data-daily-del="${w.id}" aria-label="Supprimer ce WOD" title="Supprimer ce WOD"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button>`}</div><div class="weekwod-text" role="button" tabindex="0" data-daily-open="${w.id}" aria-label="Voir le détail de ${esc(title)}"><b>${esc(title)}</b><p>${esc(label)}</p></div></article>`;
+      return `<article class="weekwod card ${n ? "done" : ""}"><div class="weekcount">${n ? "" : `<button type="button" class="smallbtn" data-daily-log="${w.id}" ${future ? "disabled" : ""} aria-label="${future ? "Prévu le " + fmt(w.wod_date) : "Enregistrer la séance"}" title="${future ? "Prévu le " + fmt(w.wod_date) : "Enregistrer la séance"}"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button><button type="button" class="smallbtn delete" data-daily-del="${w.id}" aria-label="Supprimer ce WOD" title="Supprimer ce WOD"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button>`}</div><div class="weekwod-text" role="button" tabindex="0" data-daily-open="${w.id}" aria-label="Voir le détail de ${esc(title)}"><b>${esc(title)}</b><p>${esc(label)}</p></div></article>`;
     })
     .join("");
 }
@@ -94,6 +94,7 @@ function openManualWod(w = null) {
   f.score_type.value = w?.score_type || "none";
   // Mouvements du catalogue reconnus par l’IA : cochés d’office dans la séance.
   form.dataset.movements = JSON.stringify(w?.movement_ids || []);
+  form.dataset.version = w?.edit_version || "";
   $("#manualwodtitle").textContent = w ? "Modifier le WOD" : "Créer mon WOD";
   $("#manualwoderror").textContent = "";
   $("#manualwoddialog").showModal();
@@ -132,7 +133,10 @@ $("#manualwodform").onsubmit = async e => {
   try {
     if (id) {
       // Modification : demande le réseau.
-      const d = await sendApi("/daily-wods/" + id, "PUT", body);
+      const d = await sendApi("/daily-wods/" + id, "PUT", {
+        ...body,
+        ...(e.target.dataset.version ? {edit_version: e.target.dataset.version} : {}),
+      });
       rememberDailyWods([d.wod]);
     }
     // Création : mise en file d’attente hors ligne et affichée tout de suite (identifiant créé sur le téléphone).
@@ -167,7 +171,7 @@ function openDailyDetail(id) {
   fillWodBody($("#dailydetailbody"), w.blocks, dailyBody(w));
   $("#dailydetailactions").innerHTML = done
     ? ""
-    : `<button type="button" class="primary" data-daily-log="${w.id}" ${future ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg><span>${future ? "Prévu pour demain" : "Enregistrer la séance"}</span></button>${w.manual && !w.pending ? `<button type="button" class="smallbtn" data-daily-edit="${w.id}">Modifier</button>` : ""}`;
+    : `<button type="button" class="primary" data-daily-log="${w.id}" ${future ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg><span>${future ? "Prévu le " + fmt(w.wod_date) : "Enregistrer la séance"}</span></button>${w.manual && !w.pending ? `<button type="button" class="smallbtn" data-daily-edit="${w.id}">Modifier</button> <button type="button" class="smallbtn" data-daily-regenerate="${w.id}">Régénérer avec l’IA</button>` : ""}`;
   bindDailySection($("#dailydetailactions"));
   // La fenêtre se ferme avant d’ouvrir le formulaire de séance.
   $("#dailydetailactions")
@@ -182,6 +186,14 @@ function openDailyDetail(id) {
   dialog.showModal();
 }
 function bindDailySection(root) {
+  root.querySelectorAll("[data-daily-regenerate]").forEach(
+    b =>
+      (b.onclick = () => {
+        openManualWod(dailyWodsById.get(b.dataset.dailyRegenerate));
+        openAiDialog("daily");
+      })
+  );
+
   root
     .querySelectorAll("[data-daily-open]")
     .forEach(b => (b.onclick = e => (blurAfterTap(b, e), openDailyDetail(b.dataset.dailyOpen))));
@@ -233,7 +245,7 @@ async function generateDailyWod(f, request) {
     {draft} = await sendApi(
       "/daily-wods",
       "POST",
-      {...request, wod_date: m.wod_date.value || today(), draft: true},
+      {...request, wod_date: m.wod_date.value || today(), draft: true, ...(m.id.value ? {replace_id: m.id.value} : {})},
       AI_TIMEOUT
     );
   if (!m.name.value.trim()) m.name.value = draft.name || "";

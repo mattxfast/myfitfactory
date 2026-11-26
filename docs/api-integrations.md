@@ -30,6 +30,11 @@ La liste montre le nom, le préfixe public, les permissions, l’expiration, le 
 | `POST /api/weekly-plans` | `plans:write` | Objet JSON et en-tête `Idempotency-Key` |
 | `DELETE /api/weekly-plans` | `plans:write` | Objet JSON avec version et en-tête `Idempotency-Key` |
 | `POST /api/weekly-plans/move` | `plans:write` | Source avec version, destination et en-tête `Idempotency-Key` |
+| `GET /api/coaching-context` | `coaching:read` | Date, fuseau, programme, modèle et historique facultatifs |
+| `POST /api/generated-wods/preview` | `wods:write` | Destination et contenu structuré |
+| `PUT /api/generated-wods` | `wods:write` | Corps préparé, version, confirmation et idempotence |
+
+Les routes de coaching et de WOD prévus sont décrites dans le [guide d’intégration myFitFactoryIA](external-wods.md).
 
 Les réponses de lecture des programmes, entraînements et records sont les mêmes qu’avec une session web du propriétaire. Elles incluent aussi les données partagées auxquelles ce compte a accès dans myFitFactory, comme les programmes suivis et les WOD des box dont il est membre validé. La liste ci-dessus couvre toutes les méthodes et routes Bearer. Les clés existantes gardent leurs permissions. Celles disposant déjà de `workouts:write` peuvent aussi modifier des séances avec la V3.1. Les clés avec `workouts:read` peuvent également consulter les trois référentiels communs ci-dessus. La permission `workouts:write` s’accorde explicitement à la création d’une clé. Les routes `DELETE` ouvertes aux clés concernent le planning et les records personnels. Les méthodes `PATCH` restent interdites.
 
