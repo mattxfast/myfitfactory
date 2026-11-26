@@ -44,14 +44,6 @@ const movementCategoryLabels = {
 const movementCategoryByMethod = {load: "lift", force: "force", reps: "gym", distance: "engine", reps_time: "gym"};
 const movementCategory = movement => movement.category ?? movementCategoryByMethod[movement.measurement_method];
 const CARDIO_INTENSITY_LABELS = ["Nulle", "Faible", "Modérée", "Élevée", "Très élevée"];
-function cardioTargetLabel(program) {
-  const min = program.weekly_cardio_target_min,
-    max = program.weekly_cardio_target_max;
-  if (min != null && max != null) return min === max ? String(min) : min + "–" + max;
-  if (min != null) return "≥ " + min;
-  if (max != null) return "≤ " + max;
-  return "";
-}
 const today = () => {
   const d = new Date();
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);

@@ -2384,7 +2384,7 @@ button:disabled {
   font-size: 28px;
 }
 
-/* Planification hebdomadaire : fond neutre, statut indiqué uniquement par le bord gauche. */
+/* Planification hebdomadaire : fond neutre, bord gauche coloré et second bord pour le cardio intense. */
 .weekwod.done,
 .weekwod.planned {
   background: var(--content-bg);
@@ -2394,6 +2394,9 @@ button:disabled {
 }
 .weekwod.done {
   border-left-color: var(--green);
+}
+.weekwod.done.weekwod-cardio {
+  border-right: 4px solid var(--green);
 }
 .weekwod.planned {
   border-left-color: var(--orange-strong);
@@ -4359,48 +4362,17 @@ button:disabled {
 [data-cardio-level="unreported"] {
   --cardio-mark: var(--muted);
 }
-[data-cardio-level="1"],
-.week-cardio-program[data-target-status="above"] {
+[data-cardio-level="1"] {
   --cardio-mark: var(--macro-protein);
 }
-[data-cardio-level="2"],
-.week-cardio-program[data-target-status="within"] {
+[data-cardio-level="2"] {
   --cardio-mark: var(--green);
 }
-[data-cardio-level="3"],
-.week-cardio-program[data-target-status="below"] {
+[data-cardio-level="3"] {
   --cardio-mark: var(--macro-fat);
 }
 [data-cardio-level="4"] {
   --cardio-mark: var(--danger);
-}
-#view-sessions .weekwod.week-cardio-row {
-  gap: 6px;
-  font-size: 13px;
-}
-.week-cardio-row > b {
-  flex: none;
-}
-.week-cardio-values {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 4px 6px;
-  color: var(--muted-strong);
-  font-size: 12px;
-}
-.week-cardio-values strong {
-  color: var(--ink);
-  white-space: nowrap;
-}
-.week-cardio-program[data-target-status]:not([data-target-status=""])::after {
-  content: "";
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin-inline-start: 4px;
-  border-radius: 50%;
-  background: var(--cardio-mark);
 }
 /* Bilan mensuel : bandeau de la page Séances, liste des mois (page PR), fenêtre du bilan. */
 .report-banner[hidden] {
