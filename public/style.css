@@ -2701,9 +2701,6 @@ button:disabled {
 #sessionlist .session-entry {
   padding: 8px 10px;
 }
-#sessionlist .session-entry-cardio {
-  border-inline-start: 4px solid var(--green);
-}
 .tracked-tag.session-cardio {
   padding: 3px 8px;
   border: 1px solid var(--success-border);
