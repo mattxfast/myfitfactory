@@ -2740,7 +2740,7 @@ async function manageApiKeys(r, e, p, userId) {
   const base = "/api/api-keys",
     isList = p === base && r.method === "GET",
     isCreate = p === base && r.method === "POST",
-    revoke = r.method === "DELETE" && /^\/api\/api-keys\/([a-f0-9-]{36})$/.exec(p);
+    keyAction = r.method === "DELETE" && /^\/api\/api-keys\/([a-f0-9-]{36})(\/purge)?$/.exec(p);
   if (isList) {
     const {results} = await e.DB.prepare(
       `SELECT ${API_KEY_METADATA} FROM api_keys WHERE user_id=? ORDER BY created_at DESC,id`
@@ -2749,14 +2749,25 @@ async function manageApiKeys(r, e, p, userId) {
       .all();
     return json({keys: results.map(apiKeyOut)});
   }
-  if (!isCreate && !revoke) return json({error: "Route inconnue."}, 404);
+  if (!isCreate && !keyAction) return json({error: "Route inconnue."}, 404);
   if (r.headers.get("Origin") !== new URL(r.url).origin)
     return json({error: "Origine de la requête non autorisée."}, 403);
 
   const now = Math.floor(Date.now() / 1000);
-  if (revoke) {
+  if (keyAction) {
+    const [, id, purge] = keyAction;
+    if (purge) {
+      const result = await e.DB.prepare("DELETE FROM api_keys WHERE id=? AND user_id=? AND revoked_at IS NOT NULL")
+        .bind(id, userId)
+        .run();
+      if (result.meta.changes) return json({ok: true});
+      const key = await e.DB.prepare("SELECT 1 FROM api_keys WHERE id=? AND user_id=?").bind(id, userId).first();
+      return key
+        ? json({error: "Révoque cette clé API avant de la supprimer."}, 409)
+        : json({error: "Clé API introuvable."}, 404);
+    }
     const result = await e.DB.prepare("UPDATE api_keys SET revoked_at=COALESCE(revoked_at,?) WHERE id=? AND user_id=?")
-      .bind(now, revoke[1], userId)
+      .bind(now, id, userId)
       .run();
     return result.meta.changes ? json({ok: true}) : json({error: "Clé API introuvable."}, 404);
   }

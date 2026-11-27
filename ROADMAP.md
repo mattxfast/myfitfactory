@@ -9,7 +9,7 @@ dire « fais l'idée 7 ».
 - Nouvelle idée : l'ajouter dans la bonne rubrique avec le **numéro suivant le plus grand existant**.
 - *En italique* : la décision de Matt quand il y en a une.
 
-Prochain numéro libre : **67**
+Prochain numéro libre : **69**
 
 ## Fiabilité et exploitation
 
@@ -71,6 +71,7 @@ Prochain numéro libre : **67**
 - [x] **65.** Afficher une pastille rouge sur l’onglet Membres de l’espace gestionnaire tant qu’une demande d’adhésion attend une réponse. — fait le 25/11/2026
 - [x] **66.** Suivre l’intensité cardiovasculaire des séances, fixer une cible d’expositions intenses par programme et afficher les statistiques. Le compteur « Cardio intense » figure dans « Détail », avec une bordure verte de chaque côté dès la première exposition. — fait le 26/11/2026
 - [x] **67.** Ouvrir le contexte sportif et l’enregistrement de WOD prévus depuis un assistant externe, avec aperçu et contrôle de version. — fait le 26/11/2026 ([contrat et intégration](docs/external-wods.md))
+- [x] **68.** Permettre au propriétaire de supprimer une clé API déjà révoquée depuis « Intégrations IA & API ». — fait le 27/11/2026 ([documentation](docs/api-integrations.md))
 
 ## Look and feel
 

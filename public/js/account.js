@@ -237,23 +237,30 @@ function renderApiKeys(keys) {
       " · Dernière utilisation : " +
       (key.last_used_at ? apiKeyDate(key.last_used_at) : "jamais");
     row.append(title, details, dates);
-    if (key.revoked_at || key.expires_at * 1000 <= Date.now()) {
+    const revoked = key.revoked_at != null,
+      expired = key.expires_at * 1000 <= Date.now();
+    if (revoked || expired) {
       const status = document.createElement("span");
-      status.textContent = key.revoked_at ? "Révoquée le " + apiKeyDate(key.revoked_at) : "Expirée";
+      status.textContent = revoked ? "Révoquée le " + apiKeyDate(key.revoked_at) : "Expirée";
       row.append(status);
-    } else {
+    }
+    if (revoked || !expired) {
+      const action = revoked ? "Supprimer" : "Révoquer";
       const button = document.createElement("button");
       button.className = "smallbtn delete";
       button.type = "button";
-      button.textContent = "Révoquer";
-      button.setAttribute("aria-label", "Révoquer la clé " + key.name);
+      button.textContent = action;
+      button.setAttribute("aria-label", action + " la clé " + key.name);
       button.onclick = async () => {
-        if (!confirm("Révoquer la clé « " + key.name + " » ? L’application perdra son accès immédiatement.")) return;
+        const message = revoked
+          ? "Supprimer définitivement la clé « " + key.name + " » ?"
+          : "Révoquer la clé « " + key.name + " » ? L’application perdra son accès immédiatement.";
+        if (!confirm(message)) return;
         const view = apiKeyView;
         button.disabled = true;
         apiKeyStatus.textContent = "";
         try {
-          await sendApi("/api-keys/" + key.id, "DELETE");
+          await sendApi("/api-keys/" + key.id + (revoked ? "/purge" : ""), "DELETE");
           if (view === apiKeyView) {
             row.remove();
             await loadApiKeys();

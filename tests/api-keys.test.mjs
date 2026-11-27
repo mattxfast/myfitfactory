@@ -137,8 +137,31 @@ test("clés personnelles : gestion par session et origine, secret affiché une f
   assert.equal((await alice.get("/prs")).status, 200);
 });
 
+test("clés révoquées : suppression définitive par le propriétaire", async () => {
+  const revoked = await create(alice, "Clé à supprimer"),
+    active = await create(alice, "Clé à conserver"),
+    path = "/api-keys/" + revoked.key.id,
+    purge = path + "/purge";
+  assert.equal((await manage(guest, "DELETE", purge)).status, 401);
+  assert.equal((await manage(alice, "DELETE", purge)).status, 409);
+  assert.equal((await bearer(revoked.token, "/prs")).status, 200);
+  assert.equal((await manage(alice, "DELETE", path)).status, 200);
+  assert.equal((await alice.del(purge)).status, 403);
+  assert.equal((await manage(alice, "DELETE", purge, undefined, {Origin: "https://external.invalid"})).status, 403);
+  assert.equal((await manage(bob, "DELETE", purge)).status, 404);
+  assert.equal((await manage(admin, "DELETE", purge)).status, 404);
+  assert.equal((await bearer(active.token, purge, "DELETE", alice, {Origin: worker.base})).status, 403);
+  assert.equal((await manage(alice, "DELETE", purge)).status, 200);
+  assert.equal((await manage(alice, "DELETE", purge)).status, 404);
+  const ids = (await alice.get("/api-keys")).data.keys.map(key => key.id);
+  assert.ok(!ids.includes(revoked.key.id));
+  assert.ok(ids.includes(active.key.id));
+  assert.equal((await bearer(revoked.token, "/prs")).status, 401);
+  assert.equal((await bearer(active.token, "/prs")).status, 200);
+});
+
 test("Bearer : refus par défaut, y compris pour un administrateur et en présence d’un cookie", async () => {
-  const {token} = await create(admin, "Clé administrateur", ["prs:read"]);
+  const {key, token} = await create(admin, "Clé administrateur", ["prs:read"]);
   const badToken = token.slice(0, -2) + (token.at(-2) === "A" ? "B" : "A") + token.at(-1);
   for (const invalid of [badToken, "invalide"]) {
     const response = await bearer(invalid, "/prs", "GET", admin);
@@ -165,6 +188,7 @@ test("Bearer : refus par défaut, y compris pour un administrateur et en présen
   assert.equal((await admin.get("/admin/users")).status, 200);
   localD1("UPDATE api_keys SET expires_at=unixepoch()-1 WHERE name='Clé administrateur'");
   assert.equal((await bearer(token, "/prs", "GET", admin)).status, 401);
+  assert.equal((await manage(admin, "DELETE", "/api-keys/" + key.id + "/purge")).status, 409);
 });
 
 test("les lectures Bearer utilisent les mêmes données et le même périmètre que le cookie", async () => {
