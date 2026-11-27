@@ -9,7 +9,7 @@ dire « fais l'idée 7 ».
 - Nouvelle idée : l'ajouter dans la bonne rubrique avec le **numéro suivant le plus grand existant**.
 - *En italique* : la décision de Matt quand il y en a une.
 
-Prochain numéro libre : **80**
+Prochain numéro libre : **81**
 
 ## Fiabilité et exploitation
 
@@ -83,6 +83,7 @@ Prochain numéro libre : **80**
 - [x] **77.** Retirer le liseré vert des cartes de l’historique des séances. — fait le 27/11/2026
 - [x] **78.** Mettre en évidence la cible cardio et présenter les consignes de coaching dans une carte du programme. — fait le 27/11/2026
 - [x] **79.** Garder les WOD déjà réalisés dans le formulaire d’enregistrement d’une séance. — fait le 27/11/2026
+- [x] **80.** Simplifier le formulaire des programmes avec une cible cardio unique et un seul intitulé pour les consignes. — fait le 27/11/2026
 
 ## Look and feel
 

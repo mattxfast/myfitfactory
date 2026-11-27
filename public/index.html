@@ -803,42 +803,30 @@
             </div>
           </section>
           <section class="form-block">
-            <h3>Expositions cardio intense par semaine</h3>
-            <div class="two">
-              <label
-                >Minimum<input
-                  name="weekly_cardio_target_min"
-                  type="number"
-                  min="0"
-                  step="1"
-                  inputmode="numeric"
-                  placeholder="Ex. 3"
-              /></label>
-              <label
-                >Maximum cible<input
-                  name="weekly_cardio_target_max"
-                  type="number"
-                  min="0"
-                  step="1"
-                  inputmode="numeric"
-                  placeholder="Ex. 4"
-              /></label>
-            </div>
-            <p class="hint">
-              Facultatif. Une séance de niveau élevé ou très élevé compte pour une exposition. Pour viser un nombre
-              précis, saisis la même valeur dans les deux champs.
+            <h3 id="program-cardio-title">Expositions cardio intense par semaine</h3>
+            <input
+              name="weekly_cardio_target"
+              type="number"
+              min="0"
+              step="1"
+              inputmode="numeric"
+              placeholder="Ex. 3"
+              aria-labelledby="program-cardio-title"
+              aria-describedby="program-cardio-hint"
+            />
+            <p class="hint" id="program-cardio-hint">
+              Facultatif. Une séance d’intensité élevée ou très élevée compte pour une exposition.
             </p>
           </section>
           <section class="form-block">
-            <h3>Consignes de coaching</h3>
-            <label
-              >Consignes générales (facultatif)<textarea
-                name="coaching_instructions"
-                rows="4"
-                maxlength="4000"
-                placeholder="Objectifs, priorités, durée et règles de progression"
-              ></textarea>
-            </label>
+            <h3 id="program-coaching-title">Consignes de coaching</h3>
+            <textarea
+              name="coaching_instructions"
+              rows="4"
+              maxlength="4000"
+              placeholder="Objectifs, priorités, durée et règles de progression"
+              aria-labelledby="program-coaching-title"
+            ></textarea>
           </section>
           <section class="form-block" id="programcoachfield" hidden>
             <h3>Programme de coach</h3>

@@ -386,16 +386,15 @@ function programSubtitle(p) {
     (p.is_public ? " · public" + (p.followers ? ", suivi par " + people(p.followers) : "") : "")
   );
 }
+function programCardioTarget(p) {
+  return p?.weekly_cardio_target_min ?? p?.weekly_cardio_target_max ?? null;
+}
 function programGoalsAndNotes(p) {
-  const min = p.weekly_cardio_target_min,
-    max = p.weekly_cardio_target_max;
-  let target = "";
-  if (min != null && max != null) target = min === max ? String(min) : min + " à " + max;
-  else if (min != null) target = "Au moins " + min;
-  else if (max != null) target = "Cible haute de " + max;
-  const goal = target
-    ? `<div class="program-section"><div class="wodrow"><b>Expositions cardio intense</b><small>${esc(target)} par semaine</small></div></div>`
-    : "";
+  const target = programCardioTarget(p);
+  const goal =
+    target !== null
+      ? `<div class="program-section"><div class="wodrow"><b>Expositions cardio intense</b><small>${esc(target)} par semaine</small></div></div>`
+      : "";
   const notes = p.coaching_instructions
     ? `<section class="program-section"><div class="program-section-heading">Consignes de coaching</div><div class="wodrow"><p class="program-coaching-notes">${esc(p.coaching_instructions)}</p></div></section>`
     : "";
@@ -651,8 +650,9 @@ function openProgram(p = null) {
   f.elements.is_default.checked = !!p?.is_default;
   f.elements.is_public.checked = !!p?.is_public;
   f.elements.coaching_instructions.value = p?.coaching_instructions ?? "";
-  f.elements.weekly_cardio_target_min.value = p?.weekly_cardio_target_min ?? "";
-  f.elements.weekly_cardio_target_max.value = p?.weekly_cardio_target_max ?? "";
+  const target = f.elements.weekly_cardio_target;
+  target.value = programCardioTarget(p) ?? "";
+  target.defaultValue = target.value;
   // L'option « programme par défaut » n'est plus proposée : elle n'apparaît que pour un ancien programme par défaut.
   $("#programdefaultfield").hidden = !p?.is_default;
   f.elements.start.value = p && !p.is_default && p.coach_mode !== "free" ? p.start_monday : "";
@@ -678,22 +678,21 @@ $("#programform").onsubmit = async e => {
   e.preventDefault();
   const f = new FormData(e.target),
     id = f.get("program_id"),
-    min = f.get("weekly_cardio_target_min"),
-    max = f.get("weekly_cardio_target_max"),
+    form = e.target.elements,
+    target = form.weekly_cardio_target,
     body = {
       name: f.get("name"),
       start: f.get("start"),
       end: f.get("end"),
-      is_default: $("#programform").elements.is_default.checked,
-      is_public: $("#programform").elements.is_public.checked,
+      is_default: form.is_default.checked,
+      is_public: form.is_public.checked,
       coaching_instructions: f.get("coaching_instructions").trim() || null,
-      weekly_cardio_target_min: min === "" ? null : Number(min),
-      weekly_cardio_target_max: max === "" ? null : Number(max),
-    },
-    form = $("#programform").elements;
-  if (min !== "" && max !== "" && Number(min) > Number(max)) {
-    $("#programerror").textContent = "Le minimum cardio doit être inférieur ou égal au maximum cible.";
-    return;
+    };
+  // Une modification de la cible remplace les deux bornes de l’API. Sinon, une ancienne fourchette est conservée.
+  if (!id || target.value !== target.defaultValue) {
+    const value = target.value === "" ? null : target.valueAsNumber;
+    body.weekly_cardio_target_min = value;
+    body.weekly_cardio_target_max = value;
   }
   if (form.coach.checked) {
     body.coach = {weeks: Number(form.coach_weeks.value), dated: form.coach_dated.checked};
