@@ -311,7 +311,7 @@ function weekDetailSection(week, programMovements, folded, showCardio) {
   if (showCardio) {
     const unique = new Map(week.map(s => [s.id, s])),
       exposures = [...unique.values()].filter(hasIntenseCardio).length;
-    cardio = weekDetailRow("Expositions cardio intenses", exposures, true);
+    cardio = weekDetailRow("Expositions cardio intense", exposures, true);
   }
   const movements = movementCounts.map(x => weekDetailRow(x.movement.name, x.count)).join("");
   return `<section class="weekother session-fold ${collapsed ? "collapsed" : ""}" data-session-fold="movements"><div class="weekheading"><button class="smallbtn section-collapse" aria-label="Afficher ou masquer le détail de la semaine" aria-expanded="${!collapsed}">${collapsed ? "＋" : "−"}</button><h2>Détail</h2><span title="Mouvements travaillés">${count} mouvement${total === 1 ? "" : "s"}</span></div><div class="session-fold-body"><div class="weekwodlist">${cardio}${movements || sectionEmpty("Pas de mouvement travaillé cette semaine")}</div></div></section>`;
