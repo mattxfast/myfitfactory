@@ -166,3 +166,22 @@ Les erreurs ont la forme `{"error":"message"}`. Les principaux statuts sont `400
 ## Tests
 
 `tests/external-wods.test.mjs` utilise un Worker et une D1 locaux, des comptes distincts, des clés aux permissions séparées et un fournisseur IA simulé comptabilisant chacun de ses appels. Il couvre le contexte, les PR, les objectifs et les chiffres cardio, l’isolation des comptes et programmes suivis, la préparation, la visibilité dans les API d’interface, les remplacements dans les deux sens, les WOD libres multiples, les protections d’historique et les conflits concurrents. Les tests existants couvrent aussi l’édition partielle de l’intensité cardiovasculaire et la génération IA intégrée.
+
+## Créer un cycle depuis ChatGPT
+
+`POST /api/generated-programs/preview` et `PUT /api/generated-programs`
+exigent une clé avec `programs:create`. Le cycle est privé et ne peut
+chevaucher un programme personnel ou suivi. Le corps JSON accepte `name`,
+`objective`, `start` (lundi), `weeks` (1 à 26), `coaching_instructions` et
+les cibles cardio facultatives. Fournir `models` (1 à 7) avec `name`,
+`duration_minutes` et `instructions` par modèle. `drafts` est facultatif.
+Chaque entrée contient `week` et `model` (indices commençant à 1) et
+`wod` au même format qu’un WOD de programme. Une combinaison semaine/modèle
+est unique. Les créneaux omis restent à programmer. Le corps est limité à 512 Kio.
+
+La préparation vérifie le contenu et retourne l’aperçu signé, valable 15 min.
+La sauvegarde reprend le corps initial, `If-None-Match: *`, `X-WOD-Confirmation`
+et `Idempotency-Key` comme pour les WOD. Elle crée le programme, les modèles,
+les WOD fournis et le reçu de manière atomique. La réponse contient
+`ok`, `id`, `models_count` et `drafted_count`. Aucun appel IA externe,
+aucune séance réalisée et aucune entrée de planning personnel ne sont créés.

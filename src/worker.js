@@ -36,6 +36,8 @@ import {REPORT_PROMPT_VERSION, reportCoachComment} from "./report.js";
 import {MOVEMENT_CATEGORIES, movementCategory, validMeasurementMethod} from "./movements.js";
 import {
   EXTERNAL_WOD_PATH,
+  EXTERNAL_PROGRAM_PATH,
+  externalProgramInput,
   WOD_VERSION,
   WOD_ID,
   LEGACY_WOD_VERSION,
@@ -2654,6 +2656,8 @@ const API_KEY_PERMISSIONS = new Map([
   ["GET /api/coaching-context", "coaching:read"],
   ["POST " + EXTERNAL_WOD_PATH + "/preview", "wods:write"],
   ["PUT " + EXTERNAL_WOD_PATH, "wods:write"],
+  ["POST " + EXTERNAL_PROGRAM_PATH + "/preview", "programs:create"],
+  ["PUT " + EXTERNAL_PROGRAM_PATH, "programs:create"],
   ["GET /api/week-data", "workouts:read"],
   ["GET /api/activities", "workouts:read"],
   ["GET /api/movement-catalog", ["workouts:read", "prs:read"]],
@@ -3159,7 +3163,7 @@ async function coachingContext(r, e, userId) {
   });
 }
 
-async function readGeneratedWodBody(r) {
+async function readGeneratedWodBody(r, maxBytes = 65536) {
   if (!r.body) return null;
   const reader = r.body.getReader(),
     decoder = new TextDecoder("utf-8", {fatal: true});
@@ -3170,7 +3174,7 @@ async function readGeneratedWodBody(r) {
       const {done, value} = await reader.read();
       if (done) return JSON.parse(source + decoder.decode());
       size += value.byteLength;
-      if (size > 65536) {
+      if (size > maxBytes) {
         await reader.cancel();
         return null;
       }
@@ -3308,6 +3312,143 @@ async function externalGeneratedWods(r, e, userId, preview) {
   return json({error: "Destination du WOD indisponible."}, 409);
 }
 
+async function externalGeneratedProgram(r, e, userId, preview) {
+  if (r.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase() !== "application/json")
+    return json({error: "Un corps JSON est requis."}, 415);
+  const body = await readGeneratedWodBody(r, 512 * 1024);
+  const input = externalProgramInput(body, exactCalendarDate, mondayOfDate, addDays);
+  if (!input) return json({error: "Programme ou WOD détaillés invalides."}, 400);
+  const cardio = programCardioTargets(body);
+  if (cardio.error) return json({error: cardio.error}, 400);
+  const instructions =
+    "Objectif : " + input.objective + (input.coaching_instructions ? "\n" + input.coaching_instructions : "");
+  if (instructions.length > 4000) return json({error: "Objectif et consignes trop longs."}, 400);
+  const fingerprint = await sha(JSON.stringify(["new-program", userId, input, cardio.values]));
+  const db = e.DB;
+  const overlap = `NOT EXISTS(SELECT 1 FROM programs WHERE user_id=? AND is_default=0 AND coach_mode IS NULL
+      AND NOT(end_monday<? OR start_monday>?))
+    AND NOT EXISTS(SELECT 1 FROM program_follows WHERE user_id=? AND NOT(end_monday<? OR start_monday>?))`;
+  const overlapArgs = [userId, input.start, input.end, userId, input.start, input.end];
+  const conflict = () => json({error: "Les dates chevauchent un programme personnel ou suivi."}, 409);
+  if (preview) {
+    if (
+      !(
+        await db
+          .prepare("SELECT " + overlap + " AS available")
+          .bind(...overlapArgs)
+          .first()
+      ).available
+    )
+      return conflict();
+    const ids = [...new Set(input.drafts.flatMap(d => d.movement_ids))];
+    const {results} = await db
+      .prepare("SELECT id FROM movement_catalog WHERE id IN (SELECT value FROM json_each(?))")
+      .bind(JSON.stringify(ids))
+      .all();
+    if (results.length !== ids.length) return json({error: "Mouvement inconnu dans le catalogue."}, 400);
+    const expires = Math.floor(Date.now() / 1000) + 900;
+    const signature = b64(
+      await crypto.subtle.sign("HMAC", await wodConfirmationKey(e), enc.encode(expires + "." + fingerprint))
+    );
+    return json({
+      ...input,
+      weekly_cardio_target_min: cardio.values[0],
+      weekly_cardio_target_max: cardio.values[1],
+      confirmation: expires + "." + signature,
+      expires_at: new Date(expires * 1000).toISOString(),
+    });
+  }
+  if (r.headers.get("If-None-Match") !== "*") return json({error: "Précondition de création requise."}, 428);
+  const {requestId, expiresAt, error} = readIdempotencyKey(r);
+  if (error) return error;
+  const receiptKey = "program:" + requestId;
+  const proof = /^(\d{10})\.([a-zA-Z0-9_-]{43})$/.exec(r.headers.get("X-WOD-Confirmation") || "");
+  if (
+    !proof ||
+    !(await crypto.subtle.verify(
+      "HMAC",
+      await wodConfirmationKey(e),
+      unb64(proof[2]),
+      enc.encode(proof[1] + "." + fingerprint)
+    ))
+  )
+    return json({error: "Confirme un aperçu correspondant à ce programme."}, 428);
+  const receipt = db
+    .prepare("SELECT request_hash,version FROM wod_api_requests WHERE user_id=? AND request_id=?")
+    .bind(userId, receiptKey);
+  const respond = row =>
+    row.request_hash === fingerprint
+      ? json({ok: true, id: row.version, models_count: input.models.length, drafted_count: input.drafts.length})
+      : json({error: "Cette clé d’idempotence est déjà utilisée."}, 409);
+  const prior = await receipt.first();
+  if (prior) return respond(prior);
+  if (Number(proof[1]) <= Date.now() / 1000) return json({error: "Aperçu expiré."}, 428);
+
+  const id = uid();
+  const models = input.models.map(model => ({...model, id: uid()}));
+  const drafts = input.drafts.map(draft => ({
+    ...draft,
+    id: models[draft.model - 1].id,
+    version: uid().replaceAll("-", ""),
+  }));
+  const ids = [...new Set(input.drafts.flatMap(d => d.movement_ids))];
+  try {
+    const output = await db.batch([
+      db
+        .prepare(
+          `INSERT INTO programs(id,user_id,name,start_monday,end_monday,is_default,is_public,
+          weekly_cardio_target_min,weekly_cardio_target_max,coaching_instructions)
+        SELECT ?,?,?,?,?,0,0,?,?,? WHERE ${overlap}
+          AND NOT EXISTS(SELECT 1 FROM wod_api_requests WHERE user_id=? AND request_id=?)
+          AND NOT EXISTS(SELECT 1 FROM json_each(?) AS requested
+            WHERE NOT EXISTS(SELECT 1 FROM movement_catalog m WHERE m.id=requested.value))`
+        )
+        .bind(
+          id,
+          userId,
+          input.name,
+          input.start,
+          input.end,
+          ...cardio.values,
+          instructions,
+          ...overlapArgs,
+          userId,
+          receiptKey,
+          JSON.stringify(ids)
+        ),
+      db
+        .prepare(
+          `INSERT INTO program_wods(id,program_id,user_id,name,planned_comment,duration_minutes,is_tracked,sort_order)
+        SELECT json_extract(value,'$.id'),?,?,json_extract(value,'$.name'),json_extract(value,'$.instructions'),
+          json_extract(value,'$.duration_minutes'),1,CAST(key AS INTEGER)
+        FROM json_each(?) WHERE EXISTS(SELECT 1 FROM programs WHERE id=? AND user_id=?)`
+        )
+        .bind(id, userId, JSON.stringify(models), id, userId),
+      db
+        .prepare(
+          `INSERT INTO weekly_wod_programming(wod_id,user_id,week_start,content,blocks,edit_version)
+        SELECT json_extract(value,'$.id'),?,json_extract(value,'$.week_start'),json_extract(value,'$.content'),
+          json_extract(value,'$.blocks'),json_extract(value,'$.version')
+        FROM json_each(?) WHERE EXISTS(SELECT 1 FROM programs WHERE id=? AND user_id=?)`
+        )
+        .bind(userId, JSON.stringify(drafts), id, userId),
+      db
+        .prepare(
+          `INSERT INTO wod_api_requests(user_id,request_id,request_hash,version,expires_at)
+        SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM programs WHERE id=? AND user_id=?)`
+        )
+        .bind(userId, receiptKey, fingerprint, id, expiresAt, id, userId),
+      receipt,
+    ]);
+    const saved = output.at(-1).results[0];
+    return saved ? respond(saved) : conflict();
+  } catch (failure) {
+    const raced = await receipt.first();
+    if (raced) return respond(raced);
+    throw failure;
+  }
+}
+
 async function api(r, e, p, ctx = null, apiUser = null) {
   const adminEmail = ownerEmail(e);
   if (r.method === "POST" && p === "/api/register") {
@@ -3439,6 +3580,13 @@ async function api(r, e, p, ctx = null, apiUser = null) {
   if ((r.method === "POST" && p === WOD_PREVIEW_PATH) || (r.method === "PUT" && p === EXTERNAL_WOD_PATH)) {
     if (!apiUser) return json({error: "Une clé API est requise."}, 403);
     return externalGeneratedWods(r, e, u.id, p === WOD_PREVIEW_PATH);
+  }
+  if (
+    (r.method === "POST" && p === EXTERNAL_PROGRAM_PATH + "/preview") ||
+    (r.method === "PUT" && p === EXTERNAL_PROGRAM_PATH)
+  ) {
+    if (!apiUser) return json({error: "Une clé API est requise."}, 403);
+    return externalGeneratedProgram(r, e, u.id, r.method === "POST");
   }
   const admin = !apiUser && isAdminUser(e, u);
   let m;

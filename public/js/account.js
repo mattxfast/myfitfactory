@@ -186,6 +186,7 @@ const apiKeyForm = $("#apikeyform"),
     "plans:write": "Modifier le planning hebdomadaire",
     "coaching:read": "Consulter le contexte de coaching",
     "wods:write": "Enregistrer des WOD prévus",
+    "programs:create": "Créer des programmes depuis ChatGPT",
   };
 let apiKeyView = 0;
 

@@ -51,6 +51,16 @@ const ok = async promise => {
   return result.data;
 };
 const idOf = async promise => (await ok(promise)).id;
+const createKey = async (actor, permissions) => {
+  const result = await actor.call(
+    "POST",
+    "/api-keys",
+    {name: "Coaching", expires_on: addDays(date, 7), permissions},
+    {Origin: worker.base}
+  );
+  assert.equal(result.status, 201, JSON.stringify(result.data));
+  return result.data.token;
+};
 before(async () => {
   mock = createServer((req, res) => {
     let raw = "";
@@ -91,16 +101,6 @@ before(async () => {
     [outsider, "outside@test.local"],
   ])
     await ok(actor.post("/register", {email, password}));
-  const createKey = async (actor, permissions) => {
-    const result = await actor.call(
-      "POST",
-      "/api-keys",
-      {name: "Coaching", expires_on: addDays(date, 7), permissions},
-      {Origin: worker.base}
-    );
-    assert.equal(result.status, 201, JSON.stringify(result.data));
-    return result.data.token;
-  };
   const scopes = ["coaching:read", "wods:write", "workouts:write", "plans:write"];
   [key, readKey, bobKey, outsiderKey] = await Promise.all([
     createKey(alice, scopes),
@@ -380,4 +380,38 @@ test("plusieurs WOD libres, édition depuis myFitFactory et séance réelle prot
     })
   );
   assert.match(regenerated.draft.blocks.metcon, /Circuit intégré/);
+});
+
+test("créer un cycle privé confirmé, avec ou sans WOD, de manière atomique", async () => {
+  const token = await createKey(alice, ["programs:create"]);
+  for (const [offset, drafts] of [
+    [56, []],
+    [84, [{week: 1, model: 1, wod: out}]],
+  ]) {
+    const body = {
+      name: "Cycle ChatGPT " + offset,
+      objective: "Progression force",
+      start: addDays(week, offset),
+      weeks: 2,
+      models: [{name: "Force", duration_minutes: 40}],
+      drafts,
+    };
+    const route = "/generated-programs";
+    assert.equal((await call(key, "POST", route + "/preview", body)).status, 403);
+    const prepared = await ok(call(token, "POST", route + "/preview", body));
+    const headers = {"If-None-Match": "*", "Idempotency-Key": keyAt(), "X-WOD-Confirmation": prepared.confirmation};
+    assert.equal((await call(token, "PUT", route, body, {...headers, "X-WOD-Confirmation": ""})).status, 428);
+    assert.equal((await call(token, "PUT", route, {...body, name: "Modifié"}, headers)).status, 428);
+    const [first, retry] = await Promise.all([
+      ok(call(token, "PUT", route, body, headers)),
+      ok(call(token, "PUT", route, body, headers)),
+    ]);
+    assert.equal(first.id, retry.id);
+    assert.equal(first.drafted_count, drafts.length);
+    const context = await ok(call(readKey, "GET", "/coaching-context?date=" + body.start + "&program_id=" + first.id));
+    const created = context.programs.find(p => p.id === first.id);
+    assert.equal(created.workout_models.length, 1);
+    assert.equal(Boolean(created.workout_models[0].programming), Boolean(drafts.length));
+    assert.equal((await call(token, "POST", route + "/preview", body)).status, 409);
+  }
 });

@@ -344,3 +344,7 @@ Le Worker conserve notamment les routes de statistiques et d'export (`/api/stats
 - Sessions de 30 jours, cookie HttpOnly, Secure et SameSite=Lax.
 - Pas encore de récupération de mot de passe, de validation d'adresse e-mail ni de protection anti-abus dédiée.
 - Ne jamais committer de secrets.
+
+La [création conversationnelle de cycles](docs/external-wods.md#créer-un-cycle-depuis-chatgpt)
+permet de créer un programme privé et ses modèles après confirmation, avec
+ou sans WOD détaillés.

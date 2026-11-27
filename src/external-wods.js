@@ -137,6 +137,100 @@ export function externalWodInput(body, isDate, mondayOf) {
 }
 
 // Lire la version et les droits sans modifier le contenu. Une version de migration fixe couvre les anciennes lignes.
+export const EXTERNAL_PROGRAM_PATH = "/api/generated-programs";
+
+export function externalProgramInput(body, isDate, mondayOf, addDays) {
+  if (
+    !ownKeys(body, [
+      "name",
+      "start",
+      "weeks",
+      "objective",
+      "coaching_instructions",
+      "weekly_cardio_target_min",
+      "weekly_cardio_target_max",
+      "models",
+      "drafts",
+    ])
+  )
+    return null;
+  const {start, weeks, models, drafts = []} = body;
+  const name = readText(body.name, 100);
+  const objective = readText(body.objective, 500);
+  const instructions = readOptionalText(body.coaching_instructions, 3500);
+  if (
+    !name ||
+    !objective ||
+    instructions === null ||
+    !isDate(start) ||
+    mondayOf(start) !== start ||
+    !Number.isInteger(weeks) ||
+    weeks < 1 ||
+    weeks > 26 ||
+    !Array.isArray(models) ||
+    models.length < 1 ||
+    models.length > 7 ||
+    !Array.isArray(drafts) ||
+    drafts.length > weeks * models.length
+  )
+    return null;
+  const templates = [];
+  const names = new Set();
+  for (const model of models) {
+    if (!ownKeys(model, ["name", "instructions", "duration_minutes"])) return null;
+    const label = readText(model.name, 100),
+      notes = readOptionalText(model.instructions, 3000);
+    if (
+      !label ||
+      label === "__AUTRES__" ||
+      names.has(label.toLowerCase()) ||
+      notes === null ||
+      !minutes(model.duration_minutes)
+    )
+      return null;
+    names.add(label.toLowerCase());
+    templates.push({name: label, instructions: notes, duration_minutes: model.duration_minutes});
+  }
+  const entries = [],
+    slots = new Set();
+  for (const draft of drafts) {
+    if (
+      !ownKeys(draft, ["week", "model", "wod"]) ||
+      !Number.isInteger(draft.week) ||
+      draft.week < 1 ||
+      draft.week > weeks ||
+      !Number.isInteger(draft.model) ||
+      draft.model < 1 ||
+      draft.model > templates.length
+    )
+      return null;
+    const slot = draft.week + ":" + draft.model;
+    if (slots.has(slot)) return null;
+    slots.add(slot);
+    const weekStart = addDays(start, (draft.week - 1) * 7);
+    const input = externalWodInput(
+      {target: {kind: "program", program_id: "new", wod_id: "new", week_start: weekStart}, wod: draft.wod},
+      isDate,
+      mondayOf
+    );
+    if (!input) return null;
+    entries.push({
+      week: draft.week,
+      model: draft.model,
+      week_start: weekStart,
+      title: input.title,
+      duration_minutes: input.duration_minutes,
+      content: input.content,
+      blocks: input.blocks,
+      movement_ids: input.movement_ids,
+    });
+  }
+  entries.sort((a, b) => a.week - b.week || a.model - b.model);
+  const end = addDays(start, weeks * 7 - 1);
+  if (!isDate(end)) return null;
+  return {name, start, end, weeks, objective, coaching_instructions: instructions, models: templates, drafts: entries};
+}
+
 export async function programWodState(db, userId, wodId, week) {
   return db
     .prepare(

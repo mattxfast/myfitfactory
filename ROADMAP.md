@@ -132,3 +132,8 @@ Un écran installé dans la salle fait défiler des informations sur la box : WO
 
 - Idéalement une TV avec navigateur intégré, sinon un Raspberry Pi en mode kiosque.
 - Prévoir une mise en page lisible de loin (grands caractères, fort contraste), en 16:9, et éviter que l'écran se mette en veille.
+
+### 19. Création de programmes depuis ChatGPT
+
+- [x] Ajouter la préparation et l’enregistrement atomique d’un cycle privé,
+  avec des WOD détaillés facultatifs.
