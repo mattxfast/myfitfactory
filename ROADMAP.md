@@ -9,7 +9,7 @@ dire « fais l'idée 7 ».
 - Nouvelle idée : l'ajouter dans la bonne rubrique avec le **numéro suivant le plus grand existant**.
 - *En italique* : la décision de Matt quand il y en a une.
 
-Prochain numéro libre : **72**
+Prochain numéro libre : **73**
 
 ## Fiabilité et exploitation
 
@@ -75,6 +75,7 @@ Prochain numéro libre : **72**
 - [x] **69.** Harmoniser « Intégrations IA & API » avec les cartes et les fenêtres de Mon compte, avec des statuts lisibles et des permissions regroupées. — fait le 27/11/2026 ([documentation](docs/api-integrations.md))
 - [x] **70.** Griser les programmes terminés et espacer la ligne « Expositions cardio intenses » dans le détail des séances. — fait le 27/11/2026
 - [x] **71.** Afficher une bordure en pointillés autour de l’en-tête des programmes à venir. — fait le 27/11/2026
+- [x] **72.** Signaler les séances cardio intenses dans l’historique et séparer « Ma prog » et « Le coaching » sur la page Programmes. — fait le 27/11/2026
 
 ## Look and feel
 

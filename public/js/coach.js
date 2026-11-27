@@ -1,5 +1,5 @@
-// myFitFactory — programmes de coach : rôle coach (Mon compte), programmes proposés (rubrique en tête de l’onglet
-// Programmes, pastille rouge), proposition d’un programme de coach à des inscrits.
+// myFitFactory — rôle coach (Mon compte), invitations à des programmes (« Le coaching », pastille rouge) et
+// partage d’un programme de coach avec des inscrits.
 // Scripts classiques chargés dans l’ordre par index.html (portée globale partagée) ; boot.js démarre l’application en dernier.
 
 const weeksLabel = n => n + " semaine" + (n > 1 ? "s" : "");
@@ -8,8 +8,11 @@ const weeksLabel = n => n + " semaine" + (n > 1 ? "s" : "");
 function renderCoachInvites() {
   $('.navtab[data-view="programs"]').classList.toggle("has-alert", coachInvites.length > 0);
   if (preferences) applyInterface();
-  $("#coachinvites").innerHTML = coachInvites.length
-    ? `<section class="session-fold session-invites"><div class="weekheading"><h2>Programmes proposés</h2><span>${coachInvites.length}</span></div><div class="session-fold-body"><div class="weekwodlist">${coachInvites
+  const list = $("#coachinvites");
+  list.hidden = !coachInvites.length;
+  $("#coaching-empty").hidden = !list.hidden || $("#coaching-programs").childElementCount > 0;
+  list.innerHTML = coachInvites.length
+    ? `<section class="coach-invites"><h3>Programmes proposés</h3><div class="weekwodlist">${coachInvites
         .map(
           x =>
             `<article class="weekwod card"><div class="weekcount"><button type="button" class="smallbtn" data-coach-accept="${esc(x.id)}" aria-label="Suivre ce programme" title="Suivre ce programme"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></button><button type="button" class="smallbtn delete" data-coach-decline="${esc(x.id)}" aria-label="Refuser" title="Refuser"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button></div><div class="weekwod-text"><b>${esc(partnerName(x))} te propose « ${esc(x.name)} »</b><p class="wod-preview">${esc(
@@ -20,39 +23,35 @@ function renderCoachInvites() {
               ].join(" · ")
             )}</p></div></article>`
         )
-        .join("")}</div></div></section>`
+        .join("")}</div></section>`
     : "";
-  $("#coachinvites")
-    .querySelectorAll("[data-coach-accept]")
-    .forEach(
-      b =>
-        (b.onclick = () => {
-          const x = coachInvites.find(i => i.id === b.dataset.coachAccept),
-            current = programs.find(p => p.followed),
-            replace = current ? " Il remplacera « " + current.name + " », le programme que tu suis." : "";
-          if (!x.start_monday) return openCoachStartDialog(x, x.id);
-          if (
-            confirm("Suivre « " + x.name + " » du " + fmt(x.start_monday) + " au " + fmt(x.end_monday) + " ?" + replace)
-          )
-            acceptCoachInvite(x.id);
-        })
-    );
-  $("#coachinvites")
-    .querySelectorAll("[data-coach-decline]")
-    .forEach(
-      b =>
-        (b.onclick = async () => {
-          if (!confirm("Refuser ce programme ?")) return;
-          try {
-            await sendApi("/coach-invites/" + b.dataset.coachDecline + "/decline", "POST");
-            coachInvites = coachInvites.filter(i => i.id !== b.dataset.coachDecline);
-            renderCoachInvites();
-            toast("Programme refusé.");
-          } catch (x) {
-            toast(x.offline ? OFFLINE_MESSAGE : x.message);
-          }
-        })
-    );
+  list.querySelectorAll("[data-coach-accept]").forEach(
+    b =>
+      (b.onclick = () => {
+        const x = coachInvites.find(i => i.id === b.dataset.coachAccept),
+          current = programs.find(p => p.followed),
+          replace = current ? " Il remplacera « " + current.name + " », le programme que tu suis." : "";
+        if (!x.start_monday) return openCoachStartDialog(x, x.id);
+        if (
+          confirm("Suivre « " + x.name + " » du " + fmt(x.start_monday) + " au " + fmt(x.end_monday) + " ?" + replace)
+        )
+          acceptCoachInvite(x.id);
+      })
+  );
+  list.querySelectorAll("[data-coach-decline]").forEach(
+    b =>
+      (b.onclick = async () => {
+        if (!confirm("Refuser ce programme ?")) return;
+        try {
+          await sendApi("/coach-invites/" + b.dataset.coachDecline + "/decline", "POST");
+          coachInvites = coachInvites.filter(i => i.id !== b.dataset.coachDecline);
+          renderCoachInvites();
+          toast("Programme refusé.");
+        } catch (x) {
+          toast(x.offline ? OFFLINE_MESSAGE : x.message);
+        }
+      })
+  );
 }
 // Date de début d’un programme de coach sans dates : à l’acceptation (inviteId) ou ensuite (« Modifier mes dates »).
 // Le programme dure toujours le nombre de semaines fixé par le coach ; la semaine 1 commence le lundi choisi.

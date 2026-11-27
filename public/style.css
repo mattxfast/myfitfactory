@@ -2701,6 +2701,17 @@ button:disabled {
 #sessionlist .session-entry {
   padding: 8px 10px;
 }
+#sessionlist .session-entry-cardio {
+  border-inline-start: 4px solid var(--green);
+}
+.tracked-tag.session-cardio {
+  padding: 3px 8px;
+  border: 1px solid var(--success-border);
+  background: var(--success-soft);
+  color: var(--ink);
+  font: 800 11px Manrope;
+  white-space: nowrap;
+}
 #sessionlist .session-history-content > p {
   margin: 4px 0 0;
 }
@@ -3813,12 +3824,27 @@ button:disabled {
 }
 
 /* Programmes & WOD */
-#view-programs #programlist {
+#view-programs #programlist,
+#view-programs .program-cards:not(:empty) {
   display: grid;
   gap: var(--page-content-gap);
 }
-#view-programs #programlist > .program {
+#view-programs .program-cards:empty {
+  display: none;
+}
+#view-programs .program-group {
+  display: grid;
+  gap: var(--section-content-gap);
+}
+#view-programs .program-group > .weekheading,
+#view-programs .program-group > .empty,
+#view-programs .program-cards > .program {
   margin: 0;
+}
+.coach-invites h3 {
+  margin: 0 0 var(--section-content-gap);
+  color: var(--ink-soft);
+  font: 800 14px Manrope;
 }
 #view-programs .program-upcoming {
   --program-border-style: dashed;

@@ -252,8 +252,18 @@
           <div id="weekafter"></div>
         </section>
         <section id="view-programs" hidden>
-          <div id="coachinvites"></div>
-          <div id="programlist"></div>
+          <div id="programlist">
+            <section class="program-group" aria-labelledby="personal-programs-title">
+              <div class="weekheading"><h2 id="personal-programs-title">Ma prog</h2></div>
+              <div id="personal-programs" class="program-cards"></div>
+            </section>
+            <section class="program-group" aria-labelledby="coaching-programs-title">
+              <div class="weekheading"><h2 id="coaching-programs-title">Le coaching</h2></div>
+              <div id="coachinvites" hidden></div>
+              <div id="coaching-programs" class="program-cards"></div>
+              <p id="coaching-empty" class="card empty" hidden>Aucun programme de coaching pour le moment.</p>
+            </section>
+          </div>
           <div class="bottom-action">
             <button id="findprogram" class="primary">Trouver un programme</button
             ><button id="newprogram" class="primary">＋ Nouveau programme</button>

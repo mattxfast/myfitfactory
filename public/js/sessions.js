@@ -120,6 +120,7 @@ function sessionSource(s) {
   if (s.wod_name === "Autres" && !s.daily_wod_id) return "Séance libre";
   return "Mes WOD"; // WOD de la programmation ou WOD généré (rubrique « Mes WOD »)
 }
+const hasIntenseCardio = s => s.cardio_intensity >= 3;
 function renderSessions() {
   $("#sessionhistory").hidden = false;
   $("#sessionlist").classList.toggle("session-list-collapsed", !!window.cfSessionHistoryCollapsed);
@@ -135,10 +136,11 @@ function renderSessions() {
   $("#sessionhistorycount").textContent = sessions.length;
   $("#sessionlist").innerHTML =
     sessions
-      .map(
-        s =>
-          `<article class="entry session-entry"><div class="session-history-content"><div class="session-history-heading"><button type="button" class="session-title-line session-open" data-session-open="${s.id}" aria-label="Voir le détail de la séance"><h3>${esc(sessionTitle(s))}</h3><span class="session-meta"><span class="sessiondate">${fmt(s.session_date)}</span><span class="tracked-tag">${esc(sessionSource(s))}</span></span></button><div class="entryactions">${sessionScoresKind(s) ? `<button class="smallbtn" data-session-scores="${s.id}" aria-label="Scores" title="${sessionScoresKind(s) === "history" ? "Historique des scores" : "Classement du WOD"}">${TROPHY_ICON}</button>` : ""}<button class="smallbtn" data-edit-session="${s.id}" aria-label="Modifier" title="Modifier"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.83 2.83 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg></button><button class="smallbtn delete" data-del-session="${s.id}" aria-label="Supprimer" title="Supprimer"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button></div></div></div></article>`
-      )
+      .map(s => {
+        const cardio = hasIntenseCardio(s),
+          cardioId = "session-cardio-" + esc(s.id);
+        return `<article class="entry session-entry${cardio ? " session-entry-cardio" : ""}"><div class="session-history-content"><div class="session-history-heading"><button type="button" class="session-title-line session-open" data-session-open="${s.id}" aria-label="Voir le détail de la séance"${cardio ? ` aria-describedby="${cardioId}"` : ""}><h3>${esc(sessionTitle(s))}</h3><span class="session-meta"><span class="sessiondate">${fmt(s.session_date)}</span><span class="tracked-tag">${esc(sessionSource(s))}</span>${cardio ? `<span id="${cardioId}" class="tracked-tag session-cardio">Cardio intense</span>` : ""}</span></button><div class="entryactions">${sessionScoresKind(s) ? `<button class="smallbtn" data-session-scores="${s.id}" aria-label="Scores" title="${sessionScoresKind(s) === "history" ? "Historique des scores" : "Classement du WOD"}">${TROPHY_ICON}</button>` : ""}<button class="smallbtn" data-edit-session="${s.id}" aria-label="Modifier" title="Modifier"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.83 2.83 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg></button><button class="smallbtn delete" data-del-session="${s.id}" aria-label="Supprimer" title="Supprimer"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button></div></div></div></article>`;
+      })
       .join("") || sectionEmpty("Aucune séance enregistrée cette semaine.");
   $("#sessionlist")
     .querySelectorAll("[data-session-open]")
@@ -307,7 +309,7 @@ function weekDetailSection(week, programMovements, folded, showCardio) {
   let cardio = "";
   if (showCardio) {
     const unique = new Map(week.map(s => [s.id, s])),
-      exposures = [...unique.values()].filter(s => s.cardio_intensity >= 3).length;
+      exposures = [...unique.values()].filter(hasIntenseCardio).length;
     cardio = weekDetailRow("Expositions cardio intenses", exposures, true);
   }
   const movements = movementCounts.map(x => weekDetailRow(x.movement.name, x.count)).join("");
