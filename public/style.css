@@ -5712,9 +5712,165 @@ button:active:not(:disabled) {
   --block-color: #e5484d;
 }
 
+/* Intégrations du compte : cartes de clés et formulaire en blocs. */
+.apikey-section {
+  display: grid;
+  gap: var(--section-content-gap);
+}
+.apikey-section .admin-data-list {
+  gap: var(--content-item-gap);
+}
+.apikey-overview,
+.apikey-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--content-item-gap);
+}
+.apikey-overview {
+  flex-wrap: wrap;
+  align-items: center;
+}
+.apikey-overview p {
+  flex: 1 1 12rem;
+}
+.apikey-overview .primary {
+  width: auto;
+  min-height: var(--list-row-height);
+  margin: 0;
+}
 .apikey-card {
+  display: grid;
+  gap: var(--content-item-gap);
   overflow-wrap: anywhere;
 }
-.apikey-card .smallbtn {
-  justify-self: start;
+.apikey-card-head {
+  align-items: flex-start;
+}
+.apikey-card-head > div {
+  min-width: 0;
+}
+.apikey-card h3 {
+  margin: 0 0 3px;
+  font: 800 16px Manrope;
+}
+.apikey-card code {
+  color: var(--muted);
+  font-size: 11px;
+}
+.apikey-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+.apikey-state::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.apikey-state.active {
+  color: var(--green);
+  background: var(--success-soft);
+}
+.apikey-state.revoked {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+.apikey-state.expired {
+  color: var(--muted-strong);
+  background: var(--neutral-bg);
+}
+.apikey-dates {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr));
+  gap: var(--content-item-gap);
+  margin: 0;
+  font-size: 12px;
+}
+.apikey-dates dt {
+  color: var(--muted);
+}
+.apikey-dates dd {
+  margin: 2px 0 0;
+  font-weight: 600;
+}
+.apikey-card-footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--content-item-gap);
+  border-top: 1px solid var(--content-border);
+  padding-top: 6px;
+}
+.apikey-card-footer details {
+  min-width: 0;
+  flex: 1;
+}
+.apikey-card-footer summary {
+  padding: 12px 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.apikey-scopes {
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0;
+}
+.apikey-action {
+  min-height: var(--list-row-height);
+  border-radius: 8px;
+  padding: 6px 12px;
+}
+.apikey-empty,
+.apikey-feedback {
+  margin: 0;
+}
+.apikey-feedback:empty {
+  display: none;
+}
+.apikey-permissions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  margin: 12px 0 0;
+  border: 0;
+}
+.apikey-permissions legend {
+  padding: 0 0 6px;
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 700;
+}
+.form-block .apikey-permissions .reminder-switch {
+  min-height: var(--list-row-height);
+  margin: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--content-border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 13px;
+}
+.apikey-permissions input {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+}
+.form-block .apikey-permissions .reminder-switch:has(:checked) {
+  border-color: var(--orange-strong);
+  background: var(--accent-soft);
+  color: var(--accent-soft-ink);
+}
+@media (max-width: 420px) {
+  .apikey-overview .primary {
+    width: 100%;
+  }
 }

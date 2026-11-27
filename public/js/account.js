@@ -172,6 +172,7 @@ $("#themeselect").onchange = async e => {
 
 // Les clés sont gérées en ligne, sans le cache ni la file d'attente des modifications hors ligne.
 const apiKeyForm = $("#apikeyform"),
+  apiKeyCreateDialog = $("#apikeycreatedialog"),
   apiKeyDialog = $("#apikeydialog"),
   apiKeyToken = $("#apikeytoken"),
   apiKeyList = $("#apikeylist"),
@@ -194,12 +195,19 @@ let apiKeyView = 0;
 function clearApiKeyView() {
   apiKeyView++;
   apiKeyToken.value = "";
+  apiKeyCreateDialog.close();
   apiKeyDialog.close();
   apiKeyForm.reset();
   $("#apikeyerror").textContent = "";
   apiKeyList.replaceChildren();
-  apiKeyStatus.textContent = "";
+  setApiKeyStatus("");
 }
+$("#newapikey").onclick = () => {
+  apiKeyForm.reset();
+  apiKeyForm.elements.expires_on.min = new Date().toISOString().slice(0, 10);
+  $("#apikeyerror").textContent = "";
+  apiKeyCreateDialog.showModal();
+};
 apiKeyDialog.onclose = () => {
   apiKeyToken.value = "";
   $("#copyapikeystatus").textContent = "";
@@ -216,38 +224,47 @@ $("#copyapikey").onclick = async () => {
     $("#copyapikeystatus").textContent = "Copie la clé sélectionnée.";
   }
 };
-const apiKeyDate = seconds => new Date(seconds * 1000).toLocaleString("fr-FR");
+const apiKeyDate = new Intl.DateTimeFormat("fr-FR", {dateStyle: "medium", timeStyle: "short"});
+function setApiKeyStatus(message, isError = false) {
+  apiKeyStatus.textContent = message;
+  apiKeyStatus.classList.toggle("error", isError);
+}
 function renderApiKeys(keys) {
   apiKeyList.replaceChildren();
   if (!keys.length) {
-    apiKeyList.textContent = "Aucune clé API pour ce compte.";
+    apiKeyList.innerHTML = '<p class="profile-card hint apikey-empty">Aucune clé API pour ce compte.</p>';
     return;
   }
   for (const key of keys) {
-    const row = document.createElement("article");
-    row.className = "profile-card apikey-card";
-    const title = document.createElement("strong");
-    title.textContent = key.name;
-    const details = document.createElement("span");
-    details.textContent = [key.prefix, ...key.permissions.map(scope => apiKeyLabels[scope] || scope)].join(" · ");
-    const dates = document.createElement("span");
-    dates.textContent =
-      "Expiration : " +
-      apiKeyDate(key.expires_at) +
-      " · Dernière utilisation : " +
-      (key.last_used_at ? apiKeyDate(key.last_used_at) : "jamais");
-    row.append(title, details, dates);
     const revoked = key.revoked_at != null,
-      expired = key.expires_at * 1000 <= Date.now();
-    if (revoked || expired) {
-      const status = document.createElement("span");
-      status.textContent = revoked ? "Révoquée le " + apiKeyDate(key.revoked_at) : "Expirée";
-      row.append(status);
-    }
+      expired = key.expires_at * 1000 <= Date.now(),
+      state = revoked ? "revoked" : expired ? "expired" : "active",
+      status = revoked ? "Révoquée" : expired ? "Expirée" : "Active",
+      permissions = key.permissions,
+      row = document.createElement("article");
+    row.className = "profile-card apikey-card";
+    row.innerHTML = `
+      <div class="apikey-card-head">
+        <div><h3>${esc(key.name)}</h3><code>${esc(key.prefix)}</code></div>
+        <span class="tracked-tag apikey-state ${state}">${status}</span>
+      </div>
+      <dl class="apikey-dates">
+        <div><dt>Expiration</dt><dd>${esc(apiKeyDate.format(key.expires_at * 1000))}</dd></div>
+        <div><dt>Dernière utilisation</dt><dd>${key.last_used_at == null ? "Jamais" : esc(apiKeyDate.format(key.last_used_at * 1000))}</dd></div>
+        ${revoked ? `<div><dt>Révoquée le</dt><dd>${esc(apiKeyDate.format(key.revoked_at * 1000))}</dd></div>` : ""}
+      </dl>
+      <div class="apikey-card-footer">
+        <details>
+          <summary>${permissions.length} permission${permissions.length > 1 ? "s" : ""}</summary>
+          <ul class="partner-chips apikey-scopes">
+            ${permissions.map(scope => `<li class="tracked-tag">${esc(apiKeyLabels[scope] || scope)}</li>`).join("")}
+          </ul>
+        </details>
+      </div>`;
     if (revoked || !expired) {
       const action = revoked ? "Supprimer" : "Révoquer";
       const button = document.createElement("button");
-      button.className = "smallbtn delete";
+      button.className = "delete apikey-action";
       button.type = "button";
       button.textContent = action;
       button.setAttribute("aria-label", action + " la clé " + key.name);
@@ -258,7 +275,7 @@ function renderApiKeys(keys) {
         if (!confirm(message)) return;
         const view = apiKeyView;
         button.disabled = true;
-        apiKeyStatus.textContent = "";
+        setApiKeyStatus("");
         try {
           await sendApi("/api-keys/" + key.id + (revoked ? "/purge" : ""), "DELETE");
           if (view === apiKeyView) {
@@ -266,26 +283,25 @@ function renderApiKeys(keys) {
             await loadApiKeys();
           }
         } catch (x) {
-          if (view === apiKeyView) apiKeyStatus.textContent = x.message;
+          if (view === apiKeyView) setApiKeyStatus(x.message, true);
           button.disabled = false;
         }
       };
-      row.append(button);
+      row.querySelector(".apikey-card-footer").append(button);
     }
     apiKeyList.append(row);
   }
 }
 async function loadApiKeys() {
   const view = apiKeyView;
-  apiKeyForm.elements.expires_on.min = new Date().toISOString().slice(0, 10);
-  apiKeyStatus.textContent = "Chargement des clés…";
+  setApiKeyStatus("Chargement des clés…");
   try {
     const {keys} = await sendApi("/api-keys", "GET");
     if (view !== apiKeyView) return;
     renderApiKeys(keys);
-    apiKeyStatus.textContent = "";
+    setApiKeyStatus("");
   } catch (x) {
-    if (view === apiKeyView) apiKeyStatus.textContent = x.message;
+    if (view === apiKeyView) setApiKeyStatus(x.message, true);
   }
 }
 apiKeyForm.onsubmit = async event => {
@@ -293,7 +309,7 @@ apiKeyForm.onsubmit = async event => {
   const fields = new FormData(apiKeyForm),
     permissions = fields.getAll("permissions"),
     error = $("#apikeyerror"),
-    button = apiKeyForm.querySelector("button"),
+    button = apiKeyForm.querySelector('[type="submit"]'),
     view = apiKeyView;
   if (button.disabled) return;
   if (!permissions.length) {
@@ -310,6 +326,7 @@ apiKeyForm.onsubmit = async event => {
     });
     if (view !== apiKeyView) return;
     apiKeyForm.reset();
+    apiKeyCreateDialog.close();
     apiKeyToken.value = token;
     apiKeyDialog.showModal();
     await loadApiKeys();

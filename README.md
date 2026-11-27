@@ -330,7 +330,7 @@ Le premier appel API après déploiement déclenche la vérification et, si néc
 
 Dans **Mon compte → Intégrations IA & API**, créez une clé personnelle avec les permissions nécessaires (lecture des programmes, entraînements ou records, création et modification des entraînements, consultation et gestion du planning hebdomadaire, ou gestion de l’historique des records personnels), puis copiez-la pour configurer votre intégration. Voir [la documentation de l’API](docs/api-integrations.md) pour les routes, les quotas, la révocation et la migration D1 automatique.
 
-Le bouton **Supprimer** permet de retirer définitivement une clé déjà révoquée après confirmation.
+Le bouton **Nouvelle clé** ouvre le formulaire, avec les permissions de lecture et d’écriture séparées. Chaque clé affiche son statut et propose un détail de ses permissions. Le bouton **Supprimer** retire définitivement une clé déjà révoquée après confirmation.
 
 Une intégration munie de `coaching:read` et `wods:write` peut préparer et enregistrer le contenu prévisionnel d’un WOD de programme ou d’un WOD libre, directement dans les listes existantes. L’assistant produit le contenu et myFitFactory le valide puis l’enregistre après confirmation. Le formulaire de programme inclut des consignes générales de coaching facultatives. La migration D1 V52 ajoute ces consignes, les versions des WOD et les reçus d’écriture, en conservant l’historique. [Guide myFitFactoryIA et exemples](docs/external-wods.md) · [Contrat OpenAPI](docs/external-wods.openapi.json)
 

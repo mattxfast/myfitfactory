@@ -637,65 +637,15 @@
             <div class="admin-group-title" role="button" tabindex="0" aria-expanded="true">
               <span class="admin-collapse-indicator">−</span><span>Intégrations IA &amp; API</span>
             </div>
-            <div class="admin-group-body">
-              <form id="apikeyform" class="profile-card" autocomplete="off">
-                <p class="muted">
-                  Une application qui possède cette clé peut consulter les données, gérer le planning ou modifier les
-                  entraînements selon les permissions choisies, jusqu’à l’expiration ou la révocation de la clé. Elle
-                  peut conserver les données déjà reçues. Partage la clé uniquement avec une application en laquelle tu
-                  as confiance.
-                </p>
-                <label>Nom de la clé<input name="name" maxlength="80" required /></label>
-                <label>Date d’expiration (fin de journée UTC)<input name="expires_on" type="date" required /></label>
-                <span id="apikeypermissions">Permissions de la clé</span>
-                <div role="group" aria-labelledby="apikeypermissions">
-                  <label class="reminder-switch"
-                    ><input type="checkbox" name="permissions" value="programs:read" />Programmes</label
-                  >
-                  <label class="reminder-switch"
-                    ><input type="checkbox" name="permissions" value="workouts:read" />Entraînements et
-                    planification</label
-                  >
-                  <label class="reminder-switch"
-                    ><input type="checkbox" name="permissions" value="prs:read" />Records personnels</label
-                  >
-                  <label class="reminder-switch"
-                    ><input type="checkbox" name="permissions" value="workouts:write" />Créer et modifier des
-                    entraînements</label
-                  >
-                  <label class="reminder-switch"
-                    ><input type="checkbox" name="permissions" value="plans:read" />Consulter le planning
-                    hebdomadaire</label
-                  >
-                  <label class="reminder-switch"
-                    ><input type="checkbox" name="permissions" value="plans:write" />Modifier le planning
-                    hebdomadaire</label
-                  >
-                  <label class="reminder-switch"
-                    ><input type="checkbox" name="permissions" value="prs:write" />Créer, modifier et supprimer des
-                    records</label
-                  >
-                  <label class="reminder-switch"
-                    ><input type="checkbox" name="permissions" value="coaching:read" />Consulter le contexte de
-                    coaching</label
-                  >
-                  <label class="reminder-switch"
-                    ><input type="checkbox" name="permissions" value="wods:write" />Enregistrer des WOD prévus</label
-                  >
-                  <label class="reminder-switch"
-                    ><input type="checkbox" name="permissions" value="programs:create" />Créer des programmes depuis
-                    ChatGPT</label
-                  >
-                  <label class="reminder-switch"
-                    ><input type="checkbox" name="permissions" value="programs:edit" />Modifier des programmes depuis
-                    ChatGPT</label
-                  >
-                </div>
-                <button class="primary">Créer la clé</button>
-                <div id="apikeyerror" class="error" role="status"></div>
-              </form>
+            <div class="admin-group-body apikey-section">
+              <div class="profile-card apikey-overview">
+                <p class="hint">Connecte une application à ton compte avec une clé et les permissions de ton choix.</p>
+                <button type="button" class="primary" id="newapikey">
+                  <span aria-hidden="true">＋</span> Nouvelle clé
+                </button>
+              </div>
+              <div id="apikeystatus" class="hint apikey-feedback" role="status"></div>
               <div id="apikeylist" class="admin-data-list"></div>
-              <div id="apikeystatus" class="error" role="status"></div>
             </div>
           </section>
           <section class="admin-group" data-account-group>
@@ -723,16 +673,83 @@
           </section>
         </section>
       </section>
+      <dialog id="apikeycreatedialog" class="modal" aria-labelledby="apikeycreatetitle">
+        <form id="apikeyform" autocomplete="off">
+          <div class="sectionhead">
+            <h2 id="apikeycreatetitle">Nouvelle clé API</h2>
+            <button type="button" class="iconbtn" data-close-dialog="apikeycreatedialog" aria-label="Fermer">×</button>
+          </div>
+          <section class="form-block" aria-label="Identité de la clé">
+            <label
+              >Nom de la clé<input name="name" maxlength="80" placeholder="Ex. myFitFactoryIA" required autofocus
+            /></label>
+            <label>Date d’expiration (fin de journée UTC)<input name="expires_on" type="date" required /></label>
+          </section>
+          <section class="form-block">
+            <h3>Permissions</h3>
+            <fieldset class="apikey-permissions">
+              <legend>Lecture</legend>
+              <label class="reminder-switch"
+                ><input type="checkbox" name="permissions" value="programs:read" />Programmes</label
+              >
+              <label class="reminder-switch"
+                ><input type="checkbox" name="permissions" value="workouts:read" />Entraînements et planification</label
+              >
+              <label class="reminder-switch"
+                ><input type="checkbox" name="permissions" value="prs:read" />Records personnels</label
+              >
+              <label class="reminder-switch"
+                ><input type="checkbox" name="permissions" value="plans:read" />Planning hebdomadaire</label
+              >
+              <label class="reminder-switch"
+                ><input type="checkbox" name="permissions" value="coaching:read" />Contexte de coaching</label
+              >
+            </fieldset>
+            <fieldset class="apikey-permissions">
+              <legend>Écriture</legend>
+              <label class="reminder-switch"
+                ><input type="checkbox" name="permissions" value="workouts:write" />Créer et modifier des séances</label
+              >
+              <label class="reminder-switch"
+                ><input type="checkbox" name="permissions" value="plans:write" />Modifier le planning
+                hebdomadaire</label
+              >
+              <label class="reminder-switch"
+                ><input type="checkbox" name="permissions" value="prs:write" />Créer, modifier et supprimer des
+                records</label
+              >
+              <label class="reminder-switch"
+                ><input type="checkbox" name="permissions" value="wods:write" />Enregistrer des WOD prévus</label
+              >
+              <label class="reminder-switch"
+                ><input type="checkbox" name="permissions" value="programs:create" />Créer des programmes depuis
+                ChatGPT</label
+              >
+              <label class="reminder-switch"
+                ><input type="checkbox" name="permissions" value="programs:edit" />Modifier des programmes depuis
+                ChatGPT</label
+              >
+            </fieldset>
+            <p class="hint">
+              L’application peut conserver les données reçues. Partage la clé avec une application de confiance.
+            </p>
+          </section>
+          <p id="apikeyerror" class="error apikey-feedback" role="status"></p>
+          <button type="submit" class="primary">Créer la clé</button>
+        </form>
+      </dialog>
       <dialog id="apikeydialog" class="modal" aria-labelledby="apikeydialogtitle">
         <form method="dialog">
-          <h2 id="apikeydialogtitle">Ta clé API</h2>
-          <p>Copie la clé maintenant. Sa valeur complète disparaît à la fermeture de cette fenêtre.</p>
-          <label>Clé API<input id="apikeytoken" type="text" readonly autocomplete="off" spellcheck="false" /></label>
-          <div class="entryactions">
-            <button type="button" class="primary" id="copyapikey">Copier la clé</button>
-            <button type="submit" class="smallbtn">Fermer</button>
+          <div class="sectionhead">
+            <h2 id="apikeydialogtitle">Ta clé API</h2>
+            <button type="submit" class="iconbtn" aria-label="Fermer">×</button>
           </div>
-          <div id="copyapikeystatus" role="status"></div>
+          <section class="form-block">
+            <p class="hint">Copie la clé maintenant. Sa valeur complète disparaît à la fermeture de cette fenêtre.</p>
+            <label>Clé API<input id="apikeytoken" type="text" readonly autocomplete="off" spellcheck="false" /></label>
+          </section>
+          <button type="button" class="primary" id="copyapikey" autofocus>Copier la clé</button>
+          <p id="copyapikeystatus" class="hint apikey-feedback" role="status"></p>
         </form>
       </dialog>
       <dialog id="programdialog" class="modal">

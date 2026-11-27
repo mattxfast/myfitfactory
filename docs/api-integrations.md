@@ -5,12 +5,12 @@ Les clés API personnelles permettent à un service externe de lire les données
 ## Créer, renouveler, révoquer et supprimer une clé
 
 1. Connectez-vous à myFitFactory et ouvrez **Mon compte → Intégrations IA & API**.
-2. Donnez un nom à la clé, cochez les permissions nécessaires et choisissez une date d’expiration. La clé expire au début du jour suivant à 00 h 00 UTC.
+2. Cliquez sur **Nouvelle clé**, donnez-lui un nom, choisissez une date d’expiration et cochez les permissions de lecture et d’écriture nécessaires. La clé expire au début du jour suivant à 00 h 00 UTC.
 3. Cliquez sur **Créer la clé**, puis **Copier la clé**. Sa valeur complète est affichée une seule fois. Enregistrez-la comme secret de l’intégration qui l’utilise.
 4. Pour renouveler une clé, créez une nouvelle clé, remplacez le secret dans l’intégration et vérifiez un appel. Révoquez ensuite l’ancienne clé dans la même rubrique. Si une clé a été divulguée, révoquez-la immédiatement.
 5. Sur une clé révoquée, cliquez sur **Supprimer**, puis confirmez pour la retirer définitivement de la liste.
 
-La liste montre le nom, le préfixe public, les permissions, l’expiration, le dernier usage enregistré et l’état de révocation. Les opérations de gestion exigent une session web active. La création, la révocation et la suppression exigent aussi un en-tête `Origin` identique à l’origine du site. Le serveur conserve uniquement une empreinte SHA-256 de la clé et ses métadonnées. Une requête Bearer déjà autorisée peut se terminer après la révocation. L’intégration peut conserver les données qu’elle a déjà reçues.
+Chaque carte montre le nom, le préfixe public, le statut, l’expiration et le dernier usage enregistré. Dépliez les permissions pour voir les accès de la clé. Les opérations de gestion exigent une session web active. La création, la révocation et la suppression exigent aussi un en-tête `Origin` identique à l’origine du site. Le serveur conserve uniquement une empreinte SHA-256 de la clé et ses métadonnées. Une requête Bearer déjà autorisée peut se terminer après la révocation. L’intégration peut conserver les données qu’elle a déjà reçues.
 
 `DELETE /api/api-keys/{id}` révoque la clé. `DELETE /api/api-keys/{id}/purge` supprime une clé déjà révoquée et renvoie `200` avec `{"ok":true}`. La suppression renvoie `409` si la clé du compte doit d’abord être révoquée, ou `404` si elle est absente ou appartient à un autre compte.
 
