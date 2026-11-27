@@ -88,6 +88,7 @@ async function acceptCoachInvite(id, start = null) {
   try {
     await sendApi("/coach-invites/" + id + "/accept", "POST", start ? {start: mondayOf(start)} : {});
     if ($("#followdialog").open) $("#followdialog").close();
+    setProgramGroupExpanded($("#toggle-coaching-programs"), true);
     // Interface simplifiée : les WOD du programme ne seraient pas affichés dans la page Séances.
     if (simpleInterface()) {
       preferences.interface = "advanced";

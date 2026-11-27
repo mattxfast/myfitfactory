@@ -3832,14 +3832,30 @@ button:disabled {
 #view-programs .program-cards:empty {
   display: none;
 }
-#view-programs .program-group {
+#view-programs .program-group,
+#view-programs .program-group-body:not([hidden]) {
   display: grid;
   gap: var(--section-content-gap);
 }
 #view-programs .program-group > .weekheading,
-#view-programs .program-group > .empty,
+#view-programs .program-group-body > .empty,
 #view-programs .program-cards > .program {
   margin: 0;
+}
+#view-programs .program-group .weekheading h2 {
+  flex: 1;
+  margin: 0;
+}
+.program-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
 }
 .coach-invites h3 {
   margin: 0 0 var(--section-content-gap);

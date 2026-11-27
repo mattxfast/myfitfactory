@@ -1,6 +1,17 @@
 // FitFactory — programmes, WOD, mouvements et fenêtres de programme/WOD.
 // Scripts classiques chargés dans l’ordre par index.html (portée globale partagée) ; boot.js démarre l’application en dernier.
 
+function setProgramGroupExpanded(button, expanded) {
+  document.getElementById(button.getAttribute("aria-controls")).hidden = !expanded;
+  button.setAttribute("aria-expanded", String(expanded));
+  button.querySelector(".section-collapse").textContent = expanded ? "−" : "＋";
+}
+$("#programlist")
+  .querySelectorAll(".program-group-toggle")
+  .forEach(button => {
+    button.onclick = () => setProgramGroupExpanded(button, button.getAttribute("aria-expanded") === "false");
+  });
+
 function programWeeks(program) {
   const weeks = [];
   for (let start = mondayOf(program.start_monday); start <= program.end_monday; start = addDays(start, 7))
@@ -465,6 +476,7 @@ $("#followform").onsubmit = async e => {
       body: JSON.stringify({program_id: f.program_id.value, start, end}),
     });
     $("#followdialog").close();
+    if (!editing) setProgramGroupExpanded($("#toggle-personal-programs"), true);
     await showSavedProgram(editing ? "Dates du programme modifiées." : "Programme suivi.", !editing);
   } catch (x) {
     $("#followerror").textContent = x.message;
@@ -648,7 +660,10 @@ $("#programform").onsubmit = async e => {
       body: JSON.stringify(body),
     });
     // Un programme qui vient d’être créé s’affiche déplié pour y ajouter ses WOD.
-    if (!id && saved?.id) programFolds().delete(saved.id);
+    if (!id && saved?.id) {
+      programFolds().delete(saved.id);
+      setProgramGroupExpanded($(body.coach ? "#toggle-coaching-programs" : "#toggle-personal-programs"), true);
+    }
     $("#programdialog").close();
     e.target.reset();
     await showSavedProgram(id ? "Programme modifié." : "Programme créé.", !id);

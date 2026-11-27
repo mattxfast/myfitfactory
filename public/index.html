@@ -254,14 +254,42 @@
         <section id="view-programs" hidden>
           <div id="programlist">
             <section class="program-group" aria-labelledby="personal-programs-title">
-              <div class="weekheading"><h2 id="personal-programs-title">Ma prog</h2></div>
-              <div id="personal-programs" class="program-cards"></div>
+              <div class="weekheading">
+                <h2 id="personal-programs-title">
+                  <button
+                    type="button"
+                    id="toggle-personal-programs"
+                    class="program-group-toggle"
+                    aria-controls="personal-programs-body"
+                    aria-expanded="true"
+                  >
+                    <b class="section-collapse" aria-hidden="true">−</b> Ma prog
+                  </button>
+                </h2>
+              </div>
+              <div class="program-group-body" id="personal-programs-body">
+                <div id="personal-programs" class="program-cards"></div>
+              </div>
             </section>
             <section class="program-group" aria-labelledby="coaching-programs-title">
-              <div class="weekheading"><h2 id="coaching-programs-title">Le coaching</h2></div>
-              <div id="coachinvites" hidden></div>
-              <div id="coaching-programs" class="program-cards"></div>
-              <p id="coaching-empty" class="card empty" hidden>Aucun programme de coaching pour le moment.</p>
+              <div class="weekheading">
+                <h2 id="coaching-programs-title">
+                  <button
+                    type="button"
+                    id="toggle-coaching-programs"
+                    class="program-group-toggle"
+                    aria-controls="coaching-programs-body"
+                    aria-expanded="true"
+                  >
+                    <b class="section-collapse" aria-hidden="true">−</b> Le coaching
+                  </button>
+                </h2>
+              </div>
+              <div class="program-group-body" id="coaching-programs-body">
+                <div id="coachinvites" hidden></div>
+                <div id="coaching-programs" class="program-cards"></div>
+                <p id="coaching-empty" class="card empty" hidden>Aucun programme de coaching pour le moment.</p>
+              </div>
             </section>
           </div>
           <div class="bottom-action">
