@@ -1694,7 +1694,7 @@ button:disabled {
 
 /* Page Programmation : hiérarchie visuelle identique à la page Séances. */
 #view-programs .programhead {
-  background: var(--surface);
+  background: var(--program-head-bg, var(--surface));
   padding: 14px 16px;
 }
 #view-programs .programhead h3 {
@@ -2398,6 +2398,9 @@ button:disabled {
 }
 .weekwod.done {
   border-left-color: var(--green);
+}
+.weekwod-cardio {
+  margin-block: var(--section-content-gap) var(--content-item-gap);
 }
 .weekwod.done.weekwod-cardio {
   border-right: 4px solid var(--green);
@@ -3816,6 +3819,21 @@ button:disabled {
 }
 #view-programs #programlist > .program {
   margin: 0;
+}
+#view-programs .program-finished {
+  --program-head-bg: var(--section-bg);
+  --nav-block-border: var(--neutral-border);
+  --banner-bg: var(--section-bg);
+  --banner-bg-hover: var(--neutral-bg);
+  --banner-border: var(--neutral-border);
+  --banner-ink: var(--ink);
+  --orange: var(--neutral-border);
+  --blue: var(--neutral-bg);
+  --blue-hover: var(--neutral-border);
+  --on-accent: var(--ink);
+  --accent-soft: var(--neutral-bg);
+  --accent-soft-ink: var(--ink-soft);
+  --action-ink: var(--ink-soft);
 }
 #view-programs .programbody {
   padding: var(--section-content-gap) 0 0;
