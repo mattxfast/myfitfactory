@@ -36,7 +36,7 @@ Une planification n'est pas une séance réalisée : elle sert de repère dans l
 
 ### Programmes et WOD
 - Création de programmes avec dates de début et de fin (fenêtres « Nouveau programme », « Choisir les mouvements du programme », « Trouver un programme » et « Suivre le programme » en blocs encadrés, comme l'enregistrement d'une séance). Les programmes sont repliés par défaut (bouton ＋ pour les déplier) ; un programme qui vient d'être créé s'affiche déplié. Sans aucun programme, la page garde son titre « Mes programmes » (sinon, chaque carte de programme sert de bandeau).
-- Les programmes datés sont grisés et portent la mention « Terminé » à partir du lendemain de leur date de fin. Pour un programme suivi, les dates de l’athlète s’appliquent. Les cartes restent consultables.
+- Avant leur date de début, les programmes datés ont une bordure en pointillés. Ils sont grisés et portent la mention « Terminé » à partir du lendemain de leur date de fin. Pour un programme suivi, les dates de l’athlète s’appliquent. Les cartes restent consultables.
 - Ajout de WOD réutilisables dans chaque programme. Sans WOD ni mouvement, les rubriques du programme affichent « Pas de WOD pour cette programmation » et « Pas de mouvement pour cette programmation », au style d’une ligne de rubrique.
 - Description du contenu prévu (fenêtre d'ajout en blocs encadrés, comme l'enregistrement d'une séance : « WOD » — nom, contenu — et « Programmation » — entraînement suivi). L'activité associée et la durée par défaut sont masquées pour l'instant dans le formulaire de WOD : un nouveau WOD reçoit l'activité par défaut et sa durée, un WOD existant garde les siennes.
 - Réorganisation des WOD via le bouton ⇅ du titre de rubrique (mode « Réorganiser » qui affiche les flèches ↑ ↓).

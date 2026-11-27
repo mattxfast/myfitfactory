@@ -1803,7 +1803,7 @@ button:disabled {
   margin: 5px 0 0;
 }
 #view-programs .programhead {
-  border: var(--nav-block-border-width) solid var(--nav-block-border);
+  border: var(--nav-block-border-width) var(--program-border-style, solid) var(--nav-block-border);
   border-radius: 11px;
   margin: 0 0 2px;
 }
@@ -3819,6 +3819,9 @@ button:disabled {
 }
 #view-programs #programlist > .program {
   margin: 0;
+}
+#view-programs .program-upcoming {
+  --program-border-style: dashed;
 }
 #view-programs .program-finished {
   --program-head-bg: var(--section-bg);

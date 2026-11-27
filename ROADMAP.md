@@ -9,7 +9,7 @@ dire « fais l'idée 7 ».
 - Nouvelle idée : l'ajouter dans la bonne rubrique avec le **numéro suivant le plus grand existant**.
 - *En italique* : la décision de Matt quand il y en a une.
 
-Prochain numéro libre : **71**
+Prochain numéro libre : **72**
 
 ## Fiabilité et exploitation
 
@@ -74,6 +74,7 @@ Prochain numéro libre : **71**
 - [x] **68.** Permettre au propriétaire de supprimer une clé API déjà révoquée depuis « Intégrations IA & API ». — fait le 27/11/2026 ([documentation](docs/api-integrations.md))
 - [x] **69.** Harmoniser « Intégrations IA & API » avec les cartes et les fenêtres de Mon compte, avec des statuts lisibles et des permissions regroupées. — fait le 27/11/2026 ([documentation](docs/api-integrations.md))
 - [x] **70.** Griser les programmes terminés et espacer la ligne « Expositions cardio intenses » dans le détail des séances. — fait le 27/11/2026
+- [x] **71.** Afficher une bordure en pointillés autour de l’en-tête des programmes à venir. — fait le 27/11/2026
 
 ## Look and feel
 
