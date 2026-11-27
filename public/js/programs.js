@@ -1,18 +1,37 @@
 // FitFactory — programmes, WOD, mouvements et fenêtres de programme/WOD.
 // Scripts classiques chargés dans l’ordre par index.html (portée globale partagée) ; boot.js démarre l’application en dernier.
 
-const programTabs = [...$("#program-tabs").querySelectorAll('[role="tab"]')];
-function selectProgramTab(activeTab) {
+const programMenu = $("#program-tabs"),
+  programTabs = [...programMenu.querySelectorAll('[role="tab"]')],
+  hasCoachRole = () => preferences?.coach === "approved";
+function renderProgramNavigation(activeTab = programMenu.querySelector(".active")) {
+  const showTabs = hasCoachRole(),
+    hasCoaching = coachInvites.length > 0 || $("#coaching-programs").childElementCount > 0,
+    hasPersonal = !!$("#personal-programs .program");
+  programMenu.hidden = !showTabs;
+  $("#coaching-empty").hidden = !showTabs || hasCoaching;
+
   for (const tab of programTabs) {
-    const selected = tab === activeTab;
+    const selected = tab === activeTab,
+      panel = document.getElementById(tab.getAttribute("aria-controls"));
     tab.classList.toggle("active", selected);
     tab.setAttribute("aria-selected", String(selected));
     tab.tabIndex = selected ? 0 : -1;
-    document.getElementById(tab.getAttribute("aria-controls")).hidden = !selected;
+    if (showTabs) {
+      panel.hidden = !selected;
+      panel.setAttribute("role", "tabpanel");
+      panel.setAttribute("aria-labelledby", tab.id);
+      panel.tabIndex = 0;
+    } else {
+      panel.hidden = panel.id === "coaching-programs-body" ? !hasCoaching : hasCoaching && !hasPersonal;
+      panel.removeAttribute("role");
+      panel.removeAttribute("aria-labelledby");
+      panel.removeAttribute("tabindex");
+    }
   }
 }
 programTabs.forEach((tab, index) => {
-  tab.onclick = () => selectProgramTab(tab);
+  tab.onclick = () => renderProgramNavigation(tab);
   tab.onkeydown = event => {
     const count = programTabs.length,
       next = {
@@ -23,7 +42,7 @@ programTabs.forEach((tab, index) => {
       }[event.key];
     if (next === undefined) return;
     event.preventDefault();
-    selectProgramTab(programTabs[next]);
+    renderProgramNavigation(programTabs[next]);
     programTabs[next].focus();
   };
 });
@@ -492,7 +511,7 @@ $("#followform").onsubmit = async e => {
       body: JSON.stringify({program_id: f.program_id.value, start, end}),
     });
     $("#followdialog").close();
-    if (!editing) selectProgramTab($("#personal-programs-tab"));
+    if (!editing) renderProgramNavigation($("#personal-programs-tab"));
     await showSavedProgram(editing ? "Dates du programme modifiées." : "Programme suivi.", !editing);
   } catch (x) {
     $("#followerror").textContent = x.message;
@@ -629,7 +648,7 @@ function openProgram(p = null) {
   f.elements.end.value = p && !p.is_default ? p.end_monday : "";
   // Programme de coach : réservé aux coachs validés ; un programme existant ne change pas de nature, et une fois
   // proposé à des inscrits, seul son nom se modifie.
-  $("#programcoachfield").hidden = p ? !p.coach_mode : preferences?.coach !== "approved";
+  $("#programcoachfield").hidden = p ? !p.coach_mode : !hasCoachRole();
   f.elements.coach.checked = !!p?.coach_mode;
   f.elements.coach.disabled = !!p;
   f.elements.coach_weeks.value = p?.coach_weeks || "";
@@ -678,7 +697,7 @@ $("#programform").onsubmit = async e => {
     // Un programme qui vient d’être créé s’affiche déplié pour y ajouter ses WOD.
     if (!id && saved?.id) {
       programFolds().delete(saved.id);
-      selectProgramTab($(body.coach ? "#coaching-programs-tab" : "#personal-programs-tab"));
+      renderProgramNavigation($(body.coach ? "#coaching-programs-tab" : "#personal-programs-tab"));
     }
     $("#programdialog").close();
     e.target.reset();

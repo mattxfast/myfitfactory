@@ -3824,6 +3824,10 @@ button:disabled {
 }
 
 /* Programmes & WOD */
+#program-tabs[hidden] {
+  display: none;
+}
+#view-programs #programlist,
 #view-programs .program-cards:not(:empty) {
   display: grid;
   gap: var(--page-content-gap);

@@ -15,7 +15,6 @@ function renderCoachInvites() {
   if (preferences) applyInterface();
   const list = $("#coachinvites");
   list.hidden = !coachInvites.length;
-  $("#coaching-empty").hidden = !list.hidden || $("#coaching-programs").childElementCount > 0;
   list.innerHTML = coachInvites.length
     ? `<section class="coach-invites"><h3>Programmes proposés</h3><div class="weekwodlist">${coachInvites
         .map(
@@ -30,6 +29,7 @@ function renderCoachInvites() {
         )
         .join("")}</div></section>`
     : "";
+  renderProgramNavigation();
   list.querySelectorAll("[data-coach-accept]").forEach(
     b =>
       (b.onclick = () => {
@@ -93,7 +93,7 @@ async function acceptCoachInvite(id, start = null) {
   try {
     await sendApi("/coach-invites/" + id + "/accept", "POST", start ? {start: mondayOf(start)} : {});
     if ($("#followdialog").open) $("#followdialog").close();
-    selectProgramTab($("#coaching-programs-tab"));
+    renderProgramNavigation($("#coaching-programs-tab"));
     // Interface simplifiée : les WOD du programme ne seraient pas affichés dans la page Séances.
     if (simpleInterface()) {
       preferences.interface = "advanced";

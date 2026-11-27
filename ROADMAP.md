@@ -9,7 +9,7 @@ dire « fais l'idée 7 ».
 - Nouvelle idée : l'ajouter dans la bonne rubrique avec le **numéro suivant le plus grand existant**.
 - *En italique* : la décision de Matt quand il y en a une.
 
-Prochain numéro libre : **76**
+Prochain numéro libre : **77**
 
 ## Fiabilité et exploitation
 
@@ -79,6 +79,7 @@ Prochain numéro libre : **76**
 - [x] **73.** Permettre de replier indépendamment « Ma prog » et « Le coaching ». — fait le 27/11/2026
 - [x] **74.** Présenter « Ma prog » et « Le coaching » en onglets, comme dans « Mon fitness ». — fait le 27/11/2026
 - [x] **75.** Afficher « Expositions cardio intense » dans le détail des séances. — fait le 27/11/2026
+- [x] **76.** Réserver le menu « Ma prog » / « Le coaching » aux coachs validés et afficher directement les programmes et invitations pour les autres utilisateurs. — fait le 27/11/2026
 
 ## Look and feel
 

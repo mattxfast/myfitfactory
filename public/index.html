@@ -252,7 +252,7 @@
           <div id="weekafter"></div>
         </section>
         <section id="view-programs" hidden>
-          <div class="fitness-tabs" id="program-tabs" role="tablist" aria-label="Programmes et WOD">
+          <div class="fitness-tabs" id="program-tabs" role="tablist" aria-label="Programmes et WOD" hidden>
             <button
               type="button"
               id="personal-programs-tab"
@@ -276,23 +276,10 @@
             </button>
           </div>
           <div id="programlist">
-            <section
-              class="program-panel"
-              id="personal-programs-body"
-              role="tabpanel"
-              aria-labelledby="personal-programs-tab"
-              tabindex="0"
-            >
+            <section class="program-panel" id="personal-programs-body">
               <div id="personal-programs" class="program-cards"></div>
             </section>
-            <section
-              class="program-panel"
-              id="coaching-programs-body"
-              role="tabpanel"
-              aria-labelledby="coaching-programs-tab"
-              tabindex="0"
-              hidden
-            >
+            <section class="program-panel" id="coaching-programs-body" hidden>
               <div id="coachinvites" hidden></div>
               <div id="coaching-programs" class="program-cards"></div>
               <p id="coaching-empty" class="card empty" hidden>Aucun programme de coaching pour le moment.</p>

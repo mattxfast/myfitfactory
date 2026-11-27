@@ -101,7 +101,8 @@ function switchView(v) {
   if (v === "admin") showAdminPage();
   if (user) renderUserbar();
   if (v === "box") loadManagedBox();
-  if (v === "programs" && simpleInterface() && coachInvites.length) selectProgramTab($("#coaching-programs-tab"));
+  if (v === "programs" && hasCoachRole() && simpleInterface() && coachInvites.length)
+    renderProgramNavigation($("#coaching-programs-tab"));
   if (v === "prs") {
     loadProgress();
     loadReportMonths();
