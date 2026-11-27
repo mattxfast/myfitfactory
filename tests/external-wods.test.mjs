@@ -524,3 +524,12 @@ test("une modification protège les séances réalisées et leurs mouvements coc
   );
   assert.equal(await idOf(outsider.post("/programs/" + pid + "/movements", {catalog_movement_id: squat})), movement);
 });
+
+test("le formulaire permet de sélectionner la modification de programmes sans la précocher", async () => {
+  const response = await fetch(worker.base + "/");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  const option = html.match(/<input\b[^>]*name="permissions"[^>]*value="programs:edit"[^>]*>/);
+  assert.ok(option, "La permission doit être proposée dans le formulaire");
+  assert.doesNotMatch(option[0], /\bchecked\b/);
+});
