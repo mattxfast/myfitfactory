@@ -15,7 +15,10 @@ function weekName(program, week) {
 }
 // Le WOD technique « __AUTRES__ » (séances « Autres ») n’est jamais affiché dans les listes de WOD.
 function visibleWods(pid) {
-  return (wodsByProgram[pid] || []).filter(w => w.name !== "__AUTRES__");
+  return (wodsByProgram[pid] || []).filter(w => w.name !== "__AUTRES__" && !w.archived);
+}
+function visibleProgramMovements(pid) {
+  return (movementsByProgram[pid] || []).filter(movement => !movement.archived);
 }
 function weeklyWodContent(wodId, weekStart) {
   return weeklyWodPrograms.find(x => x.wod_id === wodId && x.week_start === weekStart)?.content || "";
@@ -78,7 +81,14 @@ function renderPrograms() {
                       `<div class="wod-entry"><div class="wodrow"><div class="wod-title"><b>${esc(w.name)}</b>${w.is_tracked ? `<span class="tracked-tag">Suivi</span>` : ""}</div><div class="entryactions reorder-actions">${reordering.has(p.id + ":wods") ? `<button class="smallbtn reorder-btn" data-move-wod="${w.id}" data-direction="-1" aria-label="Monter" title="Monter" ${i === 0 ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"/><path d="m6 11 6-6 6 6"/></svg></button><button class="smallbtn reorder-btn" data-move-wod="${w.id}" data-direction="1" aria-label="Descendre" title="Descendre" ${i === visibleWods(p.id).length - 1 ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="m6 13 6 6 6-6"/></svg></button>` : ""}<button type="button" class="smallbtn" data-ai-wod="${w.id}" data-program="${p.id}" aria-label="Générer ce WOD sur toutes les semaines avec l’IA" title="Générer ce WOD sur toutes les semaines avec l’IA">${AI_ICON}</button><button class="smallbtn" data-edit-wod="${w.id}" aria-label="Modifier" title="Modifier"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.83 2.83 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg></button>${p.published_at ? "" : `<button class="smallbtn delete ${w.has_sessions ? "is-disabled" : ""}" data-del-wod="${w.id}" aria-label="Supprimer le WOD" title="${w.has_sessions ? "Ce WOD a déjà été réalisé et ne peut pas être supprimé" : "Supprimer le WOD"}" ${w.has_sessions ? 'disabled aria-disabled="true"' : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button>`}</div>${w.planned_comment ? `<p>${esc(w.planned_comment)}</p>` : ""}${w.is_tracked ? renderWodWeeklyProgramming(p, w) : ""}</div></div>`
                   )
                   .join("") || programEmpty("Pas de WOD pour cette programmation")
-              }</div></div></div><div class="movement-editor compact program-section program-subsection ${folded.has(p.id + ":movements") ? "collapsed" : ""}"><div class="program-section-heading program-section-toolbar"><button class="smallbtn section-collapse program-section-toggle" data-toggle-program-section="${p.id}:movements" aria-label="Replier les mouvements" aria-expanded="${!folded.has(p.id + ":movements")}">${folded.has(p.id + ":movements") ? "＋" : "−"}</button><span>Focus mouvement</span>${reorderToggle(p.id + ":movements", (movementsByProgram[p.id] || []).length, "Réorganiser les mouvements")}<button class="primary addsession-compact addwod" data-pick-movements="${p.id}" aria-label="Ajouter un mouvement depuis le catalogue" title="Ajouter un mouvement depuis le catalogue">＋</button></div><div class="program-subsection-body"><div class="program-movement-list">${(movementsByProgram[p.id] || []).map((m, i) => `<div class="movement-row"><span>${esc(m.name)}</span><div class="entryactions reorder-actions">${reordering.has(p.id + ":movements") ? `<button class="smallbtn reorder-btn" data-move-movement="${m.id}" data-direction="-1" aria-label="Monter" title="Monter" ${i === 0 ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"/><path d="m6 11 6-6 6 6"/></svg></button><button class="smallbtn reorder-btn" data-move-movement="${m.id}" data-direction="1" aria-label="Descendre" title="Descendre" ${i === (movementsByProgram[p.id] || []).length - 1 ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="m6 13 6 6 6-6"/></svg></button>` : ""}${m.catalog_movement_id ? "" : `<button class="smallbtn" data-edit-movement="${m.id}" aria-label="Modifier" title="Modifier"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.83 2.83 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg></button>`}<button class="smallbtn delete" data-del-movement="${m.id}" aria-label="Supprimer" title="Supprimer"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button></div></div>`).join("") || programEmpty("Pas de mouvement pour cette programmation")}</div></div></div></div></div></article>`
+              }</div></div></div><div class="movement-editor compact program-section program-subsection ${folded.has(p.id + ":movements") ? "collapsed" : ""}"><div class="program-section-heading program-section-toolbar"><button class="smallbtn section-collapse program-section-toggle" data-toggle-program-section="${p.id}:movements" aria-label="Replier les mouvements" aria-expanded="${!folded.has(p.id + ":movements")}">${folded.has(p.id + ":movements") ? "＋" : "−"}</button><span>Focus mouvement</span>${reorderToggle(p.id + ":movements", visibleProgramMovements(p.id).length, "Réorganiser les mouvements")}<button class="primary addsession-compact addwod" data-pick-movements="${p.id}" aria-label="Ajouter un mouvement depuis le catalogue" title="Ajouter un mouvement depuis le catalogue">＋</button></div><div class="program-subsection-body"><div class="program-movement-list">${
+                visibleProgramMovements(p.id)
+                  .map(
+                    (m, i) =>
+                      `<div class="movement-row"><span>${esc(m.name)}</span><div class="entryactions reorder-actions">${reordering.has(p.id + ":movements") ? `<button class="smallbtn reorder-btn" data-move-movement="${m.id}" data-direction="-1" aria-label="Monter" title="Monter" ${i === 0 ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"/><path d="m6 11 6-6 6 6"/></svg></button><button class="smallbtn reorder-btn" data-move-movement="${m.id}" data-direction="1" aria-label="Descendre" title="Descendre" ${i === visibleProgramMovements(p.id).length - 1 ? "disabled" : ""}><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="m6 13 6 6 6-6"/></svg></button>` : ""}${m.catalog_movement_id ? "" : `<button class="smallbtn" data-edit-movement="${m.id}" aria-label="Modifier" title="Modifier"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.83 2.83 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg></button>`}<button class="smallbtn delete" data-del-movement="${m.id}" aria-label="Supprimer" title="Supprimer"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button></div></div>`
+                  )
+                  .join("") || programEmpty("Pas de mouvement pour cette programmation")
+              }</div></div></div></div></div></article>`
           )
           .join("")
       : followed.length
@@ -334,7 +344,7 @@ function followedProgramCard(p) {
   // Lecture seule, mais le programme et ses rubriques se plient et se déplient comme ceux de l’utilisateur.
   const author = [p.author_first_name, p.author_last_name].filter(Boolean).join(" "),
     week = mondayOf(today()),
-    movements = movementsByProgram[p.id] || [],
+    movements = visibleProgramMovements(p.id),
     collapsed = programFolds(),
     folded = window.cfProgramSections || (window.cfProgramSections = new Set()),
     fold = (key, label) =>
@@ -499,7 +509,7 @@ async function moveProgramItem(itemId, direction, kind) {
   }
 }
 function openMovementPicker(pid) {
-  const current = movementsByProgram[pid] || [],
+  const current = visibleProgramMovements(pid),
     used = new Set(current.map(m => m.catalog_movement_id).filter(Boolean));
   $("#movementpickerform").elements.program_id.value = pid;
   $("#movementpickerlist").innerHTML = movementCatalog.length
@@ -518,7 +528,7 @@ $("#movementpickerform").onsubmit = async e => {
   e.preventDefault();
   const pid = e.target.elements.program_id.value,
     selected = [...e.target.querySelectorAll('input[name="catalog_movement_ids"]:checked')].map(x => x.value),
-    existing = movementsByProgram[pid] || [],
+    existing = visibleProgramMovements(pid),
     wanted = new Set(selected);
   try {
     for (const m of existing.filter(x => x.catalog_movement_id && !wanted.has(x.catalog_movement_id)))

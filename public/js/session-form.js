@@ -68,7 +68,12 @@ function fillWodOptions(pid, selected = "") {
     weekSessions = sessionFormWeek.sessions || [],
     offerCommonWods = canUseCommonWod(),
     done = new Set(weekSessions.map(s => s.wod_id)),
-    ws = pid === "none" ? [] : visibleWods(pid).filter(w => w.id === editedSession?.wod_id || !done.has(w.id)),
+    ws =
+      pid === "none"
+        ? []
+        : (wodsByProgram[pid] || []).filter(
+            w => w.name !== "__AUTRES__" && (w.id === editedSession?.wod_id || (!w.archived && !done.has(w.id)))
+          ),
     list = sessionFormWeek.boxWods.filter(
       w => w.wod_date <= today() && (w.id === editedSession?.box_wod_id || !datedWodDone(w, "box_wod_id", weekSessions))
     ),
@@ -350,7 +355,9 @@ const sameMovement = (pm, cm) =>
   pm.catalog_movement_id === cm.id || pm.name.trim().toLowerCase() === cm.name.trim().toLowerCase();
 function renderSessionMovementChecks(pid, sessionId = "") {
   const box = $("#sessionmovementchecks"),
-    programItems = movementsByProgram[pid] || [],
+    programItems = (movementsByProgram[pid] || []).filter(
+      m => !m.archived || movementChecks.some(c => c.session_id === sessionId && c.movement_id === m.id)
+    ),
     fromCatalog = !programItems.length,
     items = fromCatalog ? movementCatalog : programItems,
     field = fromCatalog ? "catalog_movement_ids" : "movement_ids",

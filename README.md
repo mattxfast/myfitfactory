@@ -348,3 +348,8 @@ Le Worker conserve notamment les routes de statistiques et d'export (`/api/stats
 La [création conversationnelle de cycles](docs/external-wods.md#créer-un-cycle-depuis-chatgpt)
 permet de créer un programme privé et ses modèles après confirmation, avec
 ou sans WOD détaillés.
+
+Les assistants externes peuvent modifier un programme privé avec la permission
+`programs:edit`. L’API prépare un aperçu signé avant l’enregistrement et
+archive les modèles et mouvements retirés pour conserver l’historique.
+Consulter [le contrat d’intégration](docs/api-integrations.md#modifier-un-programme-privé).

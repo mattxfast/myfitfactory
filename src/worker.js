@@ -1,3 +1,4 @@
+import {PROGRAM_EDIT_PATH, PROGRAM_SNAPSHOT, editableProgram, parseProgramEdit} from "./program-edits.js";
 import {vapidKeys, sendPush, isAllowedEndpoint, localEcdhKeys} from "./push.js";
 import {
   AI_DAILY_LIMIT,
@@ -944,6 +945,13 @@ async function ensureV2Schema(env) {
           b64(crypto.getRandomValues(new Uint8Array(32)))
         ),
       ]);
+    });
+    await runMigration("v53-program-edit-archives", async () => {
+      for (const table of ["program_wods", "program_movements"]) {
+        const {results} = await env.DB.prepare("PRAGMA table_info(" + table + ")").all();
+        if (!results.some(column => column.name === "archived"))
+          await env.DB.prepare("ALTER TABLE " + table + " ADD COLUMN archived INTEGER NOT NULL DEFAULT 0").run();
+      }
     });
   })().catch(err => {
     schemaReady = null;
@@ -2345,7 +2353,8 @@ const PLAN_WOD_JOIN = `
   JOIN program_wods w ON w.id=wp.wod_id
   JOIN programs p ON p.id=w.program_id
   LEFT JOIN program_follows f ON f.program_id=p.id AND f.user_id=wp.user_id`;
-const PLAN_ACCESS = "w.name<>'__AUTRES__' AND p.is_default=0 AND (p.user_id=wp.user_id OR f.user_id IS NOT NULL)";
+const PLAN_ACCESS =
+  "w.archived=0 AND w.name<>'__AUTRES__' AND p.is_default=0 AND (p.user_id=wp.user_id OR f.user_id IS NOT NULL)";
 const PLAN_COMPLETED = `EXISTS(
   SELECT 1 FROM training_sessions s WHERE s.user_id=wp.user_id AND s.wod_id=wp.wod_id
     AND s.session_date BETWEEN wp.week_start AND COALESCE(date(wp.week_start,'+6 days'),'9999-12-31')
@@ -2657,6 +2666,8 @@ const API_KEY_PERMISSIONS = new Map([
   ["POST " + EXTERNAL_WOD_PATH + "/preview", "wods:write"],
   ["PUT " + EXTERNAL_WOD_PATH, "wods:write"],
   ["POST " + EXTERNAL_PROGRAM_PATH + "/preview", "programs:create"],
+  ["POST " + PROGRAM_EDIT_PATH + "/preview", "programs:edit"],
+  ["PUT " + PROGRAM_EDIT_PATH, "programs:edit"],
   ["PUT " + EXTERNAL_PROGRAM_PATH, "programs:create"],
   ["GET /api/week-data", "workouts:read"],
   ["GET /api/activities", "workouts:read"],
@@ -2953,11 +2964,11 @@ async function coachingContext(r, e, userId) {
     chosen = programId
       ? accessible.find(p => p.id === programId)
       : wodId
-        ? accessible.find(p => wods[p.id]?.some(w => w.id === wodId && w.name !== "__AUTRES__"))
+        ? accessible.find(p => wods[p.id]?.some(w => w.id === wodId && w.name !== "__AUTRES__" && !w.archived))
         : null;
   if (
     ((programId || wodId) && !chosen) ||
-    (wodId && !wods[chosen.id]?.some(w => w.id === wodId && w.name !== "__AUTRES__"))
+    (wodId && !wods[chosen.id]?.some(w => w.id === wodId && w.name !== "__AUTRES__" && !w.archived))
   )
     return json({error: "Programme ou modèle de WOD introuvable."}, 404);
 
@@ -3055,10 +3066,12 @@ async function coachingContext(r, e, userId) {
   };
   const recentFrequency = movementFrequency(history, frequency);
   const visible = p => {
-    const models = (wods[p.id] || []).filter(w => w.name !== "__AUTRES__"),
+    const models = (wods[p.id] || []).filter(w => w.name !== "__AUTRES__" && !w.archived),
       worked = new Set(during.filter(s => s.program_id === p.id && s.source === "program").map(s => s.wod_id)),
       programActual = during.filter(s => s.program_id === p.id && (s.source === "program" || s.source === "other")),
-      focus = (movements[p.id] || []).map(({id, catalog_movement_id, name}) => ({id, catalog_movement_id, name})),
+      focus = (movements[p.id] || [])
+        .filter(m => !m.archived)
+        .map(({id, catalog_movement_id, name}) => ({id, catalog_movement_id, name})),
       counts = new Map();
     for (const s of programActual) {
       for (const movement of s.worked_movements) {
@@ -3449,6 +3462,272 @@ async function externalGeneratedProgram(r, e, userId, preview) {
   }
 }
 
+async function externalProgramEdit(r, e, userId, preview) {
+  if (r.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase() !== "application/json")
+    return json({error: "Un corps JSON est requis."}, 415);
+  const body = await readGeneratedWodBody(r, 512 * 1024);
+  const input = parseProgramEdit(body, exactCalendarDate, mondayOfDate);
+  if (!input) return json({error: "Modifications de programme invalides."}, 400);
+  const db = e.DB,
+    pid = input.program_id;
+  const invalid = message => json({error: message}, 409);
+  const stale = () => json({error: "Le programme a changé. Demande et confirme un nouvel aperçu."}, 412);
+  const snapshot = db
+    .prepare("SELECT " + PROGRAM_SNAPSHOT + " AS snapshot FROM programs p WHERE " + editableProgram)
+    .bind(pid, userId);
+  const raw = (await snapshot.first())?.snapshot;
+  if (!raw) return json({error: "Programme privé personnel introuvable ou non modifiable."}, 404);
+  const before = JSON.parse(raw);
+  const version = await sha(raw);
+  const fingerprint = await sha(JSON.stringify(["edit-program", userId, body]));
+  const receiptKey = "program-edit:" + (r.headers.get("Idempotency-Key") ?? "");
+  const receipt = db
+    .prepare("SELECT request_hash,version FROM wod_api_requests WHERE user_id=? AND request_id=?")
+    .bind(userId, receiptKey);
+  const answer = row =>
+    row.request_hash === fingerprint ? json({ok: true, id: pid}) : invalid("Clé d’idempotence déjà utilisée.");
+  let expiresAt;
+  if (!preview) {
+    const parsed = readIdempotencyKey(r);
+    if (parsed.error) return parsed.error;
+    expiresAt = parsed.expiresAt;
+    const match = /^"([A-Za-z0-9_-]{43})"$/.exec(r.headers.get("If-Match") ?? "");
+    const proof = /^(\d{10})\.([A-Za-z0-9_-]{43})$/.exec(r.headers.get("X-WOD-Confirmation") ?? "");
+    if (
+      !match ||
+      !proof ||
+      !(await crypto.subtle.verify(
+        "HMAC",
+        await wodConfirmationKey(e),
+        unb64(proof[2]),
+        enc.encode(JSON.stringify(["edit-program", proof[1], match[1], fingerprint]))
+      ))
+    )
+      return json({error: "Confirmation de l’aperçu requise."}, 428);
+    const prior = await receipt.first();
+    if (prior) return answer(prior);
+    if (Number(proof[1]) <= Date.now() / 1000) return json({error: "Aperçu expiré."}, 428);
+    if (match[1] !== version) return stale();
+  }
+
+  // Les programmes créés par API stockent l’objectif sur la première ligne des consignes.
+  const splitInstructions = value => {
+    const match = /^Objectif : ([^\n]+)(?:\n([\s\S]*))?$/.exec(value ?? "");
+    return {objective: match?.[1] ?? null, coaching_instructions: match ? (match[2] ?? null) : value};
+  };
+  const previous = {...before.program, ...splitInstructions(before.program.coaching_instructions)};
+  const fields = {...previous, ...input.fields};
+  fields.objective = fields.objective?.trim().replace(/\s+/g, " ") ?? null;
+  const instructions = [fields.objective && "Objectif : " + fields.objective, fields.coaching_instructions?.trim()]
+    .filter(Boolean)
+    .join("\n");
+  fields.name = fields.name.trim();
+  const start = fields.start_monday,
+    end = fields.end_monday;
+  const cardio = programCardioTargets({...fields, coaching_instructions: instructions});
+  if (cardio.error || start > end || (input.fields.start_monday && mondayOfDate(start) !== start))
+    return json({error: cardio.error ?? "Période de programme invalide."}, 400);
+  if (before.sessions.some(([, , day]) => day < start || day > end))
+    return invalid("Les nouvelles dates doivent inclure les séances déjà réalisées.");
+  const overlap = `NOT EXISTS(SELECT 1 FROM programs WHERE user_id=? AND id<>? AND is_default=0 AND coach_mode IS NULL
+    AND NOT(end_monday<? OR start_monday>?)) AND NOT EXISTS(SELECT 1 FROM program_follows WHERE user_id=? AND NOT(end_monday<? OR start_monday>?))`;
+  const overlapArgs = [userId, pid, start, end, userId, start, end];
+  if (
+    !(
+      await db
+        .prepare("SELECT " + overlap + " AS available")
+        .bind(...overlapArgs)
+        .first()
+    ).available
+  )
+    return invalid("La période chevauche un autre programme personnel ou suivi.");
+
+  const oldModels = before.models.filter(model => !model.archived);
+  const models = input.models?.map((model, position) => {
+    const old = oldModels.find(row => row.id === model.id);
+    return {
+      id: model.id,
+      name: model.name.trim(),
+      instructions: model.instructions?.trim() ?? old?.instructions ?? "",
+      duration_minutes: model.duration_minutes ?? old?.duration_minutes ?? 60,
+      movement_ids: model.movement_ids ?? old?.movement_ids ?? [],
+      position,
+    };
+  });
+  if (models?.some(model => model.id && !oldModels.some(old => old.id === model.id)))
+    return invalid("Un modèle est archivé ou n’appartient pas au programme.");
+  const omissions = models ? oldModels.filter(old => !models.some(m => m.id === old.id)) : [];
+  const activeModels = models ?? oldModels;
+  if (models?.some(model => before.models.some(w => (w.archived || omissions.includes(w)) && w.name === model.name)))
+    return invalid("Un intitulé est déjà réservé à un modèle archivé.");
+  const today = mondayOfDate(localToday());
+  for (const draft of input.drafts) {
+    const {wod_id: wid, week_start: week} = draft.target;
+    if (
+      !activeModels.some(model => model.id === wid) ||
+      week < today ||
+      week < start ||
+      week > end ||
+      before.sessions.some(([, id, day]) => id === wid && day >= week && day <= addDays(week, 6))
+    )
+      return invalid("Un WOD détaillé ne peut être modifié que sur une semaine à venir, sans séance réalisée.");
+  }
+  const catalogIds = [
+    ...new Set([
+      ...(input.focus ?? []),
+      ...(models ?? []).flatMap(x => x.movement_ids),
+      ...input.drafts.flatMap(x => x.movement_ids),
+    ]),
+  ];
+  const catalog = (
+    await db
+      .prepare("SELECT id,name FROM movement_catalog WHERE id IN (SELECT value FROM json_each(?))")
+      .bind(JSON.stringify(catalogIds))
+      .all()
+  ).results;
+  if (catalog.length !== catalogIds.length) return json({error: "Mouvement inconnu dans le catalogue."}, 400);
+  const focus = input.focus?.map(mid => {
+    const known = catalog.find(x => x.id === mid);
+    const row =
+      before.focus.find(x => x.catalog === mid) ?? before.focus.find(x => x.name === known.name && x.catalog == null);
+    return {id: row?.id, name: row?.name ?? known.name, catalog: mid};
+  });
+  if (focus?.some(m => before.focus.some(x => x.name === m.name && x.id !== m.id)))
+    return invalid("Un mouvement utilise déjà ce libellé.");
+  const proposedDrafts = input.drafts.map(draft => ({
+    wod_id: draft.target.wod_id,
+    week_start: draft.target.week_start,
+    content: draft.content,
+    blocks: draft.blocks,
+    previous_content:
+      before.drafts.find(old => old.wod_id === draft.target.wod_id && old.week_start === draft.target.week_start)
+        ?.content ?? null,
+  }));
+  if (preview) {
+    const expires = Math.floor(Date.now() / 1000) + 900;
+    const signature = b64(
+      await crypto.subtle.sign(
+        "HMAC",
+        await wodConfirmationKey(e),
+        enc.encode(JSON.stringify(["edit-program", String(expires), version, fingerprint]))
+      )
+    );
+    return json({
+      id: pid,
+      before: {program: previous, models: oldModels, focus: before.focus.filter(m => !m.archived)},
+      after: {
+        program: fields,
+        models: activeModels,
+        focus: focus ?? before.focus.filter(m => !m.archived),
+        drafts: proposedDrafts,
+      },
+      archived_models: omissions.map(({id, name}) => ({id, name})),
+      edit_version: version,
+      confirmation: expires + "." + signature,
+      expires_at: new Date(expires * 1000).toISOString(),
+    });
+  }
+
+  const txn = uid(),
+    guard = "EXISTS(SELECT 1 FROM wod_api_requests WHERE user_id=? AND request_id=? AND version=?)";
+  const write = (sql, ...args) => db.prepare(sql + " AND " + guard).bind(...args, userId, receiptKey, txn);
+  const statements = [
+    db
+      .prepare(
+        `INSERT OR IGNORE INTO wod_api_requests(user_id,request_id,request_hash,version,expires_at)
+      SELECT ?,?,?,?,? FROM programs p WHERE ${editableProgram} AND ${PROGRAM_SNAPSHOT}=? AND ${overlap}`
+      )
+      .bind(userId, receiptKey, fingerprint, txn, expiresAt, pid, userId, raw, ...overlapArgs),
+    write(
+      "UPDATE programs SET name=?,start_monday=?,end_monday=?,coaching_instructions=?,weekly_cardio_target_min=?,weekly_cardio_target_max=? WHERE id=? AND user_id=?",
+      fields.name,
+      start,
+      end,
+      cardio.instructions,
+      ...cardio.values,
+      pid,
+      userId
+    ),
+  ];
+  if (models) {
+    const edited = models.map(m => ({...m, id: m.id ?? uid(), temp: uid()}));
+    statements.push(
+      write(
+        "UPDATE program_wods SET archived=1 WHERE program_id=? AND user_id=? AND id IN (SELECT value FROM json_each(?))",
+        pid,
+        userId,
+        JSON.stringify(omissions.map(w => w.id))
+      ),
+      write(
+        `UPDATE program_wods SET name=(SELECT json_extract(value,'$.temp') FROM json_each(?) WHERE json_extract(value,'$.id')=program_wods.id)
+        WHERE program_id=? AND user_id=? AND id IN (SELECT json_extract(value,'$.id') FROM json_each(?))`,
+        JSON.stringify(edited),
+        pid,
+        userId,
+        JSON.stringify(edited)
+      )
+    );
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO program_wods(id,program_id,user_id,name,planned_comment,duration_minutes,sort_order,is_tracked)
+      SELECT json_extract(value,'$.id'),?,?,json_extract(value,'$.name'),json_extract(value,'$.instructions'),
+        json_extract(value,'$.duration_minutes'),json_extract(value,'$.position'),1 FROM json_each(?) WHERE ${guard}
+      ON CONFLICT(id) DO UPDATE SET name=excluded.name,planned_comment=excluded.planned_comment,
+        duration_minutes=excluded.duration_minutes,sort_order=excluded.sort_order`
+        )
+        .bind(pid, userId, JSON.stringify(edited), userId, receiptKey, txn)
+    );
+    statements.push(
+      write(
+        "DELETE FROM program_wod_movements WHERE wod_id IN (SELECT json_extract(value,'$.id') FROM json_each(?))",
+        JSON.stringify(edited)
+      ),
+      write(
+        `INSERT INTO program_wod_movements(wod_id,catalog_movement_id)
+        SELECT json_extract(m.value,'$.id'),c.value FROM json_each(?) m,json_each(m.value,'$.movement_ids') c WHERE 1=1`,
+        JSON.stringify(edited)
+      )
+    );
+  }
+  if (focus) {
+    statements.push(write("UPDATE program_movements SET archived=1 WHERE program_id=? AND user_id=?", pid, userId));
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO program_movements(id,program_id,user_id,name,sort_order,catalog_movement_id,archived)
+      SELECT json_extract(value,'$.id'),?,?,json_extract(value,'$.name'),CAST(key AS INTEGER),json_extract(value,'$.catalog'),0
+      FROM json_each(?) WHERE ${guard} ON CONFLICT(id) DO UPDATE SET archived=0,sort_order=excluded.sort_order,
+        catalog_movement_id=COALESCE(program_movements.catalog_movement_id,excluded.catalog_movement_id)`
+        )
+        .bind(pid, userId, JSON.stringify(focus.map(m => ({...m, id: m.id ?? uid()}))), userId, receiptKey, txn)
+    );
+  }
+  if (proposedDrafts.length) {
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO weekly_wod_programming(wod_id,user_id,week_start,content,blocks,edit_version)
+      SELECT json_extract(value,'$.wod_id'),?,json_extract(value,'$.week_start'),json_extract(value,'$.content'),
+        json_extract(value,'$.blocks'),json_extract(value,'$.version') FROM json_each(?) WHERE ${guard}
+      ON CONFLICT(wod_id,week_start) DO UPDATE SET content=excluded.content,blocks=excluded.blocks,
+        edit_version=excluded.edit_version,updated_at=CURRENT_TIMESTAMP`
+        )
+        .bind(
+          userId,
+          JSON.stringify(proposedDrafts.map(d => ({...d, version: uid().replaceAll("-", "")}))),
+          userId,
+          receiptKey,
+          txn
+        )
+    );
+  }
+  statements.push(receipt);
+  const result = await db.batch(statements);
+  const row = result.at(-1).results[0];
+  return row ? answer(row) : stale();
+}
+
 async function api(r, e, p, ctx = null, apiUser = null) {
   const adminEmail = ownerEmail(e);
   if (r.method === "POST" && p === "/api/register") {
@@ -3587,6 +3866,13 @@ async function api(r, e, p, ctx = null, apiUser = null) {
   ) {
     if (!apiUser) return json({error: "Une clé API est requise."}, 403);
     return externalGeneratedProgram(r, e, u.id, r.method === "POST");
+  }
+  if (
+    (r.method === "POST" && p === PROGRAM_EDIT_PATH + "/preview") ||
+    (r.method === "PUT" && p === PROGRAM_EDIT_PATH)
+  ) {
+    if (!apiUser) return json({error: "Une clé API est requise."}, 403);
+    return externalProgramEdit(r, e, u.id, r.method === "POST");
   }
   const admin = !apiUser && isAdminUser(e, u);
   let m;
@@ -5137,15 +5423,19 @@ async function api(r, e, p, ctx = null, apiUser = null) {
       name = item.name;
     const id = uid();
     try {
-      await e.DB.prepare(
-        "INSERT INTO program_movements(id,program_id,user_id,name,sort_order,catalog_movement_id) VALUES(?,?,?,?,COALESCE((SELECT MAX(sort_order)+1 FROM program_movements WHERE program_id=?),0),?)"
+      const row = await e.DB.prepare(
+        `INSERT INTO program_movements(id,program_id,user_id,name,sort_order,catalog_movement_id)
+        VALUES(?,?,?,?,COALESCE((SELECT MAX(sort_order)+1 FROM program_movements WHERE program_id=?),0),?)
+        ON CONFLICT(program_id,name) DO UPDATE SET archived=0,sort_order=excluded.sort_order
+        WHERE program_movements.user_id=excluded.user_id AND program_movements.archived=1 RETURNING id`
       )
         .bind(id, pid, u.id, name, pid, catalogId)
-        .run();
+        .first();
+      if (!row) return json({error: "Ce mouvement existe déjà dans le programme."}, 409);
+      return json({ok: true, id: row.id});
     } catch {
       return json({error: "Ce mouvement existe déjà dans le programme."}, 409);
     }
-    return json({ok: true, id});
   }
   m = p.match(/^\/api\/movements\/([\w-]+)$/);
   if (m && r.method === "PUT") {
@@ -5165,6 +5455,15 @@ async function api(r, e, p, ctx = null, apiUser = null) {
     return json({ok: true});
   }
   if (m && r.method === "DELETE") {
+    const history = await e.DB.prepare(
+      "SELECT 1 FROM session_movement_checks c JOIN program_movements m ON m.id=c.movement_id WHERE m.id=? AND m.user_id=? LIMIT 1"
+    )
+      .bind(m[1], u.id)
+      .first();
+    if (history) {
+      await e.DB.prepare("UPDATE program_movements SET archived=1 WHERE id=? AND user_id=?").bind(m[1], u.id).run();
+      return json({ok: true});
+    }
     await e.DB.prepare("DELETE FROM program_movements WHERE id=? AND user_id=?").bind(m[1], u.id).run();
     return json({ok: true});
   }

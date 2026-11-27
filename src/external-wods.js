@@ -240,7 +240,7 @@ export async function programWodState(db, userId, wodId, week) {
             x.content,x.blocks,x.edit_version
      FROM program_wods w JOIN programs p ON p.id=w.program_id
      LEFT JOIN weekly_wod_programming x ON x.wod_id=w.id AND x.week_start=? AND x.user_id=w.user_id
-     WHERE w.id=? AND w.user_id=? AND p.user_id=? AND p.is_default=0 AND w.name<>'__AUTRES__'`
+     WHERE w.id=? AND w.user_id=? AND p.user_id=? AND p.is_default=0 AND w.archived=0 AND w.name<>'__AUTRES__'`
     )
     .bind(week, wodId, userId, userId)
     .first();
@@ -259,7 +259,7 @@ export function generatedProgramStatements(
 ) {
   const eligible = `FROM program_wods w JOIN programs p ON p.id=w.program_id
        WHERE w.id=? AND w.user_id=? AND p.id=? AND p.user_id=? AND p.is_default=0
-         AND w.name<>'__AUTRES__' AND p.start_monday<=? AND p.end_monday>=?
+         AND w.archived=0 AND w.name<>'__AUTRES__' AND p.start_monday<=? AND p.end_monday>=?
          AND ${eligibleVersion} ${requestId ? "AND " + receiptGuard : ""}`,
     values = [
       wodId,

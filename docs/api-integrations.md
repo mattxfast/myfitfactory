@@ -351,3 +351,43 @@ L’enregistrement des entraînements réutilise la table des séances et sa cl�
 La migration additive `v49-weekly-plan-versions` initialise la version des entrées existantes, installe un déclencheur pour les nouvelles entrées et crée la table des résultats d’idempotence. La tâche quotidienne supprime les résultats expirés. La table `weekly_plans` et sa clé primaire composée restent en place.
 
 La migration additive `v50-pr-edit-versions` initialise la version des PR existants et leur attribution à la création. La table `pr_api_requests` conserve les reçus d’idempotence, purgés par la tâche quotidienne après expiration. Les mesures historiques sont conservées.
+
+### Modifier un programme privé
+
+`POST /api/program-edits/preview` prépare une modification et
+`PUT /api/program-edits` applique exactement la même demande. Les deux routes
+exigent `programs:edit`, décochée par défaut pour les nouvelles clés et absente
+des clés existantes. Seuls les programmes personnels privés non partagés sont modifiables.
+
+Le corps JSON contient `program_id` et au moins une modification parmi les
+suivantes. Une propriété omise reste inchangée.
+
+- `fields` accepte `name`, `objective`, `start_monday`, `end_monday`,
+  `coaching_instructions`, `weekly_cardio_target_min` et
+  `weekly_cardio_target_max`. Le début est un lundi et la date de fin est
+  inclusive. Une borne cardio à `null` efface cette borne.
+- `models` remplace la liste ordonnée des modèles actifs (1 à 20). Chaque
+  objet a un `name`, éventuellement `id` pour un modèle existant,
+  `instructions`, `duration_minutes` et `movement_ids` (identifiants
+  du catalogue). Les modèles omis sont archivés. Les nouveaux modèles
+  sans durée explicite utilisent 60 minutes.
+- `focus` remplace la liste des mouvements à travailler (jusqu’à 40
+  identifiants du catalogue). Une liste vide archive tous les mouvements suivis.
+- `drafts` accepte jusqu’à 26 objets `{wod_id, week_start, wod}`. Le
+  lundi doit être dans la période du programme, à partir de la semaine
+  courante, et le modèle doit déjà exister. Le format de `wod` reprend
+  celui de `generated-wods`. Un créneau associé à une séance réalisée est protégé.
+
+L’aperçu contient `before`, `after`, `archived_models`, `edit_version`,
+`confirmation` et `expires_at` (15 minutes). Un WOD à remplacer est signalé
+par `previous_content` dans le détail du créneau. Pour enregistrer, rejouer
+le corps exact avec `If-Match: "<edit_version>"`, `X-WOD-Confirmation` et
+`Idempotency-Key` au format habituel. Un rejeu identique avec la même clé
+renvoie le reçu `{ok: true, id}`. Le reçu et les changements sont atomiques.
+Les séances, scores et mouvements cochés restent associés à l’historique.
+
+Codes d’erreur pertinents : 400 (validation), 403 (permission), 404 (programme
+inaccessible), 409 (conflit métier ou réutilisation différente de la clé),
+412 (version obsolète, refaire l’aperçu), 428 (confirmation absente, non
+valide ou expirée). Les règles d’authentification et les quotas existants
+s’appliquent.

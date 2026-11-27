@@ -137,3 +137,8 @@ Un écran installé dans la salle fait défiler des informations sur la box : WO
 
 - [x] Ajouter la préparation et l’enregistrement atomique d’un cycle privé,
   avec des WOD détaillés facultatifs.
+
+### 20. Modification de programmes depuis ChatGPT
+
+- [x] Modifier un programme privé, ses modèles, et ses mouvements à travailler
+  avec aperçu et confirmation, en conservant les séances réalisées.

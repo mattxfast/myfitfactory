@@ -415,3 +415,112 @@ test("créer un cycle privé confirmé, avec ou sans WOD, de manière atomique",
     assert.equal((await call(token, "POST", route + "/preview", body)).status, 409);
   }
 });
+
+test("modifier un programme confirmé avec archivage, mouvements et contrôle de version", async () => {
+  const create = await createKey(alice, ["programs:create"]);
+  const edit = await createKey(alice, ["programs:edit"]);
+  const start = addDays(week, 140);
+  const body = {
+    name: "Cycle à modifier",
+    objective: "Force",
+    start,
+    weeks: 2,
+    models: [
+      {name: "A", duration_minutes: 40},
+      {name: "B", duration_minutes: 45},
+    ],
+  };
+  const p = await ok(call(create, "POST", "/generated-programs/preview", body));
+  const built = await ok(
+    call(create, "PUT", "/generated-programs", body, {
+      "If-None-Match": "*",
+      "Idempotency-Key": keyAt(),
+      "X-WOD-Confirmation": p.confirmation,
+    })
+  );
+  const context = async () =>
+    (await ok(call(readKey, "GET", "/coaching-context?date=" + start + "&program_id=" + built.id))).programs[0];
+  const [a, b] = (await context()).workout_models;
+  const change = {
+    program_id: built.id,
+    fields: {name: "Cycle modifié", objective: "Force et endurance"},
+    models: [{id: b.id, name: "B", movement_ids: [bike]}, {name: "Nouveau"}],
+    focus: [squat],
+    drafts: [{wod_id: b.id, week_start: start, wod: out}],
+  };
+  const editPath = "/program-edits";
+  assert.equal((await call(create, "POST", editPath + "/preview", change)).status, 403);
+  const old = await ok(call(edit, "POST", editPath + "/preview", change));
+  assert.equal(old.archived_models[0].id, a.id);
+  const headers = prep => ({
+    "If-Match": '"' + prep.edit_version + '"',
+    "Idempotency-Key": keyAt(),
+    "X-WOD-Confirmation": prep.confirmation,
+  });
+  const write = async (value, prep) => call(edit, "PUT", editPath, value, headers(prep));
+  assert.equal((await write({...change, fields: {name: "Non confirmé"}}, old)).status, 428);
+  const earlier = {program_id: built.id, fields: {coaching_instructions: "Progression"}};
+  await ok(write(earlier, await ok(call(edit, "POST", editPath + "/preview", earlier))));
+  assert.equal((await write(change, old)).status, 412);
+  const fresh = await ok(call(edit, "POST", editPath + "/preview", change));
+  const confirmed = headers(fresh);
+  await ok(call(edit, "PUT", editPath, change, confirmed));
+  await ok(call(edit, "PUT", editPath, change, confirmed));
+  const actual = await context();
+  assert.equal(actual.name, "Cycle modifié");
+  assert.equal(actual.coaching_instructions, "Objectif : Force et endurance\nProgression");
+  assert.deepEqual(
+    actual.workout_models.map(w => w.name),
+    ["B", "Nouveau"]
+  );
+  assert.deepEqual(actual.workout_models[0].movement_ids, [bike]);
+  assert.ok(actual.workout_models[0].programming);
+  assert.equal(actual.tracked_movements[0].catalog_movement_id, squat);
+});
+
+test("une modification protège les séances réalisées et leurs mouvements cochés", async () => {
+  const pid = await idOf(outsider.post("/programs", {name: "Cycle privé", start: week, end}));
+  const makeModel = name =>
+    idOf(outsider.post("/programs/" + pid + "/wods", {name, activity_id: activity, duration_minutes: 30}));
+  const performed = await makeModel("Force réalisée");
+  const upcoming = await makeModel("Endurance");
+  const movement = await idOf(outsider.post("/programs/" + pid + "/movements", {catalog_movement_id: squat}));
+  const sid = await idOf(
+    outsider.post("/sessions", {
+      program_id: pid,
+      wod_id: performed,
+      session_date: date,
+      activity_id: activity,
+      duration_minutes: 30,
+      movement_ids: [movement],
+    })
+  );
+  const edit = await createKey(outsider, ["programs:edit"]);
+  const foreign = await createKey(alice, ["programs:edit"]);
+  const route = "/program-edits";
+  const blocked = {program_id: pid, drafts: [{wod_id: performed, week_start: week, wod: out}]};
+  assert.equal((await call(foreign, "POST", route + "/preview", blocked)).status, 404);
+  assert.equal((await call(edit, "POST", route + "/preview", blocked)).status, 409);
+  const change = {program_id: pid, models: [{id: upcoming, name: "Endurance"}], focus: []};
+  const preview = await ok(call(edit, "POST", route + "/preview", change));
+  await ok(
+    call(edit, "PUT", route, change, {
+      "If-Match": '"' + preview.edit_version + '"',
+      "Idempotency-Key": keyAt(),
+      "X-WOD-Confirmation": preview.confirmation,
+    })
+  );
+  const context = await ok(call(outsiderKey, "GET", "/coaching-context?date=" + date + "&program_id=" + pid));
+  assert.deepEqual(
+    context.programs[0].workout_models.map(w => w.id),
+    [upcoming]
+  );
+  assert.deepEqual(context.programs[0].tracked_movements, []);
+  const after = await ok(outsider.get(weekPath));
+  assert.ok(after.sessions.some(s => s.id === sid && s.wod_id === performed));
+  assert.deepEqual(
+    context.week.completed_sessions.find(s => s.id === sid).worked_movements.map(m => m.movement_id),
+    [squat]
+  );
+  assert.equal(await idOf(outsider.post("/programs/" + pid + "/movements", {catalog_movement_id: squat})), movement);
+});
