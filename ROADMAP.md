@@ -9,7 +9,7 @@ dire « fais l'idée 7 ».
 - Nouvelle idée : l'ajouter dans la bonne rubrique avec le **numéro suivant le plus grand existant**.
 - *En italique* : la décision de Matt quand il y en a une.
 
-Prochain numéro libre : **79**
+Prochain numéro libre : **80**
 
 ## Fiabilité et exploitation
 
@@ -82,6 +82,7 @@ Prochain numéro libre : **79**
 - [x] **76.** Réserver le menu « Ma prog » / « Le coaching » aux coachs validés et afficher directement les programmes et invitations pour les autres utilisateurs. — fait le 27/11/2026
 - [x] **77.** Retirer le liseré vert des cartes de l’historique des séances. — fait le 27/11/2026
 - [x] **78.** Mettre en évidence la cible cardio et présenter les consignes de coaching dans une carte du programme. — fait le 27/11/2026
+- [x] **79.** Garder les WOD déjà réalisés dans le formulaire d’enregistrement d’une séance. — fait le 27/11/2026
 
 ## Look and feel
 

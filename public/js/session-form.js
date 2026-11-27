@@ -72,7 +72,7 @@ function fillWodOptions(pid, selected = "") {
       pid === "none"
         ? []
         : (wodsByProgram[pid] || []).filter(
-            w => w.name !== "__AUTRES__" && (w.id === editedSession?.wod_id || (!w.archived && !done.has(w.id)))
+            w => w.name !== "__AUTRES__" && (!w.archived || w.id === editedSession?.wod_id)
           ),
     list = sessionFormWeek.boxWods.filter(
       w => w.wod_date <= today() && (w.id === editedSession?.box_wod_id || !datedWodDone(w, "box_wod_id", weekSessions))
@@ -117,11 +117,18 @@ function fillWodOptions(pid, selected = "") {
       : planned) +
     `<option value="other">Autres</option>` +
     commonOption;
-  if (!selected && pid === "none") {
-    // Parmi les WOD disponibles, privilégie celui du jour, puis celui de la box à la date de la séance.
-    const daily = dailyList.find(w => w.wod_date === date),
-      box = list.find(w => w.wod_date === date);
-    selected = daily ? "daily:" + daily.id : box ? "box:" + box.id : "";
+  if (!selected) {
+    if (pid === "none") {
+      // Hors programme, privilégie un WOD du jour ou de box à la date de la séance.
+      const daily = dailyList.find(w => w.wod_date === date),
+        box = list.find(w => w.wod_date === date);
+      selected = daily ? "daily:" + daily.id : box ? "box:" + box.id : "";
+    } else {
+      // Tous les WOD du programme restent sélectionnables, avec une préférence pour ceux à faire.
+      const next = ws.find(w => !done.has(w.id));
+      selected =
+        next?.id || (dailyList.length ? "daily:" + dailyList[0].id : list.length ? "box:" + list[0].id : "other");
+    }
   }
   if (selected) f.value = selected;
   if (f.selectedIndex < 0) f.selectedIndex = 0;
