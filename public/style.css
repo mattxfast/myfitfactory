@@ -3824,7 +3824,6 @@ button:disabled {
 }
 
 /* Programmes & WOD */
-#view-programs #programlist,
 #view-programs .program-cards:not(:empty) {
   display: grid;
   gap: var(--page-content-gap);
@@ -3832,30 +3831,24 @@ button:disabled {
 #view-programs .program-cards:empty {
   display: none;
 }
-#view-programs .program-group,
-#view-programs .program-group-body:not([hidden]) {
+#view-programs .program-panel:not([hidden]) {
   display: grid;
   gap: var(--section-content-gap);
 }
-#view-programs .program-group > .weekheading,
-#view-programs .program-group-body > .empty,
+#view-programs .program-panel > .empty,
 #view-programs .program-cards > .program {
   margin: 0;
 }
-#view-programs .program-group .weekheading h2 {
-  flex: 1;
-  margin: 0;
-}
-.program-group-toggle {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
+#coaching-programs-tab.has-alert::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-inline-start: 6px;
+  vertical-align: 2px;
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 0 1px var(--surface);
 }
 .coach-invites h3 {
   margin: 0 0 var(--section-content-gap);
@@ -4308,7 +4301,7 @@ button:disabled {
 .weekheading .weekheading-action ~ span {
   margin-left: 0;
 }
-/* Mon fitness : sous-onglets Forme / Records / Bilans en tête de page. */
+/* Sous-onglets en tête de page : Mon fitness, Programmes et WOD de la box. */
 .fitness-tabs {
   grid-column: 1 / -1;
   display: grid;

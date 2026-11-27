@@ -1,16 +1,32 @@
 // FitFactory — programmes, WOD, mouvements et fenêtres de programme/WOD.
 // Scripts classiques chargés dans l’ordre par index.html (portée globale partagée) ; boot.js démarre l’application en dernier.
 
-function setProgramGroupExpanded(button, expanded) {
-  document.getElementById(button.getAttribute("aria-controls")).hidden = !expanded;
-  button.setAttribute("aria-expanded", String(expanded));
-  button.querySelector(".section-collapse").textContent = expanded ? "−" : "＋";
+const programTabs = [...$("#program-tabs").querySelectorAll('[role="tab"]')];
+function selectProgramTab(activeTab) {
+  for (const tab of programTabs) {
+    const selected = tab === activeTab;
+    tab.classList.toggle("active", selected);
+    tab.setAttribute("aria-selected", String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+    document.getElementById(tab.getAttribute("aria-controls")).hidden = !selected;
+  }
 }
-$("#programlist")
-  .querySelectorAll(".program-group-toggle")
-  .forEach(button => {
-    button.onclick = () => setProgramGroupExpanded(button, button.getAttribute("aria-expanded") === "false");
-  });
+programTabs.forEach((tab, index) => {
+  tab.onclick = () => selectProgramTab(tab);
+  tab.onkeydown = event => {
+    const count = programTabs.length,
+      next = {
+        ArrowLeft: (index + count - 1) % count,
+        ArrowRight: (index + 1) % count,
+        Home: 0,
+        End: count - 1,
+      }[event.key];
+    if (next === undefined) return;
+    event.preventDefault();
+    selectProgramTab(programTabs[next]);
+    programTabs[next].focus();
+  };
+});
 
 function programWeeks(program) {
   const weeks = [];
@@ -476,7 +492,7 @@ $("#followform").onsubmit = async e => {
       body: JSON.stringify({program_id: f.program_id.value, start, end}),
     });
     $("#followdialog").close();
-    if (!editing) setProgramGroupExpanded($("#toggle-personal-programs"), true);
+    if (!editing) selectProgramTab($("#personal-programs-tab"));
     await showSavedProgram(editing ? "Dates du programme modifiées." : "Programme suivi.", !editing);
   } catch (x) {
     $("#followerror").textContent = x.message;
@@ -662,7 +678,7 @@ $("#programform").onsubmit = async e => {
     // Un programme qui vient d’être créé s’affiche déplié pour y ajouter ses WOD.
     if (!id && saved?.id) {
       programFolds().delete(saved.id);
-      setProgramGroupExpanded($(body.coach ? "#toggle-coaching-programs" : "#toggle-personal-programs"), true);
+      selectProgramTab($(body.coach ? "#coaching-programs-tab" : "#personal-programs-tab"));
     }
     $("#programdialog").close();
     e.target.reset();

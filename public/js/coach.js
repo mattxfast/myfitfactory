@@ -6,7 +6,12 @@ const weeksLabel = n => n + " semaine" + (n > 1 ? "s" : "");
 
 // Programmes proposés : ✓ pour le suivre (sans dates : choix du lundi de départ), × pour refuser.
 function renderCoachInvites() {
-  $('.navtab[data-view="programs"]').classList.toggle("has-alert", coachInvites.length > 0);
+  const pending = coachInvites.length > 0,
+    tab = $("#coaching-programs-tab");
+  $('.navtab[data-view="programs"]').classList.toggle("has-alert", pending);
+  tab.classList.toggle("has-alert", pending);
+  if (pending) tab.setAttribute("aria-description", "Invitations de coaching en attente");
+  else tab.removeAttribute("aria-description");
   if (preferences) applyInterface();
   const list = $("#coachinvites");
   list.hidden = !coachInvites.length;
@@ -88,7 +93,7 @@ async function acceptCoachInvite(id, start = null) {
   try {
     await sendApi("/coach-invites/" + id + "/accept", "POST", start ? {start: mondayOf(start)} : {});
     if ($("#followdialog").open) $("#followdialog").close();
-    setProgramGroupExpanded($("#toggle-coaching-programs"), true);
+    selectProgramTab($("#coaching-programs-tab"));
     // Interface simplifiée : les WOD du programme ne seraient pas affichés dans la page Séances.
     if (simpleInterface()) {
       preferences.interface = "advanced";
