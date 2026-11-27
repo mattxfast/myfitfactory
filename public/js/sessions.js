@@ -267,13 +267,13 @@ function programForDate(date) {
   );
 }
 function weekDetailRow(label, count, isCardio = false, target = null) {
-  const value = target === null ? count + "×" : count + " / " + target,
+  const value = target !== null ? count + " / " + target : isCardio ? count + "×" : String(count),
     title = target === null ? "" : ' title="Réalisées / cible hebdomadaire"';
   return `<article class="weekwod card${count ? " done" : ""}${isCardio ? " weekwod-cardio" : ""}"><b>${esc(label)}</b><div class="weekcount"><strong${title}>${esc(value)}</strong></div></article>`;
 }
 // Détail : cardio et mouvements du programme ou du catalogue cochés dans les séances.
 function weekDetailSection(week, programMovements, folded, showCardio, cardioTarget) {
-  // Avec un programme : ses mouvements (y compris à 0×), plus tout autre mouvement coché dans les séances de la semaine.
+  // Avec un programme : ses mouvements (y compris ceux à zéro), plus tout autre mouvement coché dans les séances.
   // Sans programme (ou programme sans mouvement) : uniquement les mouvements cochés dans les séances de la semaine.
   // Les mouvements sont regroupés par nom ; chaque séance compte une fois par mouvement.
   const key = name =>
